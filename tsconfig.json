@@ -1,0 +1,44 @@
+{
+	"extends": "./tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"module": "NodeNext",
+		"moduleResolution": "NodeNext",
+		"paths": {
+			"@huranth/chord": ["./packages/chord/src/index.ts"],
+			"@huranth/chord/bundler": ["./packages/chord/src/bundler.ts"],
+			"@huranth/chord/context": ["./packages/chord/src/context/index.ts"],
+			"@huranth/chord/delta": ["./packages/chord/src/delta/index.ts"],
+			"@huranth/chord/node": ["./packages/chord/src/node.ts"],
+			"@huranth/gama-telemetry": ["./packages/telemetry/src/index.ts"],
+			"@huranth/gama-telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
+			"@huranth/gama-codemode": ["./packages/codemode/src/index.ts"],
+			"@huranth/gama-codemode/declarations": ["./packages/codemode/src/declarations.ts"],
+			"@huranth/gama-codemode/source": ["./packages/codemode/src/source.ts"],
+			"@huranth/gama-codemode/worker": ["./packages/codemode/src/runtime/worker.ts"],
+			"@huranth/gama-ai": ["./packages/ai/src/index.ts"],
+			"@huranth/gama-ai/oauth": ["./packages/ai/src/oauth.ts"],
+			"@huranth/gama-ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
+			"@huranth/gama-ai/dist/*": ["./packages/ai/src/*"],
+			"@huranth/gama-durable": ["./packages/durable/src/index.ts"],
+			"@huranth/gama-durable/testing": ["./packages/durable/src/testing/index.ts"],
+			"@huranth/gama-durable/*": [
+				"./packages/durable/src/*.ts",
+				"./packages/durable/src/*/index.ts",
+				"./packages/durable/src/*"
+			],
+			"@huranth/gama-agent-core": ["./packages/agent/src/index.ts"],
+			"@huranth/gama-harness": ["./packages/coding-agent/src/index.ts"],
+			"@huranth/gama-harness/experimental/plugin": [
+				"./packages/coding-agent/src/experimental/plugin.ts"
+			],
+			"@huranth/gama-harness/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
+			"@huranth/gama-harness/*": ["./packages/coding-agent/src/*"],
+			"typebox": ["./node_modules/typebox"],
+			"@huranth/gama-tui": ["./packages/tui/src/index.ts"],
+			"@huranth/gama-tui/*": ["./packages/tui/src/*"]
+		}
+	},
+	"include": ["update/**/*.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"exclude": ["**/dist/**"]
+}
