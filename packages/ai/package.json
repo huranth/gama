@@ -1,0 +1,89 @@
+{
+	"name": "@huranth/gama-ai",
+	"version": "1.0.3",
+	"private": true,
+	"description": "Unified LLM API with bring-your-own provider configuration (base URL + API key)",
+	"type": "module",
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"sideEffects": [
+		"./dist/compat.js",
+		"./dist/images.js"
+	],
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./models": {
+			"types": "./dist/models.d.ts",
+			"import": "./dist/models.js"
+		},
+		"./compat": {
+			"types": "./dist/compat.d.ts",
+			"import": "./dist/compat.js"
+		},
+		"./providers/*": {
+			"types": "./dist/providers/*.d.ts",
+			"import": "./dist/providers/*.js"
+		},
+		"./api/*": {
+			"types": "./dist/api/*.d.ts",
+			"import": "./dist/api/*.js"
+		},
+		"./utils/*": {
+			"types": "./dist/utils/*.d.ts",
+			"import": "./dist/utils/*.js"
+		},
+		"./bedrock-provider": {
+			"types": "./dist/bedrock-provider.d.ts",
+			"import": "./dist/bedrock-provider.js"
+		}
+	},
+	"files": [
+		"dist",
+		"README.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "tsc -p tsconfig.build.json",
+		"test": "vitest --run"
+	},
+	"dependencies": {
+		"@anthropic-ai/sdk": "0.129.0",
+		"@aws-sdk/client-bedrock-runtime": "3.1127.0",
+		"@huranth/gama-telemetry": "^1.0.3",
+		"@google/genai": "2.21.0",
+		"@smithy/node-http-handler": "4.12.1",
+		"http-proxy-agent": "9.1.0",
+		"https-proxy-agent": "9.1.0",
+		"openai": "7.19.0",
+		"partial-json": "0.1.7",
+		"typebox": "1.3.27"
+	},
+	"keywords": [
+		"ai",
+		"llm",
+		"unified",
+		"api",
+		"openai",
+		"anthropic",
+		"gemini",
+		"bedrock"
+	],
+	"author": "huranth",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/huranth/gama.git",
+		"directory": "packages/ai"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	},
+	"devDependencies": {
+		"@types/node": "22.19.19",
+		"canvas": "3.2.3",
+		"vitest": "4.1.11"
+	}
+}
