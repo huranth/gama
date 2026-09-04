@@ -1,0 +1,19 @@
+import type { Component } from "../tui.ts";
+
+export class Spacer implements Component {
+	private lines: number;
+
+	constructor(lines: number = 1) {
+		this.lines = lines;
+	}
+
+	setLines(lines: number): void {
+		this.lines = lines;
+	}
+
+	invalidate(): void {}
+
+	render(_width: number): string[] {
+		return Array.from({ length: this.lines }, () => "");
+	}
+}
