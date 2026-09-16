@@ -1,0 +1,1 @@
+Reflect.deleteProperty(globalThis, "Buffer");
