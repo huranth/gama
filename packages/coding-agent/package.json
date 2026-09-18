@@ -1,0 +1,92 @@
+{
+	"name": "@huranth/gama-harness",
+	"version": "1.0.1",
+	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
+	"type": "module",
+	"gamaConfig": {
+		"configDir": ".gama"
+	},
+	"bin": {
+		"gama": "dist/bundle/cli.js"
+	},
+	"main": "./dist/index.js",
+	"types": "./dist/index.d.ts",
+	"exports": {
+		".": {
+			"types": "./dist/index.d.ts",
+			"import": "./dist/index.js"
+		},
+		"./rpc-entry": {
+			"import": "./dist/bundle/rpc-entry.js"
+		}
+	},
+	"files": [
+		"dist",
+		"CHANGELOG.md"
+	],
+	"scripts": {
+		"clean": "shx rm -rf dist",
+		"build": "npm run clean && npm run build:unbundled && node ../../scripts/build-coding-agent-bundle.mjs",
+		"build:unbundled": "tsc -p tsconfig.build.json && shx chmod +x dist/cli.js dist/rpc-entry.js && npm run copy-assets",
+		"build:binary": "npm --prefix ../tui run build && npm --prefix ../telemetry run build && npm --prefix ../ai run build && npm --prefix ../agent run build && npm run build && bun build --compile --no-compile-autoload-bunfig ./dist/bun/cli.js ./src/utils/image-resize-worker.ts ./src/ext/codemode/worker.ts --outfile dist/gama && npm run copy-binary-assets",
+		"copy-assets": "shx mkdir -p dist/modes/tui/theme && shx cp src/modes/tui/theme/*.json dist/modes/tui/theme/ && shx mkdir -p dist/core/html/vendor && shx cp src/core/html/template.html src/core/html/template.css src/core/html/template.js dist/core/html/ && shx cp src/core/html/vendor/*.js dist/core/html/vendor/",
+		"copy-binary-assets": "shx cp package.json dist/ && shx mkdir -p dist/theme && shx cp src/modes/tui/theme/*.json dist/theme/ && shx mkdir -p dist/html/vendor && shx cp src/core/html/template.html dist/html/ && shx cp src/core/html/vendor/*.js dist/html/vendor/ && shx cp -r examples dist/ && shx cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm dist/",
+		"test": "vitest --run",
+		"prepublishOnly": "npm run clean && npm run build"
+	},
+	"dependencies": {
+		"@huranth/chord": "^1.0.3",
+		"@huranth/gama-agent-core": "^1.0.3",
+		"@huranth/gama-ai": "^1.0.3",
+		"@huranth/gama-codemode": "^1.0.3",
+		"@huranth/gama-tui": "^1.0.3",
+		"@silvia-odwyer/photon-node": "0.3.4",
+		"brace-expansion": "5.0.12",
+		"chalk": "6.0.0",
+		"cross-spawn": "7.0.6",
+		"diff": "8.0.4",
+		"grok-mermaid": "0.2.3",
+		"highlight.js": "10.7.3",
+		"hosted-git-info": "9.0.3",
+		"ignore": "7.0.8",
+		"jiti": "2.7.0",
+		"minimatch": "10.2.6",
+		"proper-lockfile": "4.1.2",
+		"quickjs-wasi": "3.6.2",
+		"semver": "7.8.5",
+		"typebox": "1.3.27",
+		"undici": "8.10.2",
+		"yaml": "2.9.0"
+	},
+	"overrides": {
+		"protobufjs": "7.6.6"
+	},
+	"devDependencies": {
+		"@types/cross-spawn": "6.0.6",
+		"@types/hosted-git-info": "3.0.5",
+		"@types/node": "22.19.19",
+		"@types/proper-lockfile": "4.1.4",
+		"@types/semver": "7.7.1",
+		"marked": "18.0.11",
+		"shx": "0.4.0",
+		"vitest": "4.1.11"
+	},
+	"keywords": [
+		"coding-agent",
+		"ai",
+		"llm",
+		"cli",
+		"tui",
+		"agent"
+	],
+	"author": "huranth",
+	"license": "MIT",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/huranth/gama.git",
+		"directory": "packages/coding-agent"
+	},
+	"engines": {
+		"node": ">=22.19.0"
+	}
+}

@@ -1,0 +1,16 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"noEmit": true,
+		"paths": {
+			"@huranth/gama-harness": ["./src/index.ts"],
+			"@huranth/gama-harness/hooks": ["./src/core/hooks/index.ts"],
+			"@huranth/gama-tui": ["../tui/src/index.ts"],
+			"@huranth/gama-ai": ["../ai/src/index.ts"],
+			"typebox": ["../../node_modules/typebox"]
+		},
+		"skipLibCheck": true
+	},
+	"include": ["examples/**/*.ts"],
+	"exclude": ["node_modules", "dist"]
+}
