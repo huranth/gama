@@ -1,0 +1,48 @@
+import type { ExtensionAPI, ProjectTrustEventResult } from "@huranth/gama-harness";
+
+export default function (gama: ExtensionAPI) {
+	let loadCount = 0;
+	loadCount++;
+
+	gama.on("project_trust", async (event, ctx): Promise<ProjectTrustEventResult> => {
+		ctx.ui.notify(
+			`project_trust fired for ${event.cwd} (mode: ${ctx.mode}, load: ${loadCount})`,
+			"info",
+		);
+
+		if (!ctx.hasUI) {
+			return { trusted: "undecided" };
+		}
+
+		const choice = await ctx.ui.select(`Project trust for:\n${event.cwd}`, [
+			"Trust and remember",
+			"Trust with note and remember",
+			"Trust this session",
+			"Do not trust this session",
+			"Let built-in prompt decide",
+		]);
+
+		if (choice === "Trust with note and remember") {
+			const note = await ctx.ui.input("Project trust note", "Optional note for this demo");
+			ctx.ui.notify(note ? `Recorded demo note: ${note}` : "No demo note entered", "info");
+			return { trusted: "yes", remember: true };
+		}
+		if (choice === "Trust and remember") {
+			return { trusted: "yes", remember: true };
+		}
+		if (choice === "Trust this session") {
+			return { trusted: "yes" };
+		}
+		if (choice === "Do not trust this session") {
+			return { trusted: "no" };
+		}
+		if (choice === "Let built-in prompt decide") {
+			return { trusted: "undecided" };
+		}
+		return { trusted: "undecided" };
+	});
+
+	gama.on("session_start", (_event, ctx) => {
+		ctx.ui.notify(`project-trust example loaded after trust resolution in ${ctx.cwd}`, "info");
+	});
+}
