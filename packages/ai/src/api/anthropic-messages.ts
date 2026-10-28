@@ -172,6 +172,9 @@ const ANTHROPIC_MESSAGE_EVENTS = new Set<string>([
 	"content_block_stop",
 ]);
 
+// Abort a response body that goes silent; Anthropic sends pings, so a healthy stream never idles this long.
+const STREAM_IDLE_TIMEOUT_MS = 120_000;
+
 const LAYERED_BREAKPOINT_LOOKBACK = 12;
 
 const CACHEABLE_BLOCK_TYPES = new Set<string>([
@@ -1449,6 +1452,23 @@ async function* iterateAnthropicEvents(
 	}
 }
 
+function readWithIdleTimeout(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+): Promise<ReadableStreamReadResult<Uint8Array>> {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const idle = new Promise<never>((_, reject) => {
+		timer = setTimeout(
+			() =>
+				reject(
+					new Error(`Anthropic stream idle timeout: no data for ${STREAM_IDLE_TIMEOUT_MS}ms`),
+				),
+			STREAM_IDLE_TIMEOUT_MS,
+		);
+	});
+
+	return Promise.race([reader.read(), idle]).finally(() => clearTimeout(timer));
+}
+
 async function* iterateSseMessages(
 	body: ReadableStream<Uint8Array>,
 	signal?: AbortSignal,
@@ -1464,7 +1484,7 @@ async function* iterateSseMessages(
 				throw new Error("Request was aborted");
 			}
 
-			const { value, done } = await reader.read();
+			const { value, done } = await readWithIdleTimeout(reader);
 			if (done) {
 				break;
 			}
