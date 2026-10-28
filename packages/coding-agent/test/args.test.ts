@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { normalizeSessionName, parseArgs } from "../src/cli/args.ts";
+import { normalizeSessionName, parseArgs, restoreBooleanFlagValues } from "../src/cli/args.ts";
 
 describe("parseArgs", () => {
 	describe("--version flag", () => {
@@ -517,6 +517,17 @@ describe("parseArgs", () => {
 			const result = parseArgs(["--unknown-flag", "message"]);
 			expect(result.messages).toEqual([]);
 			expect(result.unknownFlags.get("unknown-flag")).toBe("message");
+		});
+
+		test("hands a boolean extension flag's swallowed value back to messages", () => {
+			const result = parseArgs(["a", "--plan", "fix the bug", "--preset", "fast", "b"]);
+			expect(result.messages).toEqual(["a", "b"]);
+
+			restoreBooleanFlagValues(result, new Set(["plan"]));
+
+			expect(result.messages).toEqual(["a", "fix the bug", "b"]);
+			expect(result.unknownFlags.get("plan")).toBe(true);
+			expect(result.unknownFlags.get("preset")).toBe("fast");
 		});
 
 		test("captures unknown boolean long flags", () => {

@@ -2,7 +2,14 @@ import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@huranth/gama-ai";
 import { setCapabilityOverrides } from "@huranth/gama-tui";
 import chalk from "chalk";
-import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
+import {
+	type Args,
+	type Mode,
+	normalizeSessionName,
+	parseArgs,
+	printHelp,
+	restoreBooleanFlagValues,
+} from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -781,6 +788,16 @@ export async function main(args: string[], options?: MainOptions) {
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;
+	restoreBooleanFlagValues(
+		parsed,
+		new Set(
+			resourceLoader
+				.getExtensions()
+				.extensions.flatMap((extension) => [...extension.flags])
+				.filter(([, flag]) => flag.type === "boolean")
+				.map(([name]) => name),
+		),
+	);
 	setCapabilityOverrides(settingsManager.getTerminalCapabilityOverrides());
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
