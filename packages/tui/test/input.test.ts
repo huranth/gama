@@ -50,6 +50,21 @@ describe("Input component", () => {
 			assert.strictEqual(stripTerminalSequences(populated ?? "").trimEnd(), "n");
 		});
 
+		it("renders bullets instead of the value when masked", () => {
+			const input = new Input({ prompt: "", mask: true });
+			input.setValue("sk-secret");
+
+			const [line] = input.render(20);
+			const text = stripTerminalSequences(line ?? "");
+			assert.strictEqual(text.trimEnd(), "•".repeat(9));
+			assert.ok(!text.includes("secret"));
+			assert.strictEqual(input.getValue(), "sk-secret");
+
+			input.setValue("x".repeat(60));
+			const [scrolled] = input.render(20);
+			assert.ok(!stripTerminalSequences(scrolled ?? "").includes("x"));
+		});
+
 		it("does not overflow with wide CJK and fullwidth text", () => {
 			const width = 93;
 			const cases = [
@@ -625,6 +640,12 @@ describe("Input component", () => {
 
 			input.handleInput("\x1b[45;5u");
 			assert.strictEqual(input.getValue(), "");
+		});
+
+		it("strips control characters from pasted text", () => {
+			const input = new Input();
+			input.handleInput("\x1b[200~a\x1bb\x07\x9bc\x1b[201~");
+			assert.strictEqual(input.getValue(), "abc");
 		});
 
 		it("undoes paste atomically", () => {

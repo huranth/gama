@@ -188,6 +188,7 @@ async function createRuntimeHost(options: {
 
 async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): Promise<{
 	lineHandler: (line: string) => void;
+	runtimeHost: AgentSessionRuntime;
 	cleanup: () => Promise<void>;
 }> {
 	rpcIo.outputLines = [];
@@ -197,7 +198,7 @@ async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): P
 	void runRpcMode(runtimeHost);
 	await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-	return { lineHandler: rpcIo.lineHandler!, cleanup };
+	return { lineHandler: rpcIo.lineHandler!, runtimeHost, cleanup };
 }
 
 describe("RPC prompt response semantics", () => {
@@ -489,6 +490,139 @@ describe("RPC prompt response semantics", () => {
 				parseOutputLines(rpcIo.outputLines).filter((record) => record.type === "agent_start"),
 			).toHaveLength(1);
 		} finally {
+			await cleanup();
+		}
+	});
+
+	it("binds extensions once when a session command replaces the session", async () => {
+		const sessionStarts: string[] = [];
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: false,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("session_start", (event) => {
+						sessionStarts.push(event.reason);
+					});
+				},
+			]),
+		});
+
+		try {
+			await vi.waitFor(() => expect(sessionStarts).toHaveLength(1));
+			// The real runtime calls the registered rebind callback itself when it replaces the session.
+			const rebind = vi.mocked(runtimeHost.setRebindSession).mock.calls[0]![0]!;
+			vi.mocked(runtimeHost.newSession).mockImplementation((async () => {
+				await rebind(runtimeHost.session);
+				return { cancelled: false };
+			}) as never);
+
+			lineHandler(JSON.stringify({ id: "ns", type: "new_session" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "ns",
+					type: "response",
+					command: "new_session",
+					success: true,
+					data: { cancelled: false },
+				}),
+			);
+
+			expect(sessionStarts).toHaveLength(2);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("waits for an in-flight prompt to settle before shutting down on stdin EOF", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 150,
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "eof", type: "prompt", message: "Hello" }));
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines).some((l) => l.type === "agent_start")).toBe(
+					true,
+				);
+			});
+
+			process.stdin.emit("end");
+			await sleep(50);
+			expect(runtimeHost.dispose).not.toHaveBeenCalled();
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+			expect(parseOutputLines(rpcIo.outputLines).some((l) => l.type === "agent_settled")).toBe(
+				true,
+			);
+			expect(exit).toHaveBeenCalled();
+		} finally {
+			exit.mockRestore();
+			await cleanup();
+		}
+	});
+
+	it("cancels pending extension dialogs on stdin EOF so shutdown completes", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("input", async (_event, ctx) => {
+						await ctx.ui.confirm("Proceed?", "blocked on the client");
+					});
+				},
+			]),
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "dlg", type: "prompt", message: "Hello" }));
+			await vi.waitFor(() => {
+				expect(
+					parseOutputLines(rpcIo.outputLines).some((l) => l.type === "extension_ui_request"),
+				).toBe(true);
+			});
+
+			process.stdin.emit("end");
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+			expect(exit).toHaveBeenCalled();
+		} finally {
+			exit.mockRestore();
+			await cleanup();
+		}
+	});
+
+	it("stops waiting for hung in-flight work after the EOF drain cap", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("input", () => new Promise<void>(() => {}));
+				},
+			]),
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "hung", type: "prompt", message: "Hello" }));
+			await sleep(20);
+
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			process.stdin.emit("end");
+			await vi.advanceTimersByTimeAsync(29_000);
+			expect(runtimeHost.dispose).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(2_000);
+			vi.useRealTimers();
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+		} finally {
+			vi.useRealTimers();
+			exit.mockRestore();
 			await cleanup();
 		}
 	});

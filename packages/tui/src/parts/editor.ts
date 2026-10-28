@@ -1,4 +1,8 @@
-import type { AutocompleteProvider, AutocompleteSuggestions } from "../autocomplete.ts";
+import type {
+	AutocompleteItem,
+	AutocompleteProvider,
+	AutocompleteSuggestions,
+} from "../autocomplete.ts";
 import { getKeybindings } from "../keybindings.ts";
 import { decodePrintableKey, matchesKey } from "../keys.ts";
 import { KillRing } from "../kill-ring.ts";
@@ -780,20 +784,9 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			if (kb.matches(data, "tui.input.tab")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
-					this.pushUndoSnapshot();
-					this.lastAction = null;
-					const result = this.autocompleteProvider.applyCompletion(
-						this.state.lines,
-						this.state.cursorLine,
-						this.state.cursorCol,
-						selected,
-						this.autocompletePrefix,
-					);
-					this.state.lines = result.lines;
-					this.state.cursorLine = result.cursorLine;
-					this.setCursorCol(result.cursorCol);
+					const applied = this.applyCompletionItem(selected, this.autocompletePrefix);
 					this.cancelAutocomplete();
-					if (this.onChange) this.onChange(this.getText());
+					if (applied && this.onChange) this.onChange(this.getText());
 				}
 				return;
 			}
@@ -801,21 +794,10 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			if (kb.matches(data, "tui.select.confirm")) {
 				const selected = this.autocompleteList.getSelectedItem();
 				if (selected && this.autocompleteProvider) {
-					this.pushUndoSnapshot();
-					this.lastAction = null;
-					const result = this.autocompleteProvider.applyCompletion(
-						this.state.lines,
-						this.state.cursorLine,
-						this.state.cursorCol,
-						selected,
-						this.autocompletePrefix,
-					);
-					this.state.lines = result.lines;
-					this.state.cursorLine = result.cursorLine;
-					this.setCursorCol(result.cursorCol);
-
+					const applied = this.applyCompletionItem(selected, this.autocompletePrefix);
 					const isCommand = this.autocompletePrefix.startsWith("/");
 					this.cancelAutocomplete();
+					if (!applied) return;
 
 					if (!isCommand) {
 						if (this.onChange) this.onChange(this.getText());
@@ -2065,22 +2047,37 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		);
 		list.onSelect = (selected) => {
 			if (!this.autocompleteProvider) return;
-			this.pushUndoSnapshot();
-			this.lastAction = null;
-			const result = this.autocompleteProvider.applyCompletion(
+			const applied = this.applyCompletionItem(selected, this.autocompletePrefix);
+			this.cancelAutocomplete();
+			if (applied) this.onChange?.(this.getText());
+		};
+		return list;
+	}
+
+	/**
+	 * Applies a completion through the provider. A throwing provider (extension
+	 * code) drops the completion instead of crashing the input handler.
+	 */
+	private applyCompletionItem(item: AutocompleteItem, prefix: string): boolean {
+		let result: ReturnType<AutocompleteProvider["applyCompletion"]>;
+		try {
+			if (!this.autocompleteProvider) return false;
+			result = this.autocompleteProvider.applyCompletion(
 				this.state.lines,
 				this.state.cursorLine,
 				this.state.cursorCol,
-				selected,
-				this.autocompletePrefix,
+				item,
+				prefix,
 			);
-			this.state.lines = result.lines;
-			this.state.cursorLine = result.cursorLine;
-			this.setCursorCol(result.cursorCol);
-			this.cancelAutocomplete();
-			this.onChange?.(this.getText());
-		};
-		return list;
+		} catch {
+			return false;
+		}
+		this.pushUndoSnapshot();
+		this.lastAction = null;
+		this.state.lines = result.lines;
+		this.state.cursorLine = result.cursorLine;
+		this.setCursorCol(result.cursorCol);
+		return true;
 	}
 
 	private tryTriggerAutocomplete(explicitTab: boolean = false): void {
@@ -2157,14 +2154,23 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			const snapshotLine = this.state.cursorLine;
 			const snapshotCol = this.state.cursorCol;
 
-			await this.runAutocompleteRequest(
-				requestId,
-				controller,
-				snapshotText,
-				snapshotLine,
-				snapshotCol,
-				options,
-			);
+			try {
+				await this.runAutocompleteRequest(
+					requestId,
+					controller,
+					snapshotText,
+					snapshotLine,
+					snapshotCol,
+					options,
+				);
+			} catch {
+				// A throwing provider (extension code) must neither crash the app nor
+				// leave a rejected task that every later request would await.
+				if (requestId === this.autocompleteRequestId) {
+					this.cancelAutocomplete();
+					this.tui.requestRender();
+				}
+			}
 		})();
 		await this.autocompleteRequestTask;
 	}
@@ -2237,20 +2243,9 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		}
 
 		if (options.force && options.explicitTab && suggestions.items.length === 1) {
-			const item = suggestions.items[0]!;
-			this.pushUndoSnapshot();
-			this.lastAction = null;
-			const result = this.autocompleteProvider.applyCompletion(
-				this.state.lines,
-				this.state.cursorLine,
-				this.state.cursorCol,
-				item,
-				suggestions.prefix,
-			);
-			this.state.lines = result.lines;
-			this.state.cursorLine = result.cursorLine;
-			this.setCursorCol(result.cursorCol);
-			if (this.onChange) this.onChange(this.getText());
+			if (this.applyCompletionItem(suggestions.items[0]!, suggestions.prefix)) {
+				if (this.onChange) this.onChange(this.getText());
+			}
 			this.tui.requestRender();
 			return;
 		}

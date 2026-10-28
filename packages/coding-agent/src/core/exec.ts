@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { constants as osConstants } from "node:os";
 import { waitForChildProcess } from "../utils/child-process.ts";
 
 export interface ExecOptions {
@@ -12,6 +13,11 @@ export interface ExecResult {
 	stderr: string;
 	code: number;
 	killed: boolean;
+}
+
+// A child killed by a signal has no exit code; report it as a shell would (128 + signo).
+function signalExitCode(signal: NodeJS.Signals | null): number {
+	return signal ? 128 + (osConstants.signals[signal] ?? 0) : 1;
 }
 
 export async function execCommand(
@@ -82,7 +88,7 @@ export async function execCommand(
 		});
 
 		waitForChildProcess(proc)
-			.then((code) => finish(code ?? 0))
+			.then((code) => finish(code ?? signalExitCode(proc.signalCode)))
 			.catch(() => finish(1));
 	});
 }

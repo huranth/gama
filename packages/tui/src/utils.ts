@@ -281,6 +281,11 @@ export function visibleWidth(str: string): number {
 	return width;
 }
 
+/** Removes C0 controls (except \t and \n), DEL and C1 controls, so untrusted text cannot inject terminal sequences. */
+export function stripControlChars(str: string): string {
+	return str.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
+}
+
 export function stripTerminalSequences(str: string): string {
 	if (!str.includes("\x1b")) return str;
 	let result = "";

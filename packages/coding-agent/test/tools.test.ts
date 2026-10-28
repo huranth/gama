@@ -980,6 +980,44 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain("match two");
 		});
 
+		it("should not search inside .git", async () => {
+			mkdirSync(join(testDir, ".git", "hooks"), { recursive: true });
+			writeFileSync(join(testDir, ".git", "hooks", "pre-commit.sample"), "needle in git\n");
+			writeFileSync(join(testDir, "src.txt"), "needle in src\n");
+
+			const output = getTextOutput(
+				await grepTool.execute("test-call-grep-dot-git", { pattern: "needle", path: testDir }),
+			);
+
+			expect(output).toContain("src.txt:1: needle in src");
+			expect(output).not.toContain(".git");
+		});
+
+		it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+			"should keep matches when rg cannot read part of the tree",
+			async () => {
+				const locked = join(testDir, "locked");
+				mkdirSync(locked);
+				writeFileSync(join(locked, "secret.txt"), "needle hidden\n");
+				writeFileSync(join(testDir, "open.txt"), "needle open\n");
+				chmodSync(locked, 0o000);
+
+				try {
+					const output = getTextOutput(
+						await grepTool.execute("test-call-grep-partial", {
+							pattern: "needle",
+							path: testDir,
+						}),
+					);
+
+					expect(output).toContain("open.txt:1: needle open");
+					expect(output).toMatch(/\[.*locked.*\]/);
+				} finally {
+					chmodSync(locked, 0o755);
+				}
+			},
+		);
+
 		it("should treat flag-like patterns as search text", async () => {
 			const marker = join(testDir, "grep-injection-marker");
 			const payload = join(testDir, "payload.sh");
@@ -1017,6 +1055,19 @@ describe("Coding Agent Tools", () => {
 
 			expect(outputLines).toContain("visible.txt");
 			expect(outputLines).toContain(".secret/hidden.txt");
+		});
+
+		it("should not list .git contents", async () => {
+			mkdirSync(join(testDir, ".git", "hooks"), { recursive: true });
+			writeFileSync(join(testDir, ".git", "hooks", "pre-commit.sample"), "x");
+			writeFileSync(join(testDir, "src.txt"), "x");
+
+			const output = getTextOutput(
+				await findTool.execute("test-call-find-dot-git", { pattern: "**/*", path: testDir }),
+			);
+
+			expect(output).toContain("src.txt");
+			expect(output).not.toContain(".git");
 		});
 
 		it("should respect .gitignore", async () => {
@@ -1336,6 +1387,34 @@ describe("edit tool fuzzy matching", () => {
 		expect(content).toContain("universe");
 	});
 
+	it("should only replace the matched span and keep the rest of the line as written", async () => {
+		const testFile = join(testDir, "fuzzy-same-line.txt");
+		const originalContent = "x = \u201Ca\u201D + \u201Cb\u201D \u2122  \nnext\n";
+		writeFileSync(testFile, originalContent);
+
+		const result = await editTool.execute("test-fuzzy-same-line", {
+			path: testFile,
+			edits: [{ oldText: 'x = "a"', newText: 'y = "a"' }],
+		});
+
+		const expectedContent = 'y = "a" + \u201Cb\u201D \u2122  \nnext\n';
+		expect(readFileSync(testFile, "utf-8")).toBe(expectedContent);
+		expect(applyPatch(originalContent, result.details?.patch ?? "")).toBe(expectedContent);
+	});
+
+	it("should refuse a fuzzy match that cuts through an expanded character", async () => {
+		const testFile = join(testDir, "fuzzy-cut-cluster.txt");
+		writeFileSync(testFile, "a \u2122 b\n");
+
+		await expect(
+			editTool.execute("test-fuzzy-cut-cluster", {
+				path: testFile,
+				edits: [{ oldText: "T", newText: "X" }],
+			}),
+		).rejects.toThrow(/Unicode normalization/);
+		expect(readFileSync(testFile, "utf-8")).toBe("a \u2122 b\n");
+	});
+
 	it("should prefer exact match over fuzzy match", async () => {
 		const testFile = join(testDir, "exact-preferred.txt");
 		writeFileSync(testFile, "const x = 'exact';\nconst y = 'other';\n");
@@ -1451,6 +1530,34 @@ describe("edit tool fuzzy matching", () => {
 	);
 });
 
+describe("edit tool byte preservation", () => {
+	let testDir: string;
+
+	beforeEach(() => {
+		testDir = join(tmpdir(), `coding-agent-bytes-test-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(testDir, { recursive: true, force: true });
+	});
+
+	it("should refuse to edit a file that is not valid UTF-8 and leave it untouched", async () => {
+		const testFile = join(testDir, "latin1.txt");
+		const original = Buffer.from([...Buffer.from("caf"), 0xe9, ...Buffer.from("\nfoo\n")]);
+		writeFileSync(testFile, original);
+
+		await expect(
+			editTool.execute("test-non-utf8", {
+				path: testFile,
+				edits: [{ oldText: "foo", newText: "bar" }],
+			}),
+		).rejects.toThrow(/not valid UTF-8/);
+
+		expect(readFileSync(testFile).equals(original)).toBe(true);
+	});
+});
+
 describe("edit tool CRLF handling", () => {
 	let testDir: string;
 
@@ -1513,6 +1620,42 @@ describe("edit tool CRLF handling", () => {
 				edits: [{ oldText: "hello\nworld\n", newText: "replaced\n" }],
 			}),
 		).rejects.toThrow(/Found 2 copies of that text/);
+	});
+
+	it("should leave other line endings alone in a file with mixed endings", async () => {
+		const testFile = join(testDir, "mixed-preserve.txt");
+		writeFileSync(testFile, "a\nb\r\nc\r\n");
+
+		await editTool.execute("test-mixed-1", {
+			path: testFile,
+			edits: [{ oldText: "b", newText: "B" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("a\nB\r\nc\r\n");
+	});
+
+	it("should leave lone CR line endings alone", async () => {
+		const testFile = join(testDir, "lone-cr.txt");
+		writeFileSync(testFile, "a\rb\rc");
+
+		await editTool.execute("test-lone-cr", {
+			path: testFile,
+			edits: [{ oldText: "b", newText: "B" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("a\rB\rc");
+	});
+
+	it("should match a multi-line edit across a CRLF break in a mixed file", async () => {
+		const testFile = join(testDir, "mixed-multiline.txt");
+		writeFileSync(testFile, "x\r\ny\nz\r\n");
+
+		await editTool.execute("test-mixed-2", {
+			path: testFile,
+			edits: [{ oldText: "x\ny", newText: "X\nY" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("X\nY\nz\r\n");
 	});
 
 	it("should preserve UTF-8 BOM after edit", async () => {

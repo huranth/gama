@@ -2,7 +2,14 @@ import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@huranth/gama-ai";
 import { setCapabilityOverrides } from "@huranth/gama-tui";
 import chalk from "chalk";
-import { type Args, type Mode, normalizeSessionName, parseArgs, printHelp } from "./cli/args.ts";
+import {
+	type Args,
+	type Mode,
+	normalizeSessionName,
+	parseArgs,
+	printHelp,
+	restoreBooleanFlagValues,
+} from "./cli/args.ts";
 import { processFileArguments } from "./cli/file-processor.ts";
 import { buildInitialMessage } from "./cli/initial-message.ts";
 import { listModels } from "./cli/list-models.ts";
@@ -122,6 +129,21 @@ async function exportSessionOrExit(sessionFile: string, outputPath?: string): Pr
 
 	console.log(`Exported to: ${result}`);
 	process.exit(0);
+}
+
+/**
+ * Whether project settings may be read at startup, before the trust prompt.
+ * Only trust that is already known without asking counts; a project that has
+ * trust-requiring resources and no recorded decision stays untrusted here.
+ */
+export function isProjectTrustedAtStartup(
+	cwd: string,
+	trustOverride: boolean | undefined,
+	trustStore: ProjectTrustStore,
+): boolean {
+	return (
+		trustOverride ?? (!hasTrustRequiringProjectResources(cwd) || trustStore.get(cwd) === true)
+	);
 }
 
 function resolveSessionDir(parsed: Args, settingsManager: SettingsManager): string | undefined {
@@ -403,7 +425,13 @@ export async function createSessionManager(
 		);
 	}
 
-	return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	try {
+		return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(chalk.red(`Error: ${message}`));
+		process.exit(1);
+	}
 }
 
 function findSavedScopedModel(
@@ -566,7 +594,10 @@ export async function main(args: string[], options?: MainOptions) {
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);
 	time("runMigrations");
 
-	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
+	const trustStore = new ProjectTrustStore(agentDir);
+	const startupSettingsManager = SettingsManager.create(cwd, agentDir, {
+		projectTrusted: isProjectTrustedAtStartup(cwd, parsed.projectTrustOverride, trustStore),
+	});
 	const startupSettingsDiagnostics = collectSettingsDiagnostics(startupSettingsManager);
 
 	if (
@@ -615,7 +646,6 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("createSessionManager");
 
-	const trustStore = new ProjectTrustStore(agentDir);
 	const sessionCwd = sessionManager.getCwd();
 	const autoTrustOnReloadCwd =
 		parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
@@ -775,6 +805,16 @@ export async function main(args: string[], options?: MainOptions) {
 	time("createAgentSessionRuntime");
 	const { services, session, modelFallbackMessage } = runtime;
 	const { settingsManager, modelRuntime, resourceLoader } = services;
+	restoreBooleanFlagValues(
+		parsed,
+		new Set(
+			resourceLoader
+				.getExtensions()
+				.extensions.flatMap((extension) => [...extension.flags])
+				.filter(([, flag]) => flag.type === "boolean")
+				.map(([name]) => name),
+		),
+	);
 	setCapabilityOverrides(settingsManager.getTerminalCapabilityOverrides());
 	applyHttpProxySettings(settingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());

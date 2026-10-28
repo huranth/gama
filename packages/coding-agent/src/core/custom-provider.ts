@@ -1,7 +1,8 @@
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 
 import { type Model, type ModelCost, normalizeModelId } from "@huranth/gama-ai";
 
+import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { stripBom } from "../utils/text.ts";
 import { modelsDevCacheHint } from "./cache/models-dev.ts";
@@ -215,7 +216,7 @@ export async function saveCustomProviderModels(
 ): Promise<void> {
 	const config = (await readModelsConfig(modelsPath)) ?? {};
 	config.providers = { ...(config.providers ?? {}), [providerId]: definition };
-	await writeFile(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function deleteCustomProvider(
@@ -226,7 +227,7 @@ export async function deleteCustomProvider(
 	const providers = config?.providers;
 	if (!providers || !(providerId in providers)) return false;
 	delete providers[providerId];
-	await writeFile(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 	return true;
 }
 
@@ -240,7 +241,7 @@ export async function saveProviderBaseUrl(
 	const existing = asRecord(providers[providerId]) ?? {};
 	providers[providerId] = { ...existing, baseUrl };
 	config.providers = providers;
-	await writeFile(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export function normalizeBaseUrl(raw: string): string {
@@ -297,7 +298,7 @@ export async function saveModelOverride(
 	modelOverrides[modelId] = { ...existingOverride, ...override };
 	providers[providerId] = { ...existing, modelOverrides };
 	config.providers = providers;
-	await writeFile(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export function uniqueProviderId(base: string, existing: Iterable<string>): string {
@@ -438,7 +439,7 @@ export async function rememberCustomProviderModel(
 	});
 	providers[model.provider] = { ...existing, models };
 	config.providers = providers;
-	await writeFile(modelsPath, `${JSON.stringify(config, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 	return "added";
 }
 

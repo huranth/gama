@@ -7,12 +7,12 @@ import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
 import { assertNotAborted } from "./abort.ts";
 import {
 	applyEditsToNormalizedContent,
-	detectLineEnding,
 	type Edit,
 	generateDiffString,
 	generateUnifiedPatch,
+	isUniformCrlf,
 	normalizeToLF,
-	restoreLineEndings,
+	restoreCrlf,
 } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import type { FileReadTracker } from "./file-read-tracker.ts";
@@ -207,12 +207,20 @@ export function createEditToolDefinition(
 					throw describeEditError(path, error);
 				}
 
-				const rawContent = buffer.toString("utf-8");
+				let rawContent: string;
+				try {
+					// ignoreBOM keeps a leading BOM in the text so splitBom can restore it on write.
+					rawContent = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+						buffer,
+					);
+				} catch {
+					throw new Error(`Could not edit ${path}, the file is not valid UTF-8; edit refused`);
+				}
 				assertNotAborted(signal);
 
 				const { bom, text: content } = splitBom(rawContent);
-				const originalEnding = detectLineEnding(content);
-				const normalizedContent = normalizeToLF(content);
+				const crlf = isUniformCrlf(content);
+				const normalizedContent = crlf ? normalizeToLF(content) : content;
 
 				const { baseContent, newContent } = applyEditsToNormalizedContent(
 					normalizedContent,
@@ -221,7 +229,7 @@ export function createEditToolDefinition(
 				);
 				assertNotAborted(signal);
 
-				const finalContent = bom + restoreLineEndings(newContent, originalEnding);
+				const finalContent = bom + (crlf ? restoreCrlf(newContent) : newContent);
 
 				try {
 					await ops.writeFile(absolutePath, finalContent);

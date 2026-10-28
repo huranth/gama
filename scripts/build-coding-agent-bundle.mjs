@@ -91,7 +91,7 @@ function commonBuildOptions() {
 		define: { GAMA_BUNDLED_NODE: "true" },
 		external: ["@silvia-odwyer/photon-node"],
 		format: "esm",
-		legalComments: "none",
+		legalComments: "eof",
 		logLevel: "warning",
 		metafile: true,
 		minifySyntax: true,
@@ -323,6 +323,7 @@ function preparePublicRelease() {
 	delete packageJson.scripts;
 	cpSync(join(codingAgentDir, "CHANGELOG.md"), join(releaseDir, "CHANGELOG.md"));
 	cpSync(join(codingAgentDir, "README.md"), join(releaseDir, "README.md"));
+	cpSync(join(codingAgentDir, "LICENSE"), join(releaseDir, "LICENSE"));
 	writeFileSync(join(releaseDir, "package.json"), `${JSON.stringify(packageJson, null, "\t")}\n`);
 	console.log(`Prepared ${relative(repoRoot, releaseDir)}`);
 }

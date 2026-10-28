@@ -38,7 +38,7 @@ export async function runPrintMode(
 	};
 
 	const registerSignalHandlers = () => {
-		const signals: NodeJS.Signals[] = ["SIGTERM"];
+		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
 		if (process.platform !== "win32") {
 			signals.push("SIGHUP");
 		}
@@ -47,7 +47,7 @@ export async function runPrintMode(
 			const handler = () => {
 				killTrackedDetachedChildren();
 				void disposeRuntime().finally(() => {
-					process.exit(signal === "SIGHUP" ? 129 : 143);
+					process.exit(signal === "SIGHUP" ? 129 : signal === "SIGINT" ? 130 : 143);
 				});
 			};
 			process.on(signal, handler);

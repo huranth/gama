@@ -236,19 +236,33 @@ console.log("Running tests...");
 run("./scripts/run-tests.sh");
 console.log();
 
+// Build the public release once, then check that exact artifact: publishing
+// must ship what the consumer check validated, so nothing rebuilds after it.
+console.log("Building the public release...");
+run("npm run build:public-release");
+console.log();
+
 console.log("Checking the packed coding-agent consumer install...");
 run("npm run check:package-install");
 console.log();
 
-console.log("Building and publishing the public release...");
-run("npm run build:public-release");
-run("node scripts/publish.mjs");
-console.log();
-
+// Commit and tag locally before publishing: a failed commit or tag must not
+// leave a version on npm with no matching commit.
 console.log("Committing and tagging...");
 stageChangedFiles();
 run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
+console.log();
+
+console.log("Publishing the public release...");
+const publish = spawnSync(process.execPath, ["scripts/publish.mjs"], { stdio: "inherit" });
+if (publish.status !== 0) {
+	console.error("\nPublish failed after the release commit and tag were created locally.");
+	console.error(`Recovery: commit and tag v${version} exist locally. Fix the cause, re-run`);
+	console.error("  node scripts/publish.mjs   (safe to repeat), then push the branch and tag.");
+	console.error("Do not re-run release.mjs: it would bump the version again.");
+	process.exit(1);
+}
 console.log();
 
 console.log("Adding [Unreleased] sections for next cycle...");

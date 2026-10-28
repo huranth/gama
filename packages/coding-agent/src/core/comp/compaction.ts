@@ -247,6 +247,7 @@ export function shouldCompact(
 	settings: CompactionSettings,
 ): boolean {
 	if (!settings.enabled) return false;
+	if (contextWindow <= 0) return false;
 	const reserve = Math.min(
 		Math.max(0, settings.reserveTokens),
 		Math.floor(contextWindow * MAX_RESERVE_RATIO),
@@ -663,16 +664,14 @@ export async function generateSummaryWithUsage(
 
 	const lineageMessages = lineage ? convertToLlm(lineage.messages) : undefined;
 	let promptText = "";
-	if (lineageMessages) {
-		promptText = basePrompt;
-	} else {
+	if (!lineageMessages) {
 		const conversationText = serializeConversation(convertToLlm(currentMessages));
 		promptText = `<conversation>\n${conversationText}\n</conversation>\n\n`;
-		if (previousSummary) {
-			promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
-		}
-		promptText += basePrompt;
 	}
+	if (previousSummary) {
+		promptText += `<previous-summary>\n${previousSummary}\n</previous-summary>\n\n`;
+	}
+	promptText += basePrompt;
 
 	const completionOptions = createSummarizationOptions(
 		model,

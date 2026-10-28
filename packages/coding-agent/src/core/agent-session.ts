@@ -349,6 +349,7 @@ export class AgentSession {
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
+	private _isPreparingPrompt = false;
 	private _agentRunAbortRequested = false;
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
@@ -1402,6 +1403,11 @@ export class AgentSession {
 		return this._isAgentRunActive;
 	}
 
+	/** True while prompt() is resolving input, auth and hooks, before the run starts. */
+	get isPreparingPrompt(): boolean {
+		return this._isPreparingPrompt;
+	}
+
 	get isIdle(): boolean {
 		return !this._isAgentRunActive && !this.isCompacting;
 	}
@@ -1701,6 +1707,7 @@ export class AgentSession {
 		this._recordSelection();
 		this._pendingToolNames.clear();
 		this._isAgentRunActive = true;
+		let flushError: unknown;
 		try {
 			await this.agent.prompt(messages);
 			while (!this._agentRunAbortRequested) {
@@ -1717,10 +1724,18 @@ export class AgentSession {
 			if (this._agentRunAbortRequested) this._finishCancelledRetry();
 			this._failedResponse = undefined;
 			this._runSystemPromptOptions = undefined;
-			this._flushPendingBashMessages();
-			this._flushPendingCustomMessages();
+			// A failed flush (disk full) must not skip settling, or the session
+			// stays "streaming" forever. It is rethrown after the try/finally, so an
+			// error from the run itself still takes precedence.
+			try {
+				this._flushPendingBashMessages();
+				this._flushPendingCustomMessages();
+			} catch (error) {
+				flushError = error;
+			}
 			await this._emitAgentSettled();
 		}
+		if (flushError !== undefined) throw flushError;
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
@@ -1877,7 +1892,7 @@ export class AgentSession {
 			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 		}
 
-		if (this.isStreaming) {
+		if (this.isStreaming || this._isPreparingPrompt) {
 			if (!options?.streamingBehavior) {
 				throw new Error(
 					"Agent is already processing. Specify streamingBehavior " +
@@ -1893,71 +1908,80 @@ export class AgentSession {
 			return;
 		}
 
-		this._flushPendingBashMessages();
-		this._flushPendingCustomMessages();
+		// Claim the session before the first await below so a concurrent prompt()
+		// fails the isStreaming check instead of racing this one into agent.prompt().
+		this._isPreparingPrompt = true;
+		let messages: AgentMessage[];
+		try {
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
 
-		if (!this.model) {
-			throw new Error(formatNoModelSelectedMessage());
-		}
+			if (!this.model) {
+				throw new Error(formatNoModelSelectedMessage());
+			}
 
-		const hasConfiguredAuth =
-			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
-			(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
-		if (!hasConfiguredAuth) {
-			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
-		}
+			const hasConfiguredAuth =
+				this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+				(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+			if (!hasConfiguredAuth) {
+				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+			}
 
-		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
-			await this._checkCompaction(lastAssistant, false);
-		}
+			const lastAssistant = this._findLastAssistantMessage();
+			if (lastAssistant) {
+				await this._checkCompaction(lastAssistant, false);
+			}
 
-		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
-		const result = await this._extensionRunner.emitBeforeAgentStart(
-			expandedText,
-			currentImages,
-			this._baseSystemPromptOptions,
-		);
-		const handlerEditedTools =
-			result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
-			result.systemPromptOptions.selectedTools.some(
-				(name, index) => name !== selectedToolsBefore[index],
+			const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
+			const result = await this._extensionRunner.emitBeforeAgentStart(
+				expandedText,
+				currentImages,
+				this._baseSystemPromptOptions,
 			);
-		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
+			const handlerEditedTools =
+				result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
+				result.systemPromptOptions.selectedTools.some(
+					(name, index) => name !== selectedToolsBefore[index],
+				);
+			if (!handlerEditedTools)
+				result.systemPromptOptions.selectedTools = this.getActiveToolNames();
 
-		const normalized = await this._normalizePromptImages(currentImages);
-		const userText =
-			normalized.hints.length > 0
-				? `${expandedText}\n\n${normalized.hints.join("\n")}`
-				: expandedText;
+			const normalized = await this._normalizePromptImages(currentImages);
+			const userText =
+				normalized.hints.length > 0
+					? `${expandedText}\n\n${normalized.hints.join("\n")}`
+					: expandedText;
 
-		const messages: AgentMessage[] = [];
-		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
-		userContent.push(...normalized.images);
-		messages.push({
-			role: "user",
-			content: userContent,
-			timestamp: Date.now(),
-		});
-
-		for (const msg of this._pendingNextTurnMessages) {
-			messages.push(msg);
-		}
-		this._pendingNextTurnMessages = [];
-
-		for (const msg of result.messages) {
+			messages = [];
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
+			userContent.push(...normalized.images);
 			messages.push({
-				role: "custom",
-				customType: msg.customType,
-				content: msg.content ?? [],
-				display: msg.display,
-				details: msg.details,
+				role: "user",
+				content: userContent,
 				timestamp: Date.now(),
 			});
+
+			for (const msg of this._pendingNextTurnMessages) {
+				messages.push(msg);
+			}
+			this._pendingNextTurnMessages = [];
+
+			for (const msg of result.messages) {
+				messages.push({
+					role: "custom",
+					customType: msg.customType,
+					content: msg.content ?? [],
+					display: msg.display,
+					details: msg.details,
+					timestamp: Date.now(),
+				});
+			}
+			const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
+			this._runSystemPromptOptions = result.systemPromptOptions;
+			if (updateMessage) messages.unshift(updateMessage);
+		} finally {
+			this._isPreparingPrompt = false;
 		}
-		const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
-		this._runSystemPromptOptions = result.systemPromptOptions;
-		if (updateMessage) messages.unshift(updateMessage);
 
 		preflightResult?.("started");
 		await this._runAgentPrompt(messages);
@@ -2144,10 +2168,10 @@ export class AgentSession {
 	private _flushPendingCustomMessages(): void {
 		if (this._pendingCustomMessages.length === 0) return;
 
-		const pending = this._pendingCustomMessages;
-		this._pendingCustomMessages = [];
-		for (const appMessage of pending) {
+		// Drain per item: a failed append must not requeue or drop the rest.
+		for (let appMessage = this._pendingCustomMessages.shift(); appMessage; ) {
 			this._appendCustomMessage(appMessage);
+			appMessage = this._pendingCustomMessages.shift();
 		}
 	}
 
@@ -2552,6 +2576,11 @@ export class AgentSession {
 
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		await this.abort();
+		if (this._isPreparingPrompt) {
+			throw new Error(
+				"Cannot compact while a prompt is being prepared. Retry when it has started or failed.",
+			);
+		}
 		if (this._compactionAbortController) throw new Error("A compaction is already running");
 		const controller = new AbortController();
 		this._compactionAbortController = controller;
@@ -3471,11 +3500,16 @@ export class AgentSession {
 	private _flushPendingBashMessages(): void {
 		if (this._pendingBashMessages.length === 0) return;
 
-		for (const bashMessage of this._pendingBashMessages) {
-			this.sessionManager.appendMessage(bashMessage);
+		// Drain per item: an append that throws has already entered the session,
+		// so it must leave the queue or a retry duplicates it.
+		try {
+			for (let bashMessage = this._pendingBashMessages.shift(); bashMessage; ) {
+				this.sessionManager.appendMessage(bashMessage);
+				bashMessage = this._pendingBashMessages.shift();
+			}
+		} finally {
+			this._refreshFinalizedContext();
 		}
-		this._pendingBashMessages = [];
-		this._refreshFinalizedContext();
 	}
 
 	setSessionName(name: string): void {

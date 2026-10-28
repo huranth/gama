@@ -1,7 +1,7 @@
 import { visibleWidth } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { beforeAll, describe, expect, it } from "vitest";
-import { truncateTail } from "../src/core/tools/truncate.ts";
+import { DEFAULT_MAX_BYTES, truncateTail } from "../src/core/tools/truncate.ts";
 import { BashExecutionComponent } from "../src/modes/tui/parts/bash-execution.ts";
 import { initTheme } from "../src/modes/tui/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -123,6 +123,20 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 			}
 		},
 	);
+
+	it("keeps only a bounded tail of streamed output", () => {
+		const { stub } = createTuiStub(80);
+		const component = new BashExecutionComponent("yes", stub);
+		const line = `${"y".repeat(99)}\n`;
+		for (let i = 0; i < 5000; i++) component.appendOutput(line);
+		component.appendOutput("last-line\n");
+
+		const output = component.getOutput();
+		expect(output.length).toBeLessThanOrEqual(DEFAULT_MAX_BYTES * 2);
+		expect(output.endsWith("last-line\n")).toBe(true);
+		component.setComplete(0, false);
+		expect(stripAnsi(component.render(80).join("\n"))).toContain("last-line");
+	});
 
 	it(
 		"expands and collapses hidden output via setExpanded " + "without losing the width bound",

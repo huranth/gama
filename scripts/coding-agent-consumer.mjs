@@ -102,12 +102,11 @@ assert.equal(typeof SessionManager.inMemory, "function");
 assert.equal(typeof ModelRuntime.create, "function");
 `);
 		run(runtime, [entry], { cwd: directory, env, timeout: 30_000 });
-		for (const cli of new Set([manifest.bin.gama, "dist/cli.js"])) {
-			const args = [join(packageDir, cli), "--version"];
-			const output = run(runtime, args, { cwd: directory, env, timeout: 30_000 });
-			if (output.trim() !== manifest.version) {
-				throw new Error(`Unexpected version from ${cli}: ${output}`);
-			}
+		// The public release ships only the bundled bin, not the unbundled dist/cli.js.
+		const cli = manifest.bin.gama;
+		const output = run(runtime, [join(packageDir, cli), "--version"], { cwd: directory, env, timeout: 30_000 });
+		if (output.trim() !== manifest.version) {
+			throw new Error(`Unexpected version from ${cli}: ${output}`);
 		}
 	} finally {
 		rmSync(entry, { force: true });
@@ -120,7 +119,14 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
 	if (process.argv.length !== 2) throw new Error("Usage: node scripts/coding-agent-consumer.mjs");
 	const root = mkdtempSync(join(tmpdir(), "gama-package-consumer-"));
 	try {
-		const tarballs = packReleasePackages(getPublicWorkspacePackages(), join(root, "tarballs"));
+		// The dev package depends on private workspace packages; only the bundled
+		// public release is what gets published, so pack that when it was built.
+		const packages = getPublicWorkspacePackages().map((pkg) => {
+			const release = join(pkg.directory, "dist", "public-release");
+			if (pkg.name !== codingAgentName || !existsSync(join(release, "package.json"))) return pkg;
+			return { ...pkg, directory: release };
+		});
+		const tarballs = packReleasePackages(packages, join(root, "tarballs"));
 		const directory = join(root, "consumer");
 		installCodingAgentConsumer(directory, tarballs);
 		smokeTestCodingAgentConsumer(directory);

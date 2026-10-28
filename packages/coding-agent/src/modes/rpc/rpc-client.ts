@@ -17,6 +17,22 @@ type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : n
 
 type RpcCommandBody = DistributiveOmit<RpcCommand, "id">;
 
+const RESPONSE_TIMEOUT_MS = 30_000;
+
+// These commands run work that can legitimately outlast the response timeout
+// (a shell command, summarisation, session replacement, a prompt's preflight).
+// They wait for the response, or for the process to exit, without a timer.
+const LONG_RUNNING_COMMANDS: ReadonlySet<string> = new Set([
+	"prompt",
+	"bash",
+	"compact",
+	"fork",
+	"clone",
+	"new_session",
+	"switch_session",
+	"export_html",
+]);
+
 export interface RpcClientOptions {
 	cliPath?: string;
 	cwd?: string;
@@ -431,12 +447,16 @@ export class RpcClient {
 		const fullCommand = { ...command, id } as RpcCommand;
 
 		return new Promise((resolve, reject) => {
-			const timeout = setTimeout(() => {
-				this.pendingRequests.delete(id);
-				reject(
-					new Error(`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`),
-				);
-			}, 30000);
+			const timeout = LONG_RUNNING_COMMANDS.has(command.type)
+				? undefined
+				: setTimeout(() => {
+						this.pendingRequests.delete(id);
+						reject(
+							new Error(
+								`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`,
+							),
+						);
+					}, RESPONSE_TIMEOUT_MS);
 
 			this.pendingRequests.set(id, {
 				resolve: (response) => {

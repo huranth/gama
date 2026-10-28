@@ -122,7 +122,7 @@ for platform in "${PLATFORMS[@]}"; do
         --target="$bun_target" \
         ./dist/bun/cli.js \
         ./src/utils/image-resize-worker.ts \
-        ./src/extensions/codemode/worker.ts \
+        ./src/ext/codemode/worker.ts \
         --outfile "$OUTPUT_DIR/$platform/$output_name"
 done
 
@@ -134,11 +134,8 @@ for platform in "${PLATFORMS[@]}"; do
     cp CHANGELOG.md "$OUTPUT_DIR/$platform/"
     cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm "$OUTPUT_DIR/$platform/"
     mkdir -p "$OUTPUT_DIR/$platform/theme"
-    cp dist/modes/interactive/theme/*.json "$OUTPUT_DIR/$platform/theme/"
-    mkdir -p "$OUTPUT_DIR/$platform/assets"
-    cp dist/modes/interactive/assets/* "$OUTPUT_DIR/$platform/assets/"
-    cp -r dist/core/export-html "$OUTPUT_DIR/$platform/"
-    cp -r docs "$OUTPUT_DIR/$platform/"
+    cp dist/modes/tui/theme/*.json "$OUTPUT_DIR/$platform/theme/"
+    cp -r dist/core/html "$OUTPUT_DIR/$platform/"
     cp -r examples "$OUTPUT_DIR/$platform/"
 
     native_platform="${platform/windows-/win32-}"

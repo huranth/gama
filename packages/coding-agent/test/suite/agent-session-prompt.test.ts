@@ -574,6 +574,41 @@ describe("AgentSession prompt characterization", () => {
 		}
 	});
 
+	it("rejects manual compaction while a prompt is still being prepared", async () => {
+		let markHookEntered = () => {};
+		const hookEntered = new Promise<void>((resolve) => {
+			markHookEntered = resolve;
+		});
+		let releaseHook = () => {};
+		const hookReleased = new Promise<void>((resolve) => {
+			releaseHook = resolve;
+		});
+		const harness = await createHarness({
+			extensionFactories: [
+				(gama) => {
+					gama.on("before_agent_start", async () => {
+						markHookEntered();
+						await hookReleased;
+					});
+				},
+			],
+		});
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("done")]);
+
+		const promptPromise = harness.session.prompt("hello");
+		await hookEntered;
+
+		try {
+			await expect(harness.session.compact()).rejects.toThrow(
+				"Cannot compact while a prompt is being prepared. Retry when it has started or failed.",
+			);
+		} finally {
+			releaseHook();
+			await promptPromise;
+		}
+	});
+
 	it("throws when prompting without a model", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

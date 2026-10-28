@@ -33,6 +33,9 @@ export type {
 	RpcSessionState,
 } from "./rpc-types.ts";
 
+/** Longest wait for in-flight work after stdin EOF before shutting down anyway. */
+const EOF_DRAIN_TIMEOUT_MS = 30_000;
+
 export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
@@ -66,6 +69,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let shutdownRequested = false;
 	let shuttingDown = false;
 	const signalCleanupHandlers: Array<() => void> = [];
+	// Commands and prompt runs still executing. stdin EOF waits for these before shutdown.
+	const inFlight = new Set<Promise<void>>();
+	const track = (work: Promise<unknown>): void => {
+		const settled = work
+			.then(
+				() => {},
+				() => {},
+			)
+			.finally(() => inFlight.delete(settled));
+		inFlight.add(settled);
+	};
 
 	function createDialogPromise<T>(
 		opts: ExtensionUIDialogOptions | undefined,
@@ -331,7 +345,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	});
 
 	const registerSignalHandlers = (): void => {
-		const signals: NodeJS.Signals[] = ["SIGTERM"];
+		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
 		if (process.platform !== "win32") {
 			signals.push("SIGHUP");
 		}
@@ -339,7 +353,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		for (const signal of signals) {
 			const handler = () => {
 				killTrackedDetachedChildren();
-				void shutdown(signal === "SIGHUP" ? 129 : 143, signal);
+				void shutdown(signal === "SIGHUP" ? 129 : signal === "SIGINT" ? 130 : 143, signal);
 			};
 			process.on(signal, handler);
 			signalCleanupHandlers.push(() => process.off(signal, handler));
@@ -355,21 +369,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		switch (command.type) {
 			case "prompt": {
 				let preflightSucceeded = false;
-				void session
-					.prompt(command.message, {
-						images: command.images,
-						streamingBehavior: command.streamingBehavior,
-						source: "rpc",
-						preflightResult: (disposition) => {
-							preflightSucceeded = true;
-							output(success(id, "prompt", { disposition }));
-						},
-					})
-					.catch((e) => {
-						if (!preflightSucceeded) {
-							output(error(id, "prompt", e.message));
-						}
-					});
+				track(
+					session
+						.prompt(command.message, {
+							images: command.images,
+							streamingBehavior: command.streamingBehavior,
+							source: "rpc",
+							preflightResult: (disposition) => {
+								preflightSucceeded = true;
+								output(success(id, "prompt", { disposition }));
+							},
+						})
+						.catch((e) => {
+							if (!preflightSucceeded) {
+								output(error(id, "prompt", e.message));
+							}
+						}),
+				);
 				return undefined;
 			}
 
@@ -401,9 +417,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					? { parentSession: command.parentSession }
 					: undefined;
 				const result = await runtimeHost.newSession(options);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "new_session", result);
 			}
 
@@ -542,17 +555,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 			case "switch_session": {
 				const result = await runtimeHost.switchSession(command.sessionPath);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "switch_session", result);
 			}
 
 			case "fork": {
 				const result = await runtimeHost.fork(command.entryId);
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "fork", {
 					text: result.selectedText ?? "",
 					cancelled: result.cancelled,
@@ -565,9 +572,6 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 					return error(id, "clone", "Cannot clone session: no current entry selected");
 				}
 				const result = await runtimeHost.fork(leafId, { position: "at" });
-				if (!result.cancelled) {
-					await rebindSession();
-				}
 				return success(id, "clone", { cancelled: result.cancelled });
 			}
 
@@ -750,14 +754,35 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	};
 
 	const onInputEnd = () => {
-		void shutdown();
+		// Stdin is closed, so no extension UI response can arrive. Cancel the
+		// pending dialogs so work blocked on them can finish.
+		for (const [id, pending] of [...pendingExtensionRequests]) {
+			pendingExtensionRequests.delete(id);
+			pending.resolve({ type: "extension_ui_response", id, cancelled: true });
+		}
+		void (async () => {
+			const drained = (async () => {
+				while (inFlight.size > 0) {
+					await Promise.all(inFlight);
+				}
+			})();
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const timedOut = new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, EOF_DRAIN_TIMEOUT_MS);
+			});
+			await Promise.race([drained, timedOut]);
+			clearTimeout(timer);
+			await shutdown();
+		})();
 	};
-	process.stdin.on("end", onInputEnd);
 
 	detachInput = (() => {
+		// The line reader must attach first so its end handler dispatches an
+		// unterminated final line before onInputEnd starts waiting.
 		const detachJsonl = attachJsonlLineReader(process.stdin, (line) => {
-			void handleInputLine(line);
+			track(handleInputLine(line));
 		});
+		process.stdin.on("end", onInputEnd);
 		return () => {
 			detachJsonl();
 			process.stdin.off("end", onInputEnd);

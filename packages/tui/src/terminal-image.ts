@@ -3,6 +3,7 @@ import { homedir } from "node:os";
 import { isAbsolute, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { TerminalColorMode } from "./colors.ts";
+import { stripControlChars } from "./utils.ts";
 
 export type ImageProtocol = "kitty" | "iterm2" | null;
 
@@ -701,7 +702,7 @@ export function renderImage(
 }
 
 export function hyperlink(text: string, url: string): string {
-	return `\x1b]8;;${url}\x1b\\${text}\x1b]8;;\x1b\\`;
+	return `\x1b]8;;${stripControlChars(url)}\x1b\\${text}\x1b]8;;\x1b\\`;
 }
 
 function shortenImagePath(filename: string): string {

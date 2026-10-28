@@ -54,6 +54,22 @@ describe("connect provider dialog", () => {
 		expect(output).toContain("Continue");
 	});
 
+	it("masks the API key but not the base URL", () => {
+		const dialog = new ConnectProviderDialogComponent({
+			onContinue: () => {},
+			onCancel: () => {},
+			initialBaseUrl: "https://tokenharbor.ai/v1",
+			initialApiKey: "sk-prefilled",
+		});
+		dialog.handleInput("\r");
+		dialog.handleInput("-typed");
+		const output = render(dialog);
+		expect(output).toContain("https://tokenharbor.ai/v1");
+		expect(output).not.toContain("sk-prefilled");
+		expect(output).not.toContain("typed");
+		expect(output).toContain("•".repeat("sk-prefilled-typed".length));
+	});
+
 	it("can be reused to edit an existing provider", () => {
 		const dialog = new ConnectProviderDialogComponent({
 			onContinue: () => {},

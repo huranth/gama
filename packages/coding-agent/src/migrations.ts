@@ -11,6 +11,7 @@ import {
 import { basename, dirname, join } from "path";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
+import { writeFileAtomicSync } from "./utils/atomic-write.ts";
 import { stripBom } from "./utils/text.ts";
 
 const EXTENSIONS_DOC_URL =
@@ -219,6 +220,7 @@ export function migrateAuthToAuthJson(): string[] {
 
 	const migrated: Record<string, unknown> = {};
 	const providers: string[] = [];
+	let settingsWithoutKeys: Record<string, unknown> | undefined;
 
 	if (existsSync(settingsPath)) {
 		try {
@@ -232,14 +234,21 @@ export function migrateAuthToAuthJson(): string[] {
 					}
 				}
 				delete settings.apiKeys;
-				writeFileSync(settingsPath, JSON.stringify(settings, null, 2));
+				settingsWithoutKeys = settings;
 			}
 		} catch {}
 	}
 
 	if (Object.keys(migrated).length > 0) {
 		mkdirSync(dirname(authPath), { recursive: true });
-		writeFileSync(authPath, JSON.stringify(migrated, null, 2), { mode: 0o600 });
+		writeFileAtomicSync(authPath, JSON.stringify(migrated, null, 2), 0o600);
+	}
+
+	// Strip keys only after auth.json holds them.
+	if (settingsWithoutKeys) {
+		try {
+			writeFileSync(settingsPath, JSON.stringify(settingsWithoutKeys, null, 2));
+		} catch {}
 	}
 
 	return providers;

@@ -317,6 +317,8 @@ function hasAssistantToolCalls(message: AssistantMessage): boolean {
 	return message.content.some((c) => c.type === "toolCall");
 }
 
+// Ring the terminal bell when a run at least this long finishes.
+const TURN_NOTIFY_MIN_MS = 20_000;
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
 
 function isDeadTerminalError(error: unknown): boolean {
@@ -446,6 +448,8 @@ export class InteractiveMode {
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
 	private lastSigintTime = 0;
+	private agentRunStartedAt: number | undefined;
+	private agentRunAborted = false;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined;
 	private availableRelease: LatestGamaRelease | undefined;
@@ -3019,96 +3023,135 @@ export class InteractiveMode {
 		this.showStatus("Startup is still in progress");
 	}
 
+	/**
+	 * Run builtin `/command` and `!cmd` input. Returns true when the text was
+	 * handled and must not be sent to the model. Shared by submit and follow-up.
+	 */
+	private async routeBuiltinInput(text: string): Promise<boolean> {
+		if (text === "/model" || text.startsWith("/model ")) {
+			const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
+			this.editor.setText("");
+			await this.handleModelCommand(searchTerm);
+			return true;
+		}
+		if (text === "/history" || text.startsWith("/history ")) {
+			this.editor.setText("");
+			this.showSessionSelector();
+			return true;
+		}
+		if (text === "/provider" || text.startsWith("/provider ")) {
+			const argument = text.startsWith("/provider ") ? text.slice(10).trim() : undefined;
+			this.editor.setText("");
+			await this.handleProviderCommand(argument || undefined);
+			return true;
+		}
+
+		if (text === "/context" || text.startsWith("/context ")) {
+			const argument = text.startsWith("/context ") ? text.slice(9).trim() : undefined;
+			this.editor.setText("");
+			await this.handleContextCommand(argument || undefined);
+			return true;
+		}
+
+		if (text === "/cache") {
+			this.editor.setText("");
+			this.showCachePanel();
+			return true;
+		}
+
+		if (text === "/changelog") {
+			this.editor.setText("");
+			await this.handleChangelogCommand();
+			return true;
+		}
+
+		if (text === "/update") {
+			this.editor.setText("");
+			this.handleUpdateCommand();
+			return true;
+		}
+
+		if (text === "/summaries" || text.startsWith("/summaries ")) {
+			const argument = text.startsWith("/summaries ") ? text.slice(11).trim().toLowerCase() : "";
+			this.editor.setText("");
+			if (argument !== "" && argument !== "on" && argument !== "off") {
+				this.showStatus("Usage summaries");
+				return true;
+			}
+			const enabled =
+				argument === "" ? !this.settingsManager.getPromptSummaries() : argument === "on";
+			this.settingsManager.setPromptSummaries(enabled);
+			this.showStatus(`Summaries ${enabled ? "on" : "off"}`);
+			return true;
+		}
+
+		if (text === "/bell" || text.startsWith("/bell ")) {
+			const argument = text.slice(5).trim().toLowerCase();
+			this.editor.setText("");
+			if (argument !== "" && argument !== "on" && argument !== "off") {
+				this.showStatus("Usage: /bell [on|off]");
+				return true;
+			}
+			const enabled =
+				argument === "" ? !this.settingsManager.getNotifyOnTurnEnd() : argument === "on";
+			this.settingsManager.setNotifyOnTurnEnd(enabled);
+			this.showStatus(`Turn bell ${enabled ? "on" : "off"}`);
+			return true;
+		}
+
+		if (text === "/compact" || text.startsWith("/compact ")) {
+			const instructions = text.slice(8).trim();
+			this.editor.setText("");
+			if (this.session.isStreaming || this.session.isPreparingPrompt) {
+				this.showWarning("Response in progress");
+				return true;
+			}
+			if (this.session.isCompacting) {
+				this.showWarning("Compaction in progress");
+				return true;
+			}
+			try {
+				await this.session.compact(instructions || undefined);
+			} catch {
+				// compaction_end already rendered the failure or cancellation
+			}
+			return true;
+		}
+
+		if (text === "/reason" || text.startsWith("/reason ")) {
+			const argument = text.startsWith("/reason ") ? text.slice(8).trim() : undefined;
+			this.editor.setText("");
+			this.handleReasonCommand(argument || undefined);
+			return true;
+		}
+
+		if (text.startsWith("!")) {
+			const isExcluded = text.startsWith("!!");
+			const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
+			if (command) {
+				if (this.session.isBashRunning) {
+					this.showWarning("A bash command is already running. Press Esc to cancel it first");
+					this.editor.setText(text);
+					return true;
+				}
+				this.editor.setText("");
+				this.editor.addToHistory?.(text);
+				await this.handleBashCommand(command, isExcluded);
+				this.isBashMode = false;
+				this.updateEditorBorderColor();
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private setupEditorSubmitHandler(): void {
 		this.defaultEditor.onSubmit = async (text: string) => {
 			text = text.trim();
 			if (!text) return;
 			this.dismissWelcomeLogo();
 
-			if (text === "/model" || text.startsWith("/model ")) {
-				const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-				this.editor.setText("");
-				await this.handleModelCommand(searchTerm);
-				return;
-			}
-			if (text === "/history" || text.startsWith("/history ")) {
-				this.editor.setText("");
-				this.showSessionSelector();
-				return;
-			}
-			if (text === "/provider" || text.startsWith("/provider ")) {
-				const argument = text.startsWith("/provider ") ? text.slice(10).trim() : undefined;
-				this.editor.setText("");
-				await this.handleProviderCommand(argument || undefined);
-				return;
-			}
-
-			if (text === "/context" || text.startsWith("/context ")) {
-				const argument = text.startsWith("/context ") ? text.slice(9).trim() : undefined;
-				this.editor.setText("");
-				await this.handleContextCommand(argument || undefined);
-				return;
-			}
-
-			if (text === "/cache") {
-				this.editor.setText("");
-				this.showCachePanel();
-				return;
-			}
-
-			if (text === "/changelog") {
-				this.editor.setText("");
-				await this.handleChangelogCommand();
-				return;
-			}
-
-			if (text === "/update") {
-				this.editor.setText("");
-				this.handleUpdateCommand();
-				return;
-			}
-
-			if (text === "/summaries" || text.startsWith("/summaries ")) {
-				const argument = text.startsWith("/summaries ")
-					? text.slice(11).trim().toLowerCase()
-					: "";
-				this.editor.setText("");
-				if (argument !== "" && argument !== "on" && argument !== "off") {
-					this.showStatus("Usage summaries");
-					return;
-				}
-				const enabled =
-					argument === "" ? !this.settingsManager.getPromptSummaries() : argument === "on";
-				this.settingsManager.setPromptSummaries(enabled);
-				this.showStatus(`Summaries ${enabled ? "on" : "off"}`);
-				return;
-			}
-
-			if (text === "/reason" || text.startsWith("/reason ")) {
-				const argument = text.startsWith("/reason ") ? text.slice(8).trim() : undefined;
-				this.editor.setText("");
-				this.handleReasonCommand(argument || undefined);
-				return;
-			}
-
-			if (text.startsWith("!")) {
-				const isExcluded = text.startsWith("!!");
-				const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
-				if (command) {
-					if (this.session.isBashRunning) {
-						this.showWarning(
-							"A bash command is already running. Press Esc to cancel it first",
-						);
-						this.editor.setText(text);
-						return;
-					}
-					this.editor.addToHistory?.(text);
-					await this.handleBashCommand(command, isExcluded);
-					this.isBashMode = false;
-					this.updateEditorBorderColor();
-					return;
-				}
-			}
+			if (await this.routeBuiltinInput(text)) return;
 
 			if (this.session.isCompacting) {
 				if (this.isExtensionCommand(text)) {
@@ -3216,7 +3259,7 @@ export class InteractiveMode {
 				break;
 
 			case "agent_end":
-				this.handleAgentEnd();
+				this.handleAgentEnd(event);
 				break;
 
 			case "agent_settled":
@@ -3254,6 +3297,8 @@ export class InteractiveMode {
 	}
 
 	private handleAgentStart(): void {
+		// agent.continue() (retries, follow-ups) emits agent_start too; time the whole run.
+		this.agentRunStartedAt ??= Date.now();
 		this.pendingToolCalls.clear();
 		if (this.retryEscapeHandler) {
 			this.defaultEditor.onEscape = this.retryEscapeHandler;
@@ -3493,7 +3538,9 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private handleAgentEnd(): void {
+	private handleAgentEnd(event: AgentEventOf<"agent_end">): void {
+		const last = event.messages.at(-1);
+		this.agentRunAborted = last?.role === "assistant" && last.stopReason === "aborted";
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}
@@ -3520,6 +3567,16 @@ export class InteractiveMode {
 	}
 
 	private async handleAgentSettled(): Promise<void> {
+		if (
+			this.agentRunStartedAt !== undefined &&
+			!this.agentRunAborted &&
+			Date.now() - this.agentRunStartedAt >= TURN_NOTIFY_MIN_MS &&
+			this.settingsManager.getNotifyOnTurnEnd()
+		) {
+			this.ui.terminal.write("\x07");
+		}
+		this.agentRunStartedAt = undefined;
+		this.agentRunAborted = false;
 		await this.checkShutdownRequested();
 	}
 
@@ -4328,6 +4385,8 @@ export class InteractiveMode {
 		const text = (this.editor.getExpandedText?.() ?? this.editor.getText()).trim();
 		if (!text) return;
 
+		if (await this.routeBuiltinInput(text)) return;
+
 		if (this.session.isCompacting) {
 			if (this.isExtensionCommand(text)) {
 				this.editor.addToHistory?.(text);
@@ -4770,6 +4829,9 @@ export class InteractiveMode {
 	// Docked prompts
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
+		for (const component of this.pendingBashComponents) {
+			this.pendingMessagesContainer.addChild(component);
+		}
 		const { steering: steeringMessages, followUp: followUpMessages } =
 			this.getAllQueuedMessages();
 		const queuedMessages = [...steeringMessages, ...followUpMessages];

@@ -4,7 +4,10 @@ import { InteractiveMode } from "../src/modes/tui/interactive-mode.ts";
 import { UserMessageComponent } from "../src/modes/tui/parts/user-message.ts";
 import { initTheme } from "../src/modes/tui/theme/theme.ts";
 
-function fakeMode(queued: { steering: string[]; followUp: string[] }) {
+function fakeMode(
+	queued: { steering: string[]; followUp: string[] },
+	pendingBashComponents: unknown[] = [],
+) {
 	const children: unknown[] = [];
 	return {
 		fakeThis: {
@@ -17,6 +20,7 @@ function fakeMode(queued: { steering: string[]; followUp: string[] }) {
 					children.push(component);
 				},
 			},
+			pendingBashComponents,
 			getAllQueuedMessages: () => queued,
 			getMarkdownThemeWithSettings: () => ({}) as never,
 			outputPad: 1,
@@ -60,5 +64,22 @@ describe("queued prompt dock", () => {
 		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
 
 		expect(children.length).toBe(0);
+	});
+
+	test("keeps a streaming !cmd block attached when the dock is rebuilt", () => {
+		initTheme("dark");
+		const bash = { render: () => [] };
+		const empty = fakeMode({ steering: [], followUp: [] }, [bash]);
+
+		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(empty.fakeThis);
+
+		expect(empty.children).toEqual([bash]);
+
+		const queued = fakeMode({ steering: ["next"], followUp: [] }, [bash]);
+
+		(InteractiveMode as any).prototype.updatePendingMessagesDisplay.call(queued.fakeThis);
+
+		expect(queued.children[0]).toBe(bash);
+		expect(queued.children.some((c) => c instanceof UserMessageComponent)).toBe(true);
 	});
 });

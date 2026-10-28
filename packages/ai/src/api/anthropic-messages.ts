@@ -172,6 +172,9 @@ const ANTHROPIC_MESSAGE_EVENTS = new Set<string>([
 	"content_block_stop",
 ]);
 
+// Default for aborting a response body that goes silent. options.timeoutMs overrides it; 0 disables it.
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120_000;
+
 const LAYERED_BREAKPOINT_LOOKBACK = 12;
 
 const CACHEABLE_BLOCK_TYPES = new Set<string>([
@@ -1085,7 +1088,11 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			);
 			stream.push({ type: "start", partial: output });
 			const blocks = output.content as StreamingBlock[];
-			for await (const event of iterateAnthropicEvents(response, options?.signal)) {
+			for await (const event of iterateAnthropicEvents(
+				response,
+				options?.signal,
+				options?.timeoutMs,
+			)) {
 				await options?.onProviderStreamEvent?.(event, model);
 				if (event.type === "message_start") {
 					output.responseId = event.message.id;
@@ -1410,6 +1417,7 @@ export const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOpti
 async function* iterateAnthropicEvents(
 	response: Response,
 	signal?: AbortSignal,
+	idleTimeoutMs?: number,
 ): AsyncGenerator<RawMessageStreamEvent> {
 	if (!response.body) {
 		throw new Error("Attempted to iterate over an Anthropic response with no body");
@@ -1417,7 +1425,7 @@ async function* iterateAnthropicEvents(
 
 	let sawMessageStart = false;
 	let sawMessageEnd = false;
-	for await (const sse of iterateSseMessages(response.body, signal)) {
+	for await (const sse of iterateSseMessages(response.body, signal, idleTimeoutMs)) {
 		if (sse.event === "error") {
 			throw new Error(sse.data);
 		}
@@ -1449,9 +1457,27 @@ async function* iterateAnthropicEvents(
 	}
 }
 
+function readWithIdleTimeout(
+	reader: ReadableStreamDefaultReader<Uint8Array>,
+	idleTimeoutMs: number = DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+): ReturnType<typeof reader.read> {
+	if (idleTimeoutMs <= 0) return reader.read();
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const idle = new Promise<never>((_, reject) => {
+		timer = setTimeout(
+			() => reject(new Error(`Anthropic stream idle timeout: no data for ${idleTimeoutMs}ms`)),
+			idleTimeoutMs,
+		);
+	});
+
+	return Promise.race([reader.read(), idle]).finally(() => clearTimeout(timer));
+}
+
 async function* iterateSseMessages(
 	body: ReadableStream<Uint8Array>,
 	signal?: AbortSignal,
+	idleTimeoutMs?: number,
 ): AsyncGenerator<ServerSentEvent> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
@@ -1464,7 +1490,7 @@ async function* iterateSseMessages(
 				throw new Error("Request was aborted");
 			}
 
-			const { value, done } = await reader.read();
+			const { value, done } = await readWithIdleTimeout(reader, idleTimeoutMs);
 			if (done) {
 				break;
 			}

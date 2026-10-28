@@ -1,8 +1,9 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join } from "node:path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME } from "../config.ts";
+import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 
@@ -148,7 +149,7 @@ function writeTrustFile(path: string, data: TrustFile): void {
 	}
 
 	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(sorted, null, 2)}\n`, "utf-8");
+	writeFileAtomicSync(path, `${JSON.stringify(sorted, null, 2)}\n`);
 }
 
 function acquireTrustLockSync(path: string): () => void {

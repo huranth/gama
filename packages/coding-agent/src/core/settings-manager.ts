@@ -137,6 +137,7 @@ export interface Settings {
 	retry?: RetrySettings;
 	hideThinkingBlock?: boolean;
 	promptSummaries?: boolean;
+	notifyOnTurnEnd?: boolean;
 	externalEditor?: string;
 	shellPath?: string;
 	quietStartup?: QuietStartup;
@@ -1158,6 +1159,16 @@ export class SettingsManager {
 	setPromptSummaries(enabled: boolean): void {
 		this.globalSettings.promptSummaries = enabled;
 		this.markModified("promptSummaries");
+		this.save();
+	}
+
+	getNotifyOnTurnEnd(): boolean {
+		return this.settings.notifyOnTurnEnd ?? true;
+	}
+
+	setNotifyOnTurnEnd(enabled: boolean): void {
+		this.globalSettings.notifyOnTurnEnd = enabled;
+		this.markModified("notifyOnTurnEnd");
 		this.save();
 	}
 

@@ -203,7 +203,13 @@ export function createFindToolDefinition(
 							return;
 						}
 
-						const args: string[] = ["--glob", "--color=never", "--hidden"];
+						const args: string[] = [
+							"--glob",
+							"--color=never",
+							"--hidden",
+							"--exclude",
+							".git",
+						];
 
 						let insideGitRepo = false;
 						for (let current = searchPath; ; ) {

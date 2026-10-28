@@ -52,7 +52,24 @@ export interface Args {
 	messages: string[];
 	fileArgs: string[];
 	unknownFlags: Map<string, boolean | string>;
+	/**
+	 * Values an unknown `--flag value` consumed. The flag type is unknown until
+	 * extensions load, so a boolean flag can hand its value back to messages.
+	 */
+	unknownFlagValueArgs: Array<{ name: string; value: string; messageIndex: number }>;
 	diagnostics: Array<{ type: "warning" | "error"; message: string }>;
+}
+
+/**
+ * Boolean extension flags take no value, so `--flag prompt` must not swallow
+ * the prompt. Put such values back into messages where they were written.
+ */
+export function restoreBooleanFlagValues(result: Args, booleanFlags: ReadonlySet<string>): void {
+	for (const { name, value, messageIndex } of result.unknownFlagValueArgs.toReversed()) {
+		if (!booleanFlags.has(name)) continue;
+		result.messages.splice(messageIndex, 0, value);
+		result.unknownFlags.set(name, true);
+	}
 }
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
@@ -252,6 +269,7 @@ export function parseArgs(args: string[]): Args {
 		messages: [],
 		fileArgs: [],
 		unknownFlags: new Map(),
+		unknownFlagValueArgs: [],
 		diagnostics: [],
 	};
 
@@ -432,6 +450,11 @@ export function parseArgs(args: string[]): Args {
 				const next = args[i + 1];
 				if (next !== undefined && !next.startsWith("-") && !next.startsWith("@")) {
 					result.unknownFlags.set(flagName, next);
+					result.unknownFlagValueArgs.push({
+						name: flagName,
+						value: next,
+						messageIndex: result.messages.length,
+					});
 					i++;
 				} else {
 					result.unknownFlags.set(flagName, true);

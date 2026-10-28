@@ -1793,6 +1793,25 @@ bar`,
 			assert.strictEqual(urlCount, 1, "URL should appear exactly once");
 		});
 
+		it("strips terminal control characters from text and link hrefs", () => {
+			const osc52 = "\x1b]52;c;QUJD\x07";
+			for (const hyperlinks of [true, false]) {
+				setCapabilities({ images: null, trueColor: false, hyperlinks });
+				const markdown = new Markdown(
+					`before ${osc52} after [x](<http://a${osc52}>) \`code${osc52}\`\n\n\`\`\`\nblock${osc52}\n\`\`\``,
+					0,
+					0,
+					defaultMarkdownTheme,
+				);
+				const output = markdown.render(80).join("\n");
+				const leftover = output
+					.replace(/\x1b\[[0-9;]*m/g, "")
+					.replace(/\x1b\]8;;[^\x07\x1b]*\x1b\\/g, "");
+				assert.ok(!/[\x00-\x08\x0b-\x1f\x7f-\x9f]/.test(leftover), `hyperlinks=${hyperlinks}`);
+				assert.ok(!output.includes("\x07"), `hyperlinks=${hyperlinks}`);
+			}
+		});
+
 		it("should show URL in parentheses when hyperlinks are not supported", () => {
 			setCapabilities({ images: null, trueColor: false, hyperlinks: false });
 			const markdown = new Markdown(

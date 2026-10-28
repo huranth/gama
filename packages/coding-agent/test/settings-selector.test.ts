@@ -81,6 +81,27 @@ describe("SettingsSelectorComponent", () => {
 		expect(onWheelScrollLinesChange.mock.calls.flat()).toEqual([10, "auto", 1]);
 	});
 
+	it("toggles the turn bell", () => {
+		const onNotifyOnTurnEndChange = vi.fn();
+		const config = {
+			notifyOnTurnEnd: true,
+			warnings: {},
+			defaultModel: "not set",
+			availableDefaultModels: [],
+			availableThinkingLevels: [],
+			modelThinkingLevels: {},
+			availableThemes: [],
+		} as unknown as SettingsConfig;
+		const callbacks = { onNotifyOnTurnEndChange } as unknown as SettingsCallbacks;
+		const list = new SettingsSelectorComponent(config, callbacks).getSettingsList();
+
+		for (const character of "Turn bell") {
+			list.handleInput(character);
+		}
+		list.handleInput("\r");
+		expect(onNotifyOnTurnEndChange).toHaveBeenCalledWith(false);
+	});
+
 	it("keeps the configured fixed theme marked while browsing", () => {
 		const config = {
 			defaultModel: "not set",
