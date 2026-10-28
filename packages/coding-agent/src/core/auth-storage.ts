@@ -4,12 +4,13 @@ import type {
 	CredentialInfo,
 	CredentialStore,
 } from "@huranth/gama-ai";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, readFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { setTimeout as sleep } from "timers/promises";
 import { getAgentDir } from "../config.ts";
 import { raceWithAbortSignal } from "../utils/abort.ts";
+import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
 import { isCommandConfigValue, resolveConfigValue } from "./resolve-config-value.ts";
@@ -41,7 +42,7 @@ export interface AuthStorageBackend {
 	): Promise<T>;
 }
 
-const AUTH_FILE_WRITE_OPTIONS = { encoding: "utf-8", mode: 0o600 } as const;
+const AUTH_FILE_MODE = 0o600;
 
 let sharedAuthFileReadState: { authPath: string; readState: AuthFileReadState } | undefined;
 
@@ -75,7 +76,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 
 	private ensureFileExists(): void {
 		if (!existsSync(this.authPath)) {
-			writeFileSync(this.authPath, "{}", AUTH_FILE_WRITE_OPTIONS);
+			writeFileAtomicSync(this.authPath, "{}", AUTH_FILE_MODE);
 		}
 	}
 
@@ -119,7 +120,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 				: undefined;
 			const { result, next } = fn(current);
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				writeFileAtomicSync(this.authPath, next, AUTH_FILE_MODE);
 			}
 
 			return result;
@@ -214,7 +215,7 @@ export class FileAuthStorageBackend implements AuthStorageBackend {
 			throwIfCompromised();
 			options?.signal?.throwIfAborted();
 			if (next !== undefined) {
-				writeFileSync(this.authPath, next, AUTH_FILE_WRITE_OPTIONS);
+				writeFileAtomicSync(this.authPath, next, AUTH_FILE_MODE);
 			}
 
 			throwIfCompromised();
