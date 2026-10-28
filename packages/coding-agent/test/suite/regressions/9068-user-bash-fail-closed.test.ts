@@ -123,7 +123,8 @@ async function startRpcHarness(extension: (gama: ExtensionAPI) => void): Promise
 
 type InteractiveBashContext = {
 	defaultEditor: { onSubmit?: (text: string) => Promise<void> | void };
-	editor: { addToHistory?: (text: string) => void };
+	editor: { addToHistory?: (text: string) => void; setText(text: string): void };
+	routeBuiltinInput(text: string): Promise<boolean>;
 	session: Harness["session"];
 	sessionManager: Harness["sessionManager"];
 	ui: { requestRender(): void };
@@ -139,6 +140,7 @@ type InteractiveBashContext = {
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as {
 	setupEditorSubmitHandler(this: InteractiveBashContext): void;
+	routeBuiltinInput(this: InteractiveBashContext, text: string): Promise<boolean>;
 	handleBashCommand(
 		this: InteractiveBashContext,
 		command: string,
@@ -256,7 +258,8 @@ describe("Interactive user_bash failure handling (#9068)", () => {
 				.mockResolvedValue(localResult);
 			const context: InteractiveBashContext = {
 				defaultEditor: {},
-				editor: { addToHistory: vi.fn() },
+				editor: { addToHistory: vi.fn(), setText: vi.fn() },
+				routeBuiltinInput: interactiveModePrototype.routeBuiltinInput,
 				session: harness.session,
 				sessionManager: harness.sessionManager,
 				ui: { requestRender: vi.fn() },

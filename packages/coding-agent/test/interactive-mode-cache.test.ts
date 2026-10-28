@@ -68,6 +68,7 @@ describe("InteractiveMode /cache", () => {
 			dismissWelcomeLogo: vi.fn(),
 			editor: { setText: vi.fn(), addToHistory: vi.fn() },
 			showCachePanel: vi.fn(),
+			routeBuiltinInput: (InteractiveMode as any).prototype.routeBuiltinInput,
 			session: { isBashRunning: false, isCompacting: false, prompt: vi.fn() },
 		};
 
