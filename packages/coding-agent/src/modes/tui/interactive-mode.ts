@@ -3081,6 +3081,25 @@ export class InteractiveMode {
 			return true;
 		}
 
+		if (text === "/compact" || text.startsWith("/compact ")) {
+			const instructions = text.slice(8).trim();
+			this.editor.setText("");
+			if (this.session.isStreaming) {
+				this.showWarning("Response in progress");
+				return true;
+			}
+			if (this.session.isCompacting) {
+				this.showWarning("Compaction in progress");
+				return true;
+			}
+			try {
+				await this.session.compact(instructions || undefined);
+			} catch {
+				// compaction_end already rendered the failure or cancellation
+			}
+			return true;
+		}
+
 		if (text === "/reason" || text.startsWith("/reason ")) {
 			const argument = text.startsWith("/reason ") ? text.slice(8).trim() : undefined;
 			this.editor.setText("");
