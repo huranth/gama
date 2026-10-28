@@ -188,6 +188,7 @@ async function createRuntimeHost(options: {
 
 async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): Promise<{
 	lineHandler: (line: string) => void;
+	runtimeHost: AgentSessionRuntime;
 	cleanup: () => Promise<void>;
 }> {
 	rpcIo.outputLines = [];
@@ -197,7 +198,7 @@ async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): P
 	void runRpcMode(runtimeHost);
 	await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-	return { lineHandler: rpcIo.lineHandler!, cleanup };
+	return { lineHandler: rpcIo.lineHandler!, runtimeHost, cleanup };
 }
 
 describe("RPC prompt response semantics", () => {
@@ -488,6 +489,46 @@ describe("RPC prompt response semantics", () => {
 			expect(
 				parseOutputLines(rpcIo.outputLines).filter((record) => record.type === "agent_start"),
 			).toHaveLength(1);
+		} finally {
+			await cleanup();
+		}
+	});
+
+	it("binds extensions once when a session command replaces the session", async () => {
+		const sessionStarts: string[] = [];
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: false,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("session_start", (event) => {
+						sessionStarts.push(event.reason);
+					});
+				},
+			]),
+		});
+
+		try {
+			await vi.waitFor(() => expect(sessionStarts).toHaveLength(1));
+			// The real runtime calls the registered rebind callback itself when it replaces the session.
+			const rebind = vi.mocked(runtimeHost.setRebindSession).mock.calls[0]![0]!;
+			vi.mocked(runtimeHost.newSession).mockImplementation((async () => {
+				await rebind(runtimeHost.session);
+				return { cancelled: false };
+			}) as never);
+
+			lineHandler(JSON.stringify({ id: "ns", type: "new_session" }));
+			await vi.waitFor(() =>
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual({
+					id: "ns",
+					type: "response",
+					command: "new_session",
+					success: true,
+					data: { cancelled: false },
+				}),
+			);
+
+			expect(sessionStarts).toHaveLength(2);
 		} finally {
 			await cleanup();
 		}
