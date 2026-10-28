@@ -233,8 +233,8 @@ function normalizeLinkTarget(target, options) {
 	}
 
 	const route = isDirectoryTarget(pathPart, repositoryPath) ? "tree" : "blob";
-	const target = encodeURI(repositoryPath);
-	return `https://github.com/${options.repo}/${route}/${options.tag}/${target}${query}${fragment}`;
+	const encodedPath = encodeURI(repositoryPath);
+	return `https://github.com/${options.repo}/${route}/${options.tag}/${encodedPath}${query}${fragment}`;
 }
 
 function normalizeReleaseNoteLinks(markdown, options) {
