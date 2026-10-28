@@ -85,6 +85,7 @@ function summarizeMatches(input: {
 	limit: number;
 	matchLimitReached: boolean;
 	linesTruncated: boolean;
+	searchErrors?: string[];
 }) {
 	const truncation = truncateHead(input.lines.join("\n"), {
 		maxLines: Number.MAX_SAFE_INTEGER,
@@ -112,6 +113,10 @@ function summarizeMatches(input: {
 		details.linesTruncated = true;
 	}
 
+	if (input.searchErrors?.length) {
+		notices.push(`Some paths could not be searched: ${input.searchErrors.join("; ")}`);
+	}
+
 	let output = truncation.content;
 	if (notices.length > 0) output += `\n\n[${notices.join(". ")}]`;
 
@@ -119,6 +124,20 @@ function summarizeMatches(input: {
 		content: [{ type: "text" as const, text: output }],
 		details: Object.keys(details).length > 0 ? details : undefined,
 	};
+}
+
+const MAX_REPORTED_ERRORS = 3;
+
+function stderrLines(stderr: string): string[] {
+	const lines = stderr
+		.split("\n")
+		.map((line) => line.trim().replace(/^rg:\s*/, ""))
+		.filter(Boolean);
+	if (lines.length <= MAX_REPORTED_ERRORS) return lines;
+	return [
+		...lines.slice(0, MAX_REPORTED_ERRORS),
+		`${lines.length - MAX_REPORTED_ERRORS} more errors`,
+	];
 }
 
 export function createGrepToolDefinition(
@@ -343,7 +362,9 @@ export function createGrepToolDefinition(
 								settle(() => reject(new Error("Operation aborted")));
 								return;
 							}
-							if (!killedDueToLimit && code !== 0 && code !== 1) {
+							// rg exits 2 when some paths fail but others matched; keep those matches.
+							const partial = code === 2 && matchCount > 0;
+							if (!killedDueToLimit && code !== 0 && code !== 1 && !partial) {
 								const last = stderr.trim().split("\n").pop() ?? "";
 								const reason = last
 									.replace(/^(?:rg|grep):\s*/, "")
@@ -394,6 +415,7 @@ export function createGrepToolDefinition(
 										limit: effectiveLimit,
 										matchLimitReached,
 										linesTruncated,
+										searchErrors: partial ? stderrLines(stderr) : undefined,
 									}),
 								),
 							);

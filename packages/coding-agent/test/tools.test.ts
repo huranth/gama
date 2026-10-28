@@ -993,6 +993,31 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain(".git");
 		});
 
+		it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+			"should keep matches when rg cannot read part of the tree",
+			async () => {
+				const locked = join(testDir, "locked");
+				mkdirSync(locked);
+				writeFileSync(join(locked, "secret.txt"), "needle hidden\n");
+				writeFileSync(join(testDir, "open.txt"), "needle open\n");
+				chmodSync(locked, 0o000);
+
+				try {
+					const output = getTextOutput(
+						await grepTool.execute("test-call-grep-partial", {
+							pattern: "needle",
+							path: testDir,
+						}),
+					);
+
+					expect(output).toContain("open.txt:1: needle open");
+					expect(output).toMatch(/\[.*locked.*\]/);
+				} finally {
+					chmodSync(locked, 0o755);
+				}
+			},
+		);
+
 		it("should treat flag-like patterns as search text", async () => {
 			const marker = join(testDir, "grep-injection-marker");
 			const payload = join(testDir, "payload.sh");
