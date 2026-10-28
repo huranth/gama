@@ -1454,7 +1454,7 @@ async function* iterateAnthropicEvents(
 
 function readWithIdleTimeout(
 	reader: ReadableStreamDefaultReader<Uint8Array>,
-): Promise<ReadableStreamReadResult<Uint8Array>> {
+): ReturnType<typeof reader.read> {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const idle = new Promise<never>((_, reject) => {
 		timer = setTimeout(
