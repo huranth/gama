@@ -1,7 +1,9 @@
+import { spawn } from "node:child_process";
 import type { AssistantMessage, ImageContent } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CacheSnapshot, SessionShutdownEvent } from "../src/index.ts";
 import { runPrintMode } from "../src/modes/print-mode.ts";
+import { trackDetachedChildPid } from "../src/utils/shell.ts";
 
 type EmitEvent = SessionShutdownEvent;
 
@@ -188,5 +190,30 @@ describe("runPrintMode", () => {
 			type: "session_shutdown",
 			reason: "quit",
 		});
+	});
+
+	it("kills tracked detached children and exits 130 on SIGINT", async () => {
+		const runtimeHost = createRuntimeHost(createAssistantMessage({ text: "done" }));
+		runtimeHost.session.prompt.mockImplementation(() => new Promise(() => {}));
+		const child = spawn("sleep", ["30"], { detached: true, stdio: "ignore" });
+		const pid = child.pid as number;
+		trackDetachedChildPid(pid);
+		const exited = new Promise<number>((resolve) => {
+			vi.spyOn(process, "exit").mockImplementation(((code?: number) => {
+				resolve(code ?? 0);
+			}) as never);
+		});
+		const childGone = new Promise<void>((resolve) => child.once("exit", () => resolve()));
+
+		void runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+			mode: "text",
+			initialMessage: "hang",
+		});
+		await vi.waitFor(() => expect(runtimeHost.session.prompt).toHaveBeenCalled());
+		process.emit("SIGINT");
+
+		expect(await exited).toBe(130);
+		await childGone;
+		expect(runtimeHost.dispose).toHaveBeenCalled();
 	});
 });
