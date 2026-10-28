@@ -126,8 +126,8 @@ describe("session store durability", () => {
 		// Disk full
 		failureFlags.failAppend = true;
 		failureFlags.failRename = true;
-		expect(() => manager.appendMessage(makeUserMessage("kept-in-memory"))).not.toThrow();
-		expect(() => manager.appendMessage(makeUserMessage("also-in-memory"))).not.toThrow();
+		expect(() => manager.appendMessage(makeUserMessage("kept-in-memory"))).toThrow(/EPERM/);
+		expect(() => manager.appendMessage(makeUserMessage("also-in-memory"))).toThrow(/EPERM/);
 
 		// File intact
 		expect(readLines(file)).toBe(contentBefore);
