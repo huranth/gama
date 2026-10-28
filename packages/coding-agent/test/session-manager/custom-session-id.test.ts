@@ -185,16 +185,10 @@ describe("SessionManager.newSession with custom id", () => {
 		const cwdA = mkdtempSync(join(tmpdir(), "gama-cwd-a-"));
 		const cwdB = mkdtempSync(join(tmpdir(), "gama-cwd-b-"));
 		const first = SessionManager.create(cwdA, dir, { id: "shared-id" });
-		first.appendMessage({ role: "user", content: [{ type: "text", text: "from a" }] });
-		first.appendMessage({
-			role: "assistant",
-			content: [{ type: "text", text: "reply" }],
-		} as never);
+		first.appendMessage({ role: "user", content: "from a", timestamp: 1 });
 		const before = readFileSync(first.getSessionFile()!, "utf8");
 
-		expect(() => SessionManager.create(cwdB, dir, { id: "shared-id" })).toThrow(
-			/already exists/,
-		);
+		expect(() => SessionManager.create(cwdB, dir, { id: "shared-id" })).toThrow(/already exists/);
 
 		const sourcePath = join(dir, "source.jsonl");
 		writeFileSync(
