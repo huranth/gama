@@ -292,6 +292,17 @@ describe("shouldCompact", () => {
 		expect(shouldCompact(20000, 100000, settings)).toBe(true);
 	});
 
+	it("does not compact when the context window is unknown", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			reserveTokens: 10000,
+			keepRecentTokens: 20000,
+		};
+
+		expect(shouldCompact(5000, 0, settings)).toBe(false);
+		expect(shouldCompact(5000, -1, settings)).toBe(false);
+	});
+
 	it("should return false when disabled", () => {
 		const settings: CompactionSettings = {
 			enabled: false,

@@ -247,6 +247,7 @@ export function shouldCompact(
 	settings: CompactionSettings,
 ): boolean {
 	if (!settings.enabled) return false;
+	if (contextWindow <= 0) return false;
 	const reserve = Math.min(
 		Math.max(0, settings.reserveTokens),
 		Math.floor(contextWindow * MAX_RESERVE_RATIO),
