@@ -240,15 +240,20 @@ console.log("Checking the packed coding-agent consumer install...");
 run("npm run check:package-install");
 console.log();
 
-console.log("Building and publishing the public release...");
+console.log("Building the public release...");
 run("npm run build:public-release");
-run("node scripts/publish.mjs");
 console.log();
 
+// Commit and tag locally before publishing: a failed commit or tag must not
+// leave a version on npm with no matching commit.
 console.log("Committing and tagging...");
 stageChangedFiles();
 run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
+console.log();
+
+console.log("Publishing the public release...");
+run("node scripts/publish.mjs");
 console.log();
 
 console.log("Adding [Unreleased] sections for next cycle...");
