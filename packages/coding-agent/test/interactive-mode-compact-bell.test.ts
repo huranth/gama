@@ -43,6 +43,32 @@ describe("/compact", () => {
 	});
 });
 
+describe("/bell", () => {
+	function bellCommandContext(initial: boolean) {
+		const settingsManager = {
+			getNotifyOnTurnEnd: vi.fn(() => initial),
+			setNotifyOnTurnEnd: vi.fn(),
+		};
+		return { settingsManager, editor: { setText: vi.fn() }, showStatus: vi.fn() };
+	}
+
+	test("toggles without an argument and honours on/off", async () => {
+		const context = bellCommandContext(true);
+		expect(await proto.routeBuiltinInput.call(context, "/bell")).toBe(true);
+		expect(context.settingsManager.setNotifyOnTurnEnd).toHaveBeenLastCalledWith(false);
+		await proto.routeBuiltinInput.call(context, "/bell on");
+		expect(context.settingsManager.setNotifyOnTurnEnd).toHaveBeenLastCalledWith(true);
+		expect(context.showStatus).toHaveBeenLastCalledWith("Turn bell on");
+	});
+
+	test("rejects an unknown argument", async () => {
+		const context = bellCommandContext(true);
+		await proto.routeBuiltinInput.call(context, "/bell maybe");
+		expect(context.settingsManager.setNotifyOnTurnEnd).not.toHaveBeenCalled();
+		expect(context.showStatus).toHaveBeenCalledWith("Usage: /bell [on|off]");
+	});
+});
+
 describe("turn-finished bell", () => {
 	function bellContext(notifyOnTurnEnd = true) {
 		return {

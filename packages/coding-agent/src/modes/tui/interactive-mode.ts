@@ -3085,6 +3085,20 @@ export class InteractiveMode {
 			return true;
 		}
 
+		if (text === "/bell" || text.startsWith("/bell ")) {
+			const argument = text.slice(5).trim().toLowerCase();
+			this.editor.setText("");
+			if (argument !== "" && argument !== "on" && argument !== "off") {
+				this.showStatus("Usage: /bell [on|off]");
+				return true;
+			}
+			const enabled =
+				argument === "" ? !this.settingsManager.getNotifyOnTurnEnd() : argument === "on";
+			this.settingsManager.setNotifyOnTurnEnd(enabled);
+			this.showStatus(`Turn bell ${enabled ? "on" : "off"}`);
+			return true;
+		}
+
 		if (text === "/compact" || text.startsWith("/compact ")) {
 			const instructions = text.slice(8).trim();
 			this.editor.setText("");

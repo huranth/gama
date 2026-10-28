@@ -58,6 +58,7 @@ export interface SettingsConfig {
 	availableThemes: string[];
 	hideThinkingBlock: boolean;
 	promptSummaries?: boolean;
+	notifyOnTurnEnd?: boolean;
 	mermaidRenderingMode: MermaidRenderingMode;
 	collapseChangelog: boolean;
 	enableInstallTelemetry: boolean;
@@ -95,6 +96,7 @@ export interface SettingsCallbacks {
 	onThemePreview?: (theme: string) => void;
 	onHideThinkingBlockChange: (hidden: boolean) => void;
 	onPromptSummariesChange?: (enabled: boolean) => void;
+	onNotifyOnTurnEndChange?: (enabled: boolean) => void;
 	onMermaidRenderingModeChange: (mode: MermaidRenderingMode) => void;
 	onCollapseChangelogChange: (collapsed: boolean) => void;
 	onEnableInstallTelemetryChange: (enabled: boolean) => void;
@@ -302,6 +304,9 @@ function applySetting(id: string, newValue: string, callbacks: SettingsCallbacks
 			break;
 		case "prompt-summaries":
 			callbacks.onPromptSummariesChange?.(newValue === "true");
+			break;
+		case "notify-on-turn-end":
+			callbacks.onNotifyOnTurnEndChange?.(newValue === "true");
 			break;
 		case "mermaid-rendering":
 			callbacks.onMermaidRenderingModeChange(newValue as MermaidRenderingMode);
@@ -661,6 +666,13 @@ export class SettingsSelectorComponent extends Container {
 					"Offer a Generate button on prompts over 100 words " +
 					"that opens a summary canvas below (uses your model)",
 				currentValue: (config.promptSummaries ?? false) ? "true" : "false",
+				values: ["true", "false"],
+			},
+			{
+				id: "notify-on-turn-end",
+				label: "Turn bell",
+				description: "Ring the terminal bell when a run of 20 s or more finishes",
+				currentValue: (config.notifyOnTurnEnd ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{

@@ -5,7 +5,7 @@
 ### Added
 
 - `/compact [instructions]` slash command.
-- Terminal bell when a run of 20 s or more finishes (`notifyOnTurnEnd`, on by default, toggle in `/settings`).
+- Terminal bell when a run of 20 s or more finishes (`notifyOnTurnEnd`, on by default, toggle with `/bell`).
 - `LICENSE` is now shipped in the package.
 
 ### Changed

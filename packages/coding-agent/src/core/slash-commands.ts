@@ -21,6 +21,7 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "context", description: "Show or set context window" },
 	{ name: "reason", description: "Set reasoning effort level" },
 	{ name: "compact", description: "Summarize the conversation to free context" },
+	{ name: "bell", description: "Toggle the bell when a long run finishes" },
 	{ name: "cache", description: "Show prompt cache stats" },
 	{ name: "changelog", description: "Show release notes" },
 	{ name: "update", description: "Install the available update" },
