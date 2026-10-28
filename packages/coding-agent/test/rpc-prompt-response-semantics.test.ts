@@ -533,4 +533,34 @@ describe("RPC prompt response semantics", () => {
 			await cleanup();
 		}
 	});
+
+	it("waits for an in-flight prompt to settle before shutting down on stdin EOF", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 150,
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "eof", type: "prompt", message: "Hello" }));
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines).some((l) => l.type === "agent_start")).toBe(
+					true,
+				);
+			});
+
+			process.stdin.emit("end");
+			await sleep(50);
+			expect(runtimeHost.dispose).not.toHaveBeenCalled();
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+			expect(parseOutputLines(rpcIo.outputLines).some((l) => l.type === "agent_settled")).toBe(
+				true,
+			);
+			expect(exit).toHaveBeenCalled();
+		} finally {
+			exit.mockRestore();
+			await cleanup();
+		}
+	});
 });

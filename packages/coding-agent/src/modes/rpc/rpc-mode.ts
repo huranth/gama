@@ -66,6 +66,17 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	let shutdownRequested = false;
 	let shuttingDown = false;
 	const signalCleanupHandlers: Array<() => void> = [];
+	// Commands and prompt runs still executing. stdin EOF waits for these before shutdown.
+	const inFlight = new Set<Promise<void>>();
+	const track = (work: Promise<unknown>): void => {
+		const settled = work
+			.then(
+				() => {},
+				() => {},
+			)
+			.finally(() => inFlight.delete(settled));
+		inFlight.add(settled);
+	};
 
 	function createDialogPromise<T>(
 		opts: ExtensionUIDialogOptions | undefined,
@@ -355,21 +366,23 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		switch (command.type) {
 			case "prompt": {
 				let preflightSucceeded = false;
-				void session
-					.prompt(command.message, {
-						images: command.images,
-						streamingBehavior: command.streamingBehavior,
-						source: "rpc",
-						preflightResult: (disposition) => {
-							preflightSucceeded = true;
-							output(success(id, "prompt", { disposition }));
-						},
-					})
-					.catch((e) => {
-						if (!preflightSucceeded) {
-							output(error(id, "prompt", e.message));
-						}
-					});
+				track(
+					session
+						.prompt(command.message, {
+							images: command.images,
+							streamingBehavior: command.streamingBehavior,
+							source: "rpc",
+							preflightResult: (disposition) => {
+								preflightSucceeded = true;
+								output(success(id, "prompt", { disposition }));
+							},
+						})
+						.catch((e) => {
+							if (!preflightSucceeded) {
+								output(error(id, "prompt", e.message));
+							}
+						}),
+				);
 				return undefined;
 			}
 
@@ -738,14 +751,21 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	};
 
 	const onInputEnd = () => {
-		void shutdown();
+		void (async () => {
+			while (inFlight.size > 0) {
+				await Promise.all(inFlight);
+			}
+			await shutdown();
+		})();
 	};
-	process.stdin.on("end", onInputEnd);
 
 	detachInput = (() => {
+		// The line reader must attach first so its end handler dispatches an
+		// unterminated final line before onInputEnd starts waiting.
 		const detachJsonl = attachJsonlLineReader(process.stdin, (line) => {
-			void handleInputLine(line);
+			track(handleInputLine(line));
 		});
+		process.stdin.on("end", onInputEnd);
 		return () => {
 			detachJsonl();
 			process.stdin.off("end", onInputEnd);
