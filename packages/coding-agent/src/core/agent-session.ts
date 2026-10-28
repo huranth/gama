@@ -1702,6 +1702,7 @@ export class AgentSession {
 		this._recordSelection();
 		this._pendingToolNames.clear();
 		this._isAgentRunActive = true;
+		let flushError: unknown;
 		try {
 			await this.agent.prompt(messages);
 			while (!this._agentRunAbortRequested) {
@@ -1718,10 +1719,18 @@ export class AgentSession {
 			if (this._agentRunAbortRequested) this._finishCancelledRetry();
 			this._failedResponse = undefined;
 			this._runSystemPromptOptions = undefined;
-			this._flushPendingBashMessages();
-			this._flushPendingCustomMessages();
+			// A failed flush (disk full) must not skip settling, or the session
+			// stays "streaming" forever. It is rethrown after the try/finally, so an
+			// error from the run itself still takes precedence.
+			try {
+				this._flushPendingBashMessages();
+				this._flushPendingCustomMessages();
+			} catch (error) {
+				flushError = error;
+			}
 			await this._emitAgentSettled();
 		}
+		if (flushError !== undefined) throw flushError;
 	}
 
 	private async _handlePostAgentRun(): Promise<boolean> {
@@ -2154,10 +2163,10 @@ export class AgentSession {
 	private _flushPendingCustomMessages(): void {
 		if (this._pendingCustomMessages.length === 0) return;
 
-		const pending = this._pendingCustomMessages;
-		this._pendingCustomMessages = [];
-		for (const appMessage of pending) {
+		// Drain per item: a failed append must not requeue or drop the rest.
+		for (let appMessage = this._pendingCustomMessages.shift(); appMessage; ) {
 			this._appendCustomMessage(appMessage);
+			appMessage = this._pendingCustomMessages.shift();
 		}
 	}
 
@@ -3481,11 +3490,16 @@ export class AgentSession {
 	private _flushPendingBashMessages(): void {
 		if (this._pendingBashMessages.length === 0) return;
 
-		for (const bashMessage of this._pendingBashMessages) {
-			this.sessionManager.appendMessage(bashMessage);
+		// Drain per item: an append that throws has already entered the session,
+		// so it must leave the queue or a retry duplicates it.
+		try {
+			for (let bashMessage = this._pendingBashMessages.shift(); bashMessage; ) {
+				this.sessionManager.appendMessage(bashMessage);
+				bashMessage = this._pendingBashMessages.shift();
+			}
+		} finally {
+			this._refreshFinalizedContext();
 		}
-		this._pendingBashMessages = [];
-		this._refreshFinalizedContext();
 	}
 
 	setSessionName(name: string): void {

@@ -2,7 +2,7 @@ import { Buffer } from "node:buffer";
 import type { AgentTool } from "@huranth/gama-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@huranth/gama-ai";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { BashOperations } from "../../src/core/tools/bash.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
@@ -351,5 +351,77 @@ describe("AgentSession bash and persistence characterization", () => {
 			{ id: "bash-1", delta: "hello " },
 			{ id: "bash-1", delta: "world" },
 		]);
+	});
+
+	it("still settles when flushing queued bash messages fails, and does not duplicate them", async () => {
+		let releaseToolExecution: (() => void) | undefined;
+		const toolRelease = new Promise<void>((resolve) => {
+			releaseToolExecution = resolve;
+		});
+		const waitTool: AgentTool = {
+			name: "wait",
+			label: "Wait",
+			description: "Wait for release",
+			parameters: Type.Object({}),
+			execute: async () => {
+				await toolRelease;
+				return { content: [{ type: "text", text: "released" }], details: {} };
+			},
+		};
+		const harness = await createHarness({ tools: [waitTool] });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
+			fauxAssistantMessage("done"),
+			fauxAssistantMessage("after"),
+		]);
+
+		// Disk full for bash messages: the entry still joins the session, then the write throws.
+		let diskFull = false;
+		const realAppend = harness.sessionManager.appendMessage.bind(harness.sessionManager);
+		vi.spyOn(harness.sessionManager, "appendMessage").mockImplementation((message) => {
+			const id = realAppend(message);
+			if (diskFull && message.role === "bashExecution") throw new Error("ENOSPC");
+			return id;
+		});
+
+		let settled = 0;
+		harness.session.subscribe((event) => {
+			if (event.type === "agent_settled") settled++;
+		});
+		const sawToolStart = new Promise<void>((resolve) => {
+			const unsubscribe = harness.session.subscribe((event) => {
+				if (event.type === "tool_execution_start") {
+					unsubscribe();
+					resolve();
+				}
+			});
+		});
+
+		const firstPrompt = harness.session.prompt("start");
+		await sawToolStart;
+		for (const command of ["one", "two"]) {
+			harness.session.recordBashResult(command, {
+				output: command,
+				exitCode: 0,
+				cancelled: false,
+				truncated: false,
+			});
+		}
+		diskFull = true;
+		releaseToolExecution?.();
+
+		await expect(firstPrompt).rejects.toThrow("ENOSPC");
+		expect(settled).toBe(1);
+		expect(harness.session.isStreaming).toBe(false);
+		expect(harness.session.isIdle).toBe(true);
+
+		diskFull = false;
+		await harness.session.prompt("next");
+
+		const bashCommands = harness.session.messages.flatMap((message) =>
+			message.role === "bashExecution" ? [message.command] : [],
+		);
+		expect(bashCommands.sort()).toEqual(["one", "two"]);
 	});
 });
