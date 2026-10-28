@@ -1403,6 +1403,11 @@ export class AgentSession {
 		return this._isAgentRunActive;
 	}
 
+	/** True while prompt() is resolving input, auth and hooks, before the run starts. */
+	get isPreparingPrompt(): boolean {
+		return this._isPreparingPrompt;
+	}
+
 	get isIdle(): boolean {
 		return !this._isAgentRunActive && !this.isCompacting;
 	}
@@ -2571,6 +2576,11 @@ export class AgentSession {
 
 	async compact(customInstructions?: string): Promise<CompactionResult> {
 		await this.abort();
+		if (this._isPreparingPrompt) {
+			throw new Error(
+				"Cannot compact while a prompt is being prepared. Retry when it has started or failed.",
+			);
+		}
 		if (this._compactionAbortController) throw new Error("A compaction is already running");
 		const controller = new AbortController();
 		this._compactionAbortController = controller;

@@ -14,6 +14,7 @@ afterEach(() => {
 
 function compactContext(session: {
 	isStreaming: boolean;
+	isPreparingPrompt?: boolean;
 	isCompacting: boolean;
 	compact: unknown;
 }) {
@@ -37,6 +38,21 @@ describe("/compact", () => {
 	test("is rejected while a response is streaming", async () => {
 		const compact = vi.fn();
 		const context = compactContext({ isStreaming: true, isCompacting: false, compact });
+		expect(await proto.routeBuiltinInput.call(context, "/compact")).toBe(true);
+		expect(compact).not.toHaveBeenCalled();
+		expect(context.showWarning).toHaveBeenCalledWith("Response in progress");
+	});
+});
+
+describe("/compact while preparing", () => {
+	test("is rejected while a prompt is being prepared", async () => {
+		const compact = vi.fn();
+		const context = compactContext({
+			isStreaming: false,
+			isPreparingPrompt: true,
+			isCompacting: false,
+			compact,
+		});
 		expect(await proto.routeBuiltinInput.call(context, "/compact")).toBe(true);
 		expect(compact).not.toHaveBeenCalled();
 		expect(context.showWarning).toHaveBeenCalledWith("Response in progress");

@@ -3102,7 +3102,7 @@ export class InteractiveMode {
 		if (text === "/compact" || text.startsWith("/compact ")) {
 			const instructions = text.slice(8).trim();
 			this.editor.setText("");
-			if (this.session.isStreaming) {
+			if (this.session.isStreaming || this.session.isPreparingPrompt) {
 				this.showWarning("Response in progress");
 				return true;
 			}
