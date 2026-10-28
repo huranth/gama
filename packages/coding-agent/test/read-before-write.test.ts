@@ -9,7 +9,7 @@ import {
 	createFileReadTracker,
 	READ_BEFORE_CHANGE_MESSAGE,
 } from "../src/core/tools/file-read-tracker.ts";
-import { createAllTools } from "../src/core/tools/index.ts";
+import { createAllToolDefinitions, createAllTools } from "../src/core/tools/index.ts";
 import { createReadToolDefinition } from "../src/core/tools/read.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
 import { createHarness, getMessageText, getToolResult, type Harness } from "./suite/harness.ts";
@@ -152,6 +152,60 @@ describe("read before write", () => {
 			tools.write.execute("write", { path: "c.txt", content: "new" }, undefined, undefined),
 		).resolves.toBeDefined();
 		expect(await readFile(join(dir, "c.txt"), "utf8")).toBe("new");
+	});
+});
+
+describe("edit shares the tracker in the full tool bundle", () => {
+	it("createAllToolDefinitions: rejects editing a never-read file", async () => {
+		await writeFile(join(dir, "d.txt"), "old");
+		const tools = createAllToolDefinitions(dir, { files: createFileReadTracker() });
+
+		await expect(
+			tools.edit.execute(
+				"edit",
+				{ path: "d.txt", edits: [{ oldText: "old", newText: "new" }] },
+				undefined,
+				undefined,
+				ctx,
+			),
+		).rejects.toThrow(READ_BEFORE_CHANGE_MESSAGE);
+		expect(await readFile(join(dir, "d.txt"), "utf8")).toBe("old");
+	});
+
+	it("createAllToolDefinitions: read, edit, then write succeeds", async () => {
+		await writeFile(join(dir, "d.txt"), "old");
+		const tools = createAllToolDefinitions(dir, { files: createFileReadTracker() });
+
+		await tools.read.execute("read", { path: "d.txt" }, undefined, undefined, ctx);
+		await tools.edit.execute(
+			"edit",
+			{ path: "d.txt", edits: [{ oldText: "old", newText: "mid" }] },
+			undefined,
+			undefined,
+			ctx,
+		);
+		await tools.write.execute(
+			"write",
+			{ path: "d.txt", content: "new" },
+			undefined,
+			undefined,
+			ctx,
+		);
+		expect(await readFile(join(dir, "d.txt"), "utf8")).toBe("new");
+	});
+
+	it("createAllTools: rejects editing a never-read file", async () => {
+		await writeFile(join(dir, "d.txt"), "old");
+		const tools = createAllTools(dir, { files: createFileReadTracker() });
+
+		await expect(
+			tools.edit.execute(
+				"edit",
+				{ path: "d.txt", edits: [{ oldText: "old", newText: "new" }] },
+				undefined,
+				undefined,
+			),
+		).rejects.toThrow(READ_BEFORE_CHANGE_MESSAGE);
 	});
 });
 
