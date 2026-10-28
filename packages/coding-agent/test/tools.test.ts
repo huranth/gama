@@ -980,6 +980,19 @@ describe("Coding Agent Tools", () => {
 			expect(output).not.toContain("match two");
 		});
 
+		it("should not search inside .git", async () => {
+			mkdirSync(join(testDir, ".git", "hooks"), { recursive: true });
+			writeFileSync(join(testDir, ".git", "hooks", "pre-commit.sample"), "needle in git\n");
+			writeFileSync(join(testDir, "src.txt"), "needle in src\n");
+
+			const output = getTextOutput(
+				await grepTool.execute("test-call-grep-dot-git", { pattern: "needle", path: testDir }),
+			);
+
+			expect(output).toContain("src.txt:1: needle in src");
+			expect(output).not.toContain(".git");
+		});
+
 		it("should treat flag-like patterns as search text", async () => {
 			const marker = join(testDir, "grep-injection-marker");
 			const payload = join(testDir, "payload.sh");
@@ -1017,6 +1030,19 @@ describe("Coding Agent Tools", () => {
 
 			expect(outputLines).toContain("visible.txt");
 			expect(outputLines).toContain(".secret/hidden.txt");
+		});
+
+		it("should not list .git contents", async () => {
+			mkdirSync(join(testDir, ".git", "hooks"), { recursive: true });
+			writeFileSync(join(testDir, ".git", "hooks", "pre-commit.sample"), "x");
+			writeFileSync(join(testDir, "src.txt"), "x");
+
+			const output = getTextOutput(
+				await findTool.execute("test-call-find-dot-git", { pattern: "**/*", path: testDir }),
+			);
+
+			expect(output).toContain("src.txt");
+			expect(output).not.toContain(".git");
 		});
 
 		it("should respect .gitignore", async () => {
