@@ -237,6 +237,7 @@ run("./scripts/run-tests.sh");
 console.log();
 
 console.log("Checking the packed coding-agent consumer install...");
+run("node scripts/build-coding-agent-bundle.mjs --public-release");
 run("npm run check:package-install");
 console.log();
 
