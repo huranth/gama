@@ -90,6 +90,17 @@ describe("provider retry classification", () => {
 		).toBe(true);
 	});
 
+	it.each(["read ECONNRESET", "connect ETIMEDOUT 10.0.0.1:443", "Premature close"])(
+		"matches network reset wording: %s",
+		(errorMessage) => {
+			expect(
+				isRetryableAssistantError(
+					fauxAssistantMessage("", { stopReason: "error", errorMessage }),
+				),
+			).toBe(true);
+		},
+	);
+
 	it("matches OpenAI Responses streams that end before terminal events", () => {
 		expect(
 			isRetryableAssistantError(
