@@ -317,6 +317,8 @@ function hasAssistantToolCalls(message: AssistantMessage): boolean {
 	return message.content.some((c) => c.type === "toolCall");
 }
 
+// Ring the terminal bell when a run at least this long finishes.
+const TURN_NOTIFY_MIN_MS = 20_000;
 const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
 
 function isDeadTerminalError(error: unknown): boolean {
@@ -446,6 +448,7 @@ export class InteractiveMode {
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
 
 	private lastSigintTime = 0;
+	private agentRunStartedAt: number | undefined;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined;
 	private availableRelease: LatestGamaRelease | undefined;
@@ -3279,6 +3282,7 @@ export class InteractiveMode {
 	}
 
 	private handleAgentStart(): void {
+		this.agentRunStartedAt = Date.now();
 		this.pendingToolCalls.clear();
 		if (this.retryEscapeHandler) {
 			this.defaultEditor.onEscape = this.retryEscapeHandler;
@@ -3545,6 +3549,14 @@ export class InteractiveMode {
 	}
 
 	private async handleAgentSettled(): Promise<void> {
+		if (
+			this.agentRunStartedAt !== undefined &&
+			Date.now() - this.agentRunStartedAt >= TURN_NOTIFY_MIN_MS &&
+			this.settingsManager.getNotifyOnTurnEnd()
+		) {
+			this.ui.terminal.write("\x07");
+		}
+		this.agentRunStartedAt = undefined;
 		await this.checkShutdownRequested();
 	}
 
