@@ -105,6 +105,44 @@ describe("generateSummary reasoning options", () => {
 		});
 	});
 
+	it("keeps the previous summary in a lineage request", async () => {
+		await generateSummaryWithUsage(
+			[],
+			createModel(false),
+			2000,
+			"test-key",
+			undefined,
+			undefined,
+			undefined,
+			"EARLIER-SUMMARY-TEXT",
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			undefined,
+			{
+				messages: [
+					{
+						role: "system",
+						content: "",
+						sections: { preamble: "current prompt" },
+						timestamp: Date.now(),
+					},
+					{ role: "user", content: "new work", timestamp: Date.now() },
+				],
+			},
+		);
+
+		const context = completeSimpleMock.mock.calls[0][1] as TranscriptContext;
+		const last = context.messages[context.messages.length - 1];
+		expect(last.role).toBe("user");
+		const text = (last.content as Array<{ type: string; text?: string }>)
+			.map((block) => block.text ?? "")
+			.join("");
+		expect(text).toContain("<previous-summary>\nEARLIER-SUMMARY-TEXT\n</previous-summary>");
+	});
+
 	it("keeps a usable budget when the reserve is zero", async () => {
 		await generateSummaryWithUsage(messages, createModel(false), 0, "test-key");
 
