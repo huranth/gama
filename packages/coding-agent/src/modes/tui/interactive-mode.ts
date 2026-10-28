@@ -449,6 +449,7 @@ export class InteractiveMode {
 
 	private lastSigintTime = 0;
 	private agentRunStartedAt: number | undefined;
+	private agentRunAborted = false;
 	private lastEscapeTime = 0;
 	private changelogMarkdown: string | undefined;
 	private availableRelease: LatestGamaRelease | undefined;
@@ -3244,7 +3245,7 @@ export class InteractiveMode {
 				break;
 
 			case "agent_end":
-				this.handleAgentEnd();
+				this.handleAgentEnd(event);
 				break;
 
 			case "agent_settled":
@@ -3282,7 +3283,8 @@ export class InteractiveMode {
 	}
 
 	private handleAgentStart(): void {
-		this.agentRunStartedAt = Date.now();
+		// agent.continue() (retries, follow-ups) emits agent_start too; time the whole run.
+		this.agentRunStartedAt ??= Date.now();
 		this.pendingToolCalls.clear();
 		if (this.retryEscapeHandler) {
 			this.defaultEditor.onEscape = this.retryEscapeHandler;
@@ -3522,7 +3524,9 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private handleAgentEnd(): void {
+	private handleAgentEnd(event: AgentEventOf<"agent_end">): void {
+		const last = event.messages.at(-1);
+		this.agentRunAborted = last?.role === "assistant" && last.stopReason === "aborted";
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
 		}
@@ -3551,12 +3555,14 @@ export class InteractiveMode {
 	private async handleAgentSettled(): Promise<void> {
 		if (
 			this.agentRunStartedAt !== undefined &&
+			!this.agentRunAborted &&
 			Date.now() - this.agentRunStartedAt >= TURN_NOTIFY_MIN_MS &&
 			this.settingsManager.getNotifyOnTurnEnd()
 		) {
 			this.ui.terminal.write("\x07");
 		}
 		this.agentRunStartedAt = undefined;
+		this.agentRunAborted = false;
 		await this.checkShutdownRequested();
 	}
 

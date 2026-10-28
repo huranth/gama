@@ -4,6 +4,7 @@ import { InteractiveMode } from "../src/modes/tui/interactive-mode.ts";
 const proto = InteractiveMode.prototype as unknown as {
 	routeBuiltinInput(this: unknown, text: string): Promise<boolean>;
 	handleAgentStart(this: unknown): void;
+	handleAgentEnd(this: unknown, event: unknown): void;
 	handleAgentSettled(this: unknown): Promise<void>;
 };
 
@@ -43,14 +44,30 @@ describe("/compact", () => {
 });
 
 describe("turn-finished bell", () => {
-	async function runTurn(durationMs: number, notifyOnTurnEnd = true) {
-		const context = {
+	function bellContext(notifyOnTurnEnd = true) {
+		return {
 			pendingToolCalls: new Set(),
 			defaultEditor: {},
-			ui: { terminal: { write: vi.fn() } },
-			settingsManager: { getNotifyOnTurnEnd: () => notifyOnTurnEnd },
+			ui: { terminal: { write: vi.fn() }, requestRender: vi.fn() },
+			settingsManager: {
+				getNotifyOnTurnEnd: () => notifyOnTurnEnd,
+				getShowTerminalProgress: () => false,
+			},
+			clearStatusIndicator: vi.fn(),
+			settleRunningActivities: vi.fn(),
+			settleCurrentActivity: vi.fn(),
 			checkShutdownRequested: vi.fn().mockResolvedValue(undefined),
 		};
+	}
+
+	const endEvent = (stopReason: string) => ({
+		type: "agent_end",
+		willRetry: false,
+		messages: [{ role: "assistant", stopReason }],
+	});
+
+	async function runTurn(durationMs: number, notifyOnTurnEnd = true) {
+		const context = bellContext(notifyOnTurnEnd);
 		const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
 		proto.handleAgentStart.call(context);
 		now.mockReturnValue(1_000_000 + durationMs);
@@ -68,5 +85,28 @@ describe("turn-finished bell", () => {
 
 	test("stays silent when notifyOnTurnEnd is off", async () => {
 		expect(await runTurn(60_000, false)).not.toHaveBeenCalled();
+	});
+
+	test("times a run split by agent.continue() from its first agent_start", async () => {
+		const context = bellContext();
+		const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		proto.handleAgentStart.call(context);
+		now.mockReturnValue(1_000_000 + 55_000);
+		proto.handleAgentEnd.call(context, endEvent("error"));
+		proto.handleAgentStart.call(context);
+		now.mockReturnValue(1_000_000 + 65_000);
+		proto.handleAgentEnd.call(context, endEvent("stop"));
+		await proto.handleAgentSettled.call(context);
+		expect(context.ui.terminal.write).toHaveBeenCalledWith("\x07");
+	});
+
+	test("stays silent when the user aborted the run", async () => {
+		const context = bellContext();
+		const now = vi.spyOn(Date, "now").mockReturnValue(1_000_000);
+		proto.handleAgentStart.call(context);
+		now.mockReturnValue(1_000_000 + 60_000);
+		proto.handleAgentEnd.call(context, endEvent("aborted"));
+		await proto.handleAgentSettled.call(context);
+		expect(context.ui.terminal.write).not.toHaveBeenCalled();
 	});
 });
