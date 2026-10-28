@@ -627,6 +627,12 @@ describe("Input component", () => {
 			assert.strictEqual(input.getValue(), "");
 		});
 
+		it("strips control characters from pasted text", () => {
+			const input = new Input();
+			input.handleInput("\x1b[200~a\x1bb\x07\x9bc\x1b[201~");
+			assert.strictEqual(input.getValue(), "abc");
+		});
+
 		it("undoes paste atomically", () => {
 			const input = new Input();
 

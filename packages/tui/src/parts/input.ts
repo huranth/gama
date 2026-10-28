@@ -13,6 +13,7 @@ import {
 	getGraphemeSegmenter,
 	isWhitespaceChar,
 	sliceByColumn,
+	stripControlChars,
 	truncateToWidth,
 	visibleWidth,
 } from "../utils.ts";
@@ -385,7 +386,9 @@ export class Input implements Component, Focusable {
 		this.lastAction = null;
 		this.pushUndo();
 
-		const cleanText = pastedText.replace(/\r\n|\r|\n/g, " ").replace(/\t/g, "    ");
+		const cleanText = stripControlChars(
+			pastedText.replace(/\r\n|\r|\n/g, " ").replace(/\t/g, "    "),
+		);
 
 		this.value = this.value.slice(0, this.cursor) + cleanText + this.value.slice(this.cursor);
 		this.cursor += cleanText.length;

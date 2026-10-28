@@ -2,7 +2,12 @@ import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } f
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component } from "../tui.ts";
-import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
+import {
+	applyBackgroundToLine,
+	stripControlChars,
+	visibleWidth,
+	wrapTextWithAnsi,
+} from "../utils.ts";
 
 interface LatexToken extends Tokens.Generic {
 	type: "latex" | "latexBlock";
@@ -278,7 +283,7 @@ export class Markdown implements Component {
 			return result;
 		}
 
-		const normalizedText = text.replace(/\t/g, "   ");
+		const normalizedText = stripControlChars(text).replace(/\t/g, "   ");
 
 		const cached = this.cachedTokens;
 		let tokens = cached?.source === normalizedText ? cached.tokens : undefined;
