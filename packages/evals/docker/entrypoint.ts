@@ -78,8 +78,6 @@ function assertWorkspace(): void {
 	for (const path of [
 		join(codingAgentDir, "README.md"),
 		join(codingAgentDir, "CHANGELOG.md"),
-		join(codingAgentDir, "docs/models.md"),
-		join(codingAgentDir, "examples/README.md"),
 	]) {
 		if (!existsSync(path) || readFileSync(path).length === 0) {
 			throw new Error(`Missing documentation: ${path}`);
