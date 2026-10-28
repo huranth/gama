@@ -13,12 +13,15 @@ import { truncateToVisualLines } from "./visual-truncate.ts";
 
 const PREVIEW_LINES = 20;
 
+// Matches the executor's in-memory tail cap (core/bash-executor.ts).
+const MAX_BUFFERED_CHARS = DEFAULT_MAX_BYTES * 2;
+
 export class BashExecutionComponent extends Container {
 	private command: string;
 
 	private readonly colorKey: "dim" | "bashMode";
 
-	private outputLines: string[] = [];
+	private output = "";
 
 	private status: "running" | "complete" | "cancelled" | "error" = "running";
 
@@ -75,12 +78,9 @@ export class BashExecutionComponent extends Container {
 	appendOutput(chunk: string): void {
 		const clean = stripAnsi(chunk).replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 
-		const newLines = clean.split("\n");
-		if (this.outputLines.length > 0 && newLines.length > 0) {
-			this.outputLines[this.outputLines.length - 1] += newLines[0];
-			this.outputLines.push(...newLines.slice(1));
-		} else {
-			this.outputLines.push(...newLines);
+		this.output += clean;
+		if (this.output.length > MAX_BUFFERED_CHARS) {
+			this.output = this.output.slice(-MAX_BUFFERED_CHARS);
 		}
 
 		this.updateDisplay();
@@ -114,8 +114,7 @@ export class BashExecutionComponent extends Container {
 	}
 
 	private updateDisplay(): void {
-		const fullOutput = this.outputLines.join("\n");
-		const contextTruncation = truncateTail(fullOutput, {
+		const contextTruncation = truncateTail(this.output, {
 			maxLines: DEFAULT_MAX_LINES,
 			maxBytes: DEFAULT_MAX_BYTES,
 		});
@@ -191,7 +190,7 @@ export class BashExecutionComponent extends Container {
 	}
 
 	getOutput(): string {
-		return this.outputLines.join("\n");
+		return this.output;
 	}
 
 	getCommand(): string {
