@@ -44,8 +44,8 @@ export function normalizeToLF(text: string): string {
 	return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-export function restoreLineEndings(text: string, ending: "\r\n" | "\n"): string {
-	return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+export function restoreCrlf(text: string): string {
+	return text.replace(/\n/g, "\r\n");
 }
 
 // NFKC plus quote, dash and space folding. Works per character, so it can be applied to
@@ -208,19 +208,9 @@ function getNoChangeError(path: string, totalEdits: number): Error {
 	);
 }
 
-export function detectLineEnding(content: string): "\r\n" | "\n" {
-	const crlfIndex = content.indexOf("\r\n");
-	const lfIndex = content.indexOf("\n");
-
-	if (lfIndex === -1) {
-		return "\n";
-	}
-
-	if (crlfIndex === -1) {
-		return "\n";
-	}
-
-	return crlfIndex < lfIndex ? "\r\n" : "\n";
+// Only a file whose every line break is CRLF is safe to fold to LF and restore on write.
+export function isUniformCrlf(content: string): boolean {
+	return content.includes("\r\n") && !/\r(?!\n)|(?<!\r)\n/.test(content);
 }
 
 export function fuzzyFindText(content: string, oldText: string): FuzzyMatchResult {
@@ -286,7 +276,7 @@ export async function computeEditsDiff(
 		const rawContent = await readFile(absolutePath, "utf-8");
 
 		const { text: content } = splitBom(rawContent);
-		const normalizedContent = normalizeToLF(content);
+		const normalizedContent = isUniformCrlf(content) ? normalizeToLF(content) : content;
 		const { baseContent, newContent } = applyEditsToNormalizedContent(
 			normalizedContent,
 			edits,
@@ -318,7 +308,10 @@ export function applyEditsToNormalizedContent(
 	const initialMatches = normalizedEdits.map((edit) =>
 		fuzzyFindText(normalizedContent, edit.oldText),
 	);
-	const usedFuzzyMatch = initialMatches.some((match) => match.usedFuzzyMatch);
+	// A leftover CR means mixed or lone-CR endings. Folding them away is what lets an LF
+	// oldText match a CRLF line, and the span mapping keeps every unmatched byte as it was.
+	const usedFuzzyMatch =
+		normalizedContent.includes("\r") || initialMatches.some((match) => match.usedFuzzyMatch);
 	const replacementBaseContent = usedFuzzyMatch
 		? normalizeForFuzzyMatch(normalizedContent)
 		: normalizedContent;

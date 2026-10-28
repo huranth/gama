@@ -1571,6 +1571,42 @@ describe("edit tool CRLF handling", () => {
 		).rejects.toThrow(/Found 2 copies of that text/);
 	});
 
+	it("should leave other line endings alone in a file with mixed endings", async () => {
+		const testFile = join(testDir, "mixed-preserve.txt");
+		writeFileSync(testFile, "a\nb\r\nc\r\n");
+
+		await editTool.execute("test-mixed-1", {
+			path: testFile,
+			edits: [{ oldText: "b", newText: "B" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("a\nB\r\nc\r\n");
+	});
+
+	it("should leave lone CR line endings alone", async () => {
+		const testFile = join(testDir, "lone-cr.txt");
+		writeFileSync(testFile, "a\rb\rc");
+
+		await editTool.execute("test-lone-cr", {
+			path: testFile,
+			edits: [{ oldText: "b", newText: "B" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("a\rB\rc");
+	});
+
+	it("should match a multi-line edit across a CRLF break in a mixed file", async () => {
+		const testFile = join(testDir, "mixed-multiline.txt");
+		writeFileSync(testFile, "x\r\ny\nz\r\n");
+
+		await editTool.execute("test-mixed-2", {
+			path: testFile,
+			edits: [{ oldText: "x\ny", newText: "X\nY" }],
+		});
+
+		expect(readFileSync(testFile, "utf-8")).toBe("X\nY\nz\r\n");
+	});
+
 	it("should preserve UTF-8 BOM after edit", async () => {
 		const testFile = join(testDir, "bom-test.txt");
 		writeFileSync(testFile, "\uFEFFfirst\r\nsecond\r\nthird\r\n");
