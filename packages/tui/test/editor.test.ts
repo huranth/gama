@@ -2143,6 +2143,35 @@ describe("Editor component", () => {
 			assert.deepStrictEqual(requests, [{ text, force: true }]);
 		});
 
+		it("survives a throwing autocomplete provider and keeps autocomplete working", async () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let calls = 0;
+			editor.setAutocompleteProvider({
+				getSuggestions: async () => {
+					calls++;
+					if (calls === 1) throw new Error("extension provider failed");
+					return {
+						prefix: "src/",
+						items: [
+							{ value: "src/a", label: "a" },
+							{ value: "src/b", label: "b" },
+						],
+					};
+				},
+				applyCompletion,
+			});
+			editor.setText("src/");
+			editor.handleInput("\t");
+			await flushAutocomplete();
+			assert.strictEqual(calls, 1);
+			assert.strictEqual(editor.isShowingAutocomplete(), false);
+
+			editor.handleInput("\t");
+			await flushAutocomplete();
+			assert.strictEqual(calls, 2);
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+		});
+
 		it("completes Chinese path prefixes after whitespace or CJK punctuation with Tab", async (t) => {
 			const baseDir = mkdtempSync(join(tmpdir(), "gama-editor-autocomplete-"));
 			t.after(() => rmSync(baseDir, { recursive: true, force: true }));

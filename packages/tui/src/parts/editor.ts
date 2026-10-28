@@ -2157,14 +2157,23 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			const snapshotLine = this.state.cursorLine;
 			const snapshotCol = this.state.cursorCol;
 
-			await this.runAutocompleteRequest(
-				requestId,
-				controller,
-				snapshotText,
-				snapshotLine,
-				snapshotCol,
-				options,
-			);
+			try {
+				await this.runAutocompleteRequest(
+					requestId,
+					controller,
+					snapshotText,
+					snapshotLine,
+					snapshotCol,
+					options,
+				);
+			} catch {
+				// A throwing provider (extension code) must neither crash the app nor
+				// leave a rejected task that every later request would await.
+				if (requestId === this.autocompleteRequestId) {
+					this.cancelAutocomplete();
+					this.tui.requestRender();
+				}
+			}
 		})();
 		await this.autocompleteRequestTask;
 	}
