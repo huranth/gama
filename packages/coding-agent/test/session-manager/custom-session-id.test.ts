@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -178,5 +178,38 @@ describe("SessionManager.newSession with custom id", () => {
 		const sessionFile = forked.getSessionFile()!;
 		expect(sessionFile).toContain("forked-session-id");
 		expect(basename(sessionFile)).toBe("forked-session-id.gama");
+	});
+
+	it("refuses to overwrite another cwd's session file with the same id", () => {
+		const dir = mkdtempSync(join(tmpdir(), "gama-session-manager-"));
+		const cwdA = mkdtempSync(join(tmpdir(), "gama-cwd-a-"));
+		const cwdB = mkdtempSync(join(tmpdir(), "gama-cwd-b-"));
+		const first = SessionManager.create(cwdA, dir, { id: "shared-id" });
+		first.appendMessage({ role: "user", content: [{ type: "text", text: "from a" }] });
+		first.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "reply" }],
+		} as never);
+		const before = readFileSync(first.getSessionFile()!, "utf8");
+
+		expect(() => SessionManager.create(cwdB, dir, { id: "shared-id" })).toThrow(
+			/already exists/,
+		);
+
+		const sourcePath = join(dir, "source.jsonl");
+		writeFileSync(
+			sourcePath,
+			`${JSON.stringify({
+				type: "session",
+				version: 3,
+				id: "source-id",
+				timestamp: new Date().toISOString(),
+				cwd: cwdB,
+			})}\n`,
+		);
+		expect(() => SessionManager.forkFrom(sourcePath, cwdB, dir, { id: "shared-id" })).toThrow(
+			/already exists/,
+		);
+		expect(readFileSync(first.getSessionFile()!, "utf8")).toBe(before);
 	});
 });

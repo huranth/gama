@@ -627,6 +627,12 @@ function removeQuietly(filePath: string): void {
 	} catch {}
 }
 
+function assertSessionFileFree(filePath: string, id: string): void {
+	if (existsSync(filePath)) {
+		throw new Error(`Session already exists with id '${id}': ${filePath}`);
+	}
+}
+
 function writeSessionFileAtomically(filePath: string, lines: string[]): void {
 	const tempPath = join(
 		dirname(filePath),
@@ -1190,6 +1196,12 @@ export class SessionManager {
 	newSession(options?: NewSessionOptions): string | undefined {
 		if (options?.id !== undefined) {
 			assertValidSessionId(options.id);
+			if (this.persist) {
+				assertSessionFileFree(
+					join(this.getSessionDir(), `${options.id}${SESSION_FILE_EXTENSION}`),
+					options.id,
+				);
+			}
 		}
 		this.sessionId = options?.id ?? createSessionId();
 		const timestamp = new Date().toISOString();
@@ -1846,6 +1858,7 @@ export class SessionManager {
 		const newSessionId = options?.id ?? createSessionId();
 		const timestamp = new Date().toISOString();
 		const newSessionFile = join(dir, `${newSessionId}${SESSION_FILE_EXTENSION}`);
+		if (options?.id !== undefined) assertSessionFileFree(newSessionFile, newSessionId);
 
 		const newHeader: SessionHeader = {
 			type: "session",

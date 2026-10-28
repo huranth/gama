@@ -403,7 +403,13 @@ export async function createSessionManager(
 		);
 	}
 
-	return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	try {
+		return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+	} catch (error: unknown) {
+		const message = error instanceof Error ? error.message : String(error);
+		console.error(chalk.red(`Error: ${message}`));
+		process.exit(1);
+	}
 }
 
 function findSavedScopedModel(
