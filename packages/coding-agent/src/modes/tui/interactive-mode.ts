@@ -4778,6 +4778,9 @@ export class InteractiveMode {
 	// Docked prompts
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
+		for (const component of this.pendingBashComponents) {
+			this.pendingMessagesContainer.addChild(component);
+		}
 		const { steering: steeringMessages, followUp: followUpMessages } =
 			this.getAllQueuedMessages();
 		const queuedMessages = [...steeringMessages, ...followUpMessages];
