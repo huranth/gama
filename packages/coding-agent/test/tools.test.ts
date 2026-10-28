@@ -1336,6 +1336,34 @@ describe("edit tool fuzzy matching", () => {
 		expect(content).toContain("universe");
 	});
 
+	it("should only replace the matched span and keep the rest of the line as written", async () => {
+		const testFile = join(testDir, "fuzzy-same-line.txt");
+		const originalContent = "x = \u201Ca\u201D + \u201Cb\u201D \u2122  \nnext\n";
+		writeFileSync(testFile, originalContent);
+
+		const result = await editTool.execute("test-fuzzy-same-line", {
+			path: testFile,
+			edits: [{ oldText: 'x = "a"', newText: 'y = "a"' }],
+		});
+
+		const expectedContent = 'y = "a" + \u201Cb\u201D \u2122  \nnext\n';
+		expect(readFileSync(testFile, "utf-8")).toBe(expectedContent);
+		expect(applyPatch(originalContent, result.details?.patch ?? "")).toBe(expectedContent);
+	});
+
+	it("should refuse a fuzzy match that cuts through an expanded character", async () => {
+		const testFile = join(testDir, "fuzzy-cut-cluster.txt");
+		writeFileSync(testFile, "a \u2122 b\n");
+
+		await expect(
+			editTool.execute("test-fuzzy-cut-cluster", {
+				path: testFile,
+				edits: [{ oldText: "T", newText: "X" }],
+			}),
+		).rejects.toThrow(/Unicode normalization/);
+		expect(readFileSync(testFile, "utf-8")).toBe("a \u2122 b\n");
+	});
+
 	it("should prefer exact match over fuzzy match", async () => {
 		const testFile = join(testDir, "exact-preferred.txt");
 		writeFileSync(testFile, "const x = 'exact';\nconst y = 'other';\n");
