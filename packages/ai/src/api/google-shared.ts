@@ -322,12 +322,22 @@ export function convertMessages<T extends GoogleApiType>(
 ): Content[] {
 	const conversation = withoutInitialSystemMessage(collapseSystemMessages(context).messages);
 	const contents: Content[] = [];
+	// Image turns for Gemini < 3 go after the whole run of tool results, so the
+	// parallel functionResponses stay in one user turn.
+	const deferredImageTurns: Content[] = [];
 
 	for (const message of transformMessages(conversation, model, toolCallIdNormalizer(model))) {
+		if (message.role === "toolResult") {
+			pushToolResult(contents, model, message, deferredImageTurns);
+			continue;
+		}
+
+		contents.push(...deferredImageTurns.splice(0));
 		if (message.role === "user") pushUserContent(contents, message);
 		else if (message.role === "assistant") pushAssistantContent(contents, model, message);
-		else if (message.role === "toolResult") pushToolResult(contents, model, message);
 	}
+
+	contents.push(...deferredImageTurns);
 
 	return contents;
 }
@@ -421,6 +431,7 @@ function pushToolResult<T extends GoogleApiType>(
 	contents: Content[],
 	model: Model<T>,
 	message: ToolResultMessage,
+	deferredImageTurns: Content[],
 ): void {
 	const textResult = message.content
 		.filter((part): part is TextContent => part.type === "text")
@@ -447,7 +458,7 @@ function pushToolResult<T extends GoogleApiType>(
 	attachToolResult(contents, part);
 
 	if (hasImages && !isMultimodal) {
-		contents.push({
+		deferredImageTurns.push({
 			role: "user",
 			parts: [{ text: "Tool result image:" }, ...imageParts],
 		});
