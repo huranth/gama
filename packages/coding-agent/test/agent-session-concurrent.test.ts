@@ -151,6 +151,29 @@ describe("AgentSession concurrent prompt guard", () => {
 		await firstPrompt.catch(() => {});
 	});
 
+	it("should reject a second prompt() issued during the first prompt's async setup", async () => {
+		await createSession();
+		let settledCount = 0;
+		session.subscribe((event) => {
+			if (event.type === "agent_settled") settledCount++;
+		});
+
+		// Both calls start before either reaches agent.prompt(), so both would
+		// pass the isStreaming check unless setup marks the session busy.
+		const firstPrompt = session.prompt("First message");
+		const secondPrompt = session.prompt("Second message");
+
+		await expect(secondPrompt).rejects.toThrow("Agent is already processing");
+
+		await new Promise((resolve) => setTimeout(resolve, 20));
+		expect(session.isStreaming).toBe(true);
+		expect(settledCount).toBe(0);
+
+		await session.abort();
+		await firstPrompt.catch(() => {});
+		expect(settledCount).toBe(1);
+	});
+
 	it("should allow steer() while streaming", async () => {
 		await createSession();
 

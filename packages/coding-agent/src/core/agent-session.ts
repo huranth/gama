@@ -349,6 +349,7 @@ export class AgentSession {
 	private _unsubscribeAgent?: () => void;
 	private _eventListeners: AgentSessionEventListener[] = [];
 	private _isAgentRunActive = false;
+	private _isPreparingPrompt = false;
 	private _agentRunAbortRequested = false;
 	private _idleWaitPromise: Promise<void> | undefined;
 	private _resolveIdleWait: (() => void) | undefined;
@@ -1877,7 +1878,7 @@ export class AgentSession {
 			expandedText = expandPromptTemplate(expandedText, [...this.promptTemplates]);
 		}
 
-		if (this.isStreaming) {
+		if (this.isStreaming || this._isPreparingPrompt) {
 			if (!options?.streamingBehavior) {
 				throw new Error(
 					"Agent is already processing. Specify streamingBehavior " +
@@ -1893,71 +1894,80 @@ export class AgentSession {
 			return;
 		}
 
-		this._flushPendingBashMessages();
-		this._flushPendingCustomMessages();
+		// Claim the session before the first await below so a concurrent prompt()
+		// fails the isStreaming check instead of racing this one into agent.prompt().
+		this._isPreparingPrompt = true;
+		let messages: AgentMessage[];
+		try {
+			this._flushPendingBashMessages();
+			this._flushPendingCustomMessages();
 
-		if (!this.model) {
-			throw new Error(formatNoModelSelectedMessage());
-		}
+			if (!this.model) {
+				throw new Error(formatNoModelSelectedMessage());
+			}
 
-		const hasConfiguredAuth =
-			this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
-			(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
-		if (!hasConfiguredAuth) {
-			throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
-		}
+			const hasConfiguredAuth =
+				this._modelRuntime.hasConfiguredAuth(this.model.provider) ||
+				(await this._modelRuntime.checkAuth(this.model.provider)) !== undefined;
+			if (!hasConfiguredAuth) {
+				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
+			}
 
-		const lastAssistant = this._findLastAssistantMessage();
-		if (lastAssistant) {
-			await this._checkCompaction(lastAssistant, false);
-		}
+			const lastAssistant = this._findLastAssistantMessage();
+			if (lastAssistant) {
+				await this._checkCompaction(lastAssistant, false);
+			}
 
-		const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
-		const result = await this._extensionRunner.emitBeforeAgentStart(
-			expandedText,
-			currentImages,
-			this._baseSystemPromptOptions,
-		);
-		const handlerEditedTools =
-			result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
-			result.systemPromptOptions.selectedTools.some(
-				(name, index) => name !== selectedToolsBefore[index],
+			const selectedToolsBefore = this._baseSystemPromptOptions.selectedTools;
+			const result = await this._extensionRunner.emitBeforeAgentStart(
+				expandedText,
+				currentImages,
+				this._baseSystemPromptOptions,
 			);
-		if (!handlerEditedTools) result.systemPromptOptions.selectedTools = this.getActiveToolNames();
+			const handlerEditedTools =
+				result.systemPromptOptions.selectedTools.length !== selectedToolsBefore.length ||
+				result.systemPromptOptions.selectedTools.some(
+					(name, index) => name !== selectedToolsBefore[index],
+				);
+			if (!handlerEditedTools)
+				result.systemPromptOptions.selectedTools = this.getActiveToolNames();
 
-		const normalized = await this._normalizePromptImages(currentImages);
-		const userText =
-			normalized.hints.length > 0
-				? `${expandedText}\n\n${normalized.hints.join("\n")}`
-				: expandedText;
+			const normalized = await this._normalizePromptImages(currentImages);
+			const userText =
+				normalized.hints.length > 0
+					? `${expandedText}\n\n${normalized.hints.join("\n")}`
+					: expandedText;
 
-		const messages: AgentMessage[] = [];
-		const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
-		userContent.push(...normalized.images);
-		messages.push({
-			role: "user",
-			content: userContent,
-			timestamp: Date.now(),
-		});
-
-		for (const msg of this._pendingNextTurnMessages) {
-			messages.push(msg);
-		}
-		this._pendingNextTurnMessages = [];
-
-		for (const msg of result.messages) {
+			messages = [];
+			const userContent: (TextContent | ImageContent)[] = [{ type: "text", text: userText }];
+			userContent.push(...normalized.images);
 			messages.push({
-				role: "custom",
-				customType: msg.customType,
-				content: msg.content ?? [],
-				display: msg.display,
-				details: msg.details,
+				role: "user",
+				content: userContent,
 				timestamp: Date.now(),
 			});
+
+			for (const msg of this._pendingNextTurnMessages) {
+				messages.push(msg);
+			}
+			this._pendingNextTurnMessages = [];
+
+			for (const msg of result.messages) {
+				messages.push({
+					role: "custom",
+					customType: msg.customType,
+					content: msg.content ?? [],
+					display: msg.display,
+					details: msg.details,
+					timestamp: Date.now(),
+				});
+			}
+			const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
+			this._runSystemPromptOptions = result.systemPromptOptions;
+			if (updateMessage) messages.unshift(updateMessage);
+		} finally {
+			this._isPreparingPrompt = false;
 		}
-		const updateMessage = this._preparePromptAndToolLoadout(result.systemPromptOptions);
-		this._runSystemPromptOptions = result.systemPromptOptions;
-		if (updateMessage) messages.unshift(updateMessage);
 
 		preflightResult?.("started");
 		await this._runAgentPrompt(messages);
