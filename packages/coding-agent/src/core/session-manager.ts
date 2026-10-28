@@ -1344,11 +1344,9 @@ export class SessionManager {
 	}
 
 	_writeAllEntries(): void {
-		try {
-			this._rewriteFile();
-			this.flushed = true;
-			this.appendRecoveryNeeded = false;
-		} catch {}
+		this._rewriteFile();
+		this.flushed = true;
+		this.appendRecoveryNeeded = false;
 	}
 
 	private _appendEntry(entry: SessionEntry): void {

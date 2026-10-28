@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type CustomEntry, SessionManager } from "../../src/core/session-manager.ts";
 
@@ -45,5 +48,17 @@ describe("SessionManager.saveCustomEntry", () => {
 
 		const ctx = session.buildSessionContext();
 		expect(ctx.messages).toHaveLength(2);
+	});
+});
+
+describe("SessionManager persist failures", () => {
+	it("throws when the session file cannot be written", () => {
+		const dir = mkdtempSync(join(tmpdir(), "gama-session-manager-"));
+		const session = SessionManager.create(dir, join(dir, "sessions"));
+		rmSync(join(dir, "sessions"), { recursive: true });
+
+		expect(() =>
+			session.appendMessage({ role: "user", content: "hello", timestamp: 1 }),
+		).toThrow();
 	});
 });
