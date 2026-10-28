@@ -72,7 +72,7 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 		this.addChild(this.baseUrlInput);
 		this.addChild(new Spacer(1));
 
-		this.apiKeyInput = new Input({ placeholder: options.apiKeyPlaceholder });
+		this.apiKeyInput = new Input({ placeholder: options.apiKeyPlaceholder, mask: true });
 		if (options.initialApiKey) {
 			this.apiKeyInput.setValue(options.initialApiKey);
 		}

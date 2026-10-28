@@ -28,6 +28,8 @@ export interface InputOptions {
 	prompt?: string;
 	placeholder?: string;
 	placeholderStyle?: (text: string) => string;
+	/** Render bullets instead of the typed text (for secrets). */
+	mask?: boolean;
 }
 
 const segmenter = getGraphemeSegmenter();
@@ -41,6 +43,7 @@ export class Input implements Component, Focusable {
 	private readonly prompt: string;
 	private readonly placeholder: string;
 	private readonly placeholderStyle: (text: string) => string;
+	private readonly mask: boolean;
 	private renderedStartColumn = 0;
 	public onSubmit?: (value: string) => void;
 	public onEscape?: () => void;
@@ -59,6 +62,7 @@ export class Input implements Component, Focusable {
 		this.prompt = options.prompt ?? "> ";
 		this.placeholder = options.placeholder ?? "";
 		this.placeholderStyle = options.placeholderStyle ?? ((text) => text);
+		this.mask = options.mask === true;
 	}
 
 	getValue(): string {
@@ -223,7 +227,7 @@ export class Input implements Component, Focusable {
 		const targetColumn = this.renderedStartColumn + visibleColumn;
 		let currentColumn = 0;
 		this.cursor = this.value.length;
-		for (const grapheme of segmenter.segment(this.value)) {
+		for (const grapheme of segmenter.segment(this.displayValue())) {
 			const nextColumn = currentColumn + visibleWidth(grapheme.segment);
 			if (targetColumn < nextColumn) {
 				this.cursor = grapheme.index;
@@ -394,6 +398,10 @@ export class Input implements Component, Focusable {
 		this.cursor += cleanText.length;
 	}
 
+	private displayValue(): string {
+		return this.mask ? "•".repeat(this.value.length) : this.value;
+	}
+
 	invalidate(): void {}
 
 	render(width: number): string[] {
@@ -417,17 +425,17 @@ export class Input implements Component, Focusable {
 			return [this.prompt + textWithCursor + padding];
 		}
 
+		const shown = this.displayValue();
 		let visibleText = "";
 		let cursorDisplay = this.cursor;
 		this.renderedStartColumn = 0;
-		const totalWidth = visibleWidth(this.value);
+		const totalWidth = visibleWidth(shown);
 
 		if (totalWidth < availableWidth) {
-			visibleText = this.value;
+			visibleText = shown;
 		} else {
-			const scrollWidth =
-				this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
-			const cursorCol = visibleWidth(this.value.slice(0, this.cursor));
+			const scrollWidth = this.cursor === shown.length ? availableWidth - 1 : availableWidth;
+			const cursorCol = visibleWidth(shown.slice(0, this.cursor));
 
 			if (scrollWidth > 0) {
 				const halfWidth = Math.floor(scrollWidth / 2);
@@ -442,9 +450,9 @@ export class Input implements Component, Focusable {
 				}
 
 				this.renderedStartColumn = startCol;
-				visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
+				visibleText = sliceByColumn(shown, startCol, scrollWidth, true);
 				const beforeCursor = sliceByColumn(
-					this.value,
+					shown,
 					startCol,
 					Math.max(0, cursorCol - startCol),
 					true,
