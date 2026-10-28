@@ -1451,6 +1451,34 @@ describe("edit tool fuzzy matching", () => {
 	);
 });
 
+describe("edit tool byte preservation", () => {
+	let testDir: string;
+
+	beforeEach(() => {
+		testDir = join(tmpdir(), `coding-agent-bytes-test-${Date.now()}`);
+		mkdirSync(testDir, { recursive: true });
+	});
+
+	afterEach(() => {
+		rmSync(testDir, { recursive: true, force: true });
+	});
+
+	it("should refuse to edit a file that is not valid UTF-8 and leave it untouched", async () => {
+		const testFile = join(testDir, "latin1.txt");
+		const original = Buffer.from([...Buffer.from("caf"), 0xe9, ...Buffer.from("\nfoo\n")]);
+		writeFileSync(testFile, original);
+
+		await expect(
+			editTool.execute("test-non-utf8", {
+				path: testFile,
+				edits: [{ oldText: "foo", newText: "bar" }],
+			}),
+		).rejects.toThrow(/not valid UTF-8/);
+
+		expect(readFileSync(testFile).equals(original)).toBe(true);
+	});
+});
+
 describe("edit tool CRLF handling", () => {
 	let testDir: string;
 

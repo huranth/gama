@@ -207,7 +207,15 @@ export function createEditToolDefinition(
 					throw describeEditError(path, error);
 				}
 
-				const rawContent = buffer.toString("utf-8");
+				let rawContent: string;
+				try {
+					// ignoreBOM keeps a leading BOM in the text so splitBom can restore it on write.
+					rawContent = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
+						buffer,
+					);
+				} catch {
+					throw new Error(`Could not edit ${path}, the file is not valid UTF-8; edit refused`);
+				}
 				assertNotAborted(signal);
 
 				const { bom, text: content } = splitBom(rawContent);
