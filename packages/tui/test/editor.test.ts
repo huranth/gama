@@ -2172,6 +2172,43 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.isShowingAutocomplete(), true);
 		});
 
+		it("drops the completion when the provider's applyCompletion throws", async () => {
+			const items = [
+				{ value: "src/a", label: "a" },
+				{ value: "src/b", label: "b" },
+			];
+			const throwing = (suggestionItems: typeof items) => ({
+				getSuggestions: async () => ({ prefix: "src/", items: suggestionItems }),
+				applyCompletion: () => {
+					throw new Error("extension provider failed");
+				},
+			});
+
+			for (const key of ["\t", "\r"]) {
+				const editor = new Editor(createTestTUI(), defaultEditorTheme);
+				editor.setAutocompleteProvider(throwing(items));
+				editor.setText("src/");
+				editor.handleInput("\t");
+				await flushAutocomplete();
+				assert.strictEqual(editor.isShowingAutocomplete(), true);
+
+				assert.doesNotThrow(() => editor.handleInput(key));
+				assert.strictEqual(editor.getText(), "src/");
+				assert.strictEqual(editor.isShowingAutocomplete(), false);
+				editor.handleInput("x");
+				assert.strictEqual(editor.getText(), "src/x");
+			}
+
+			const single = new Editor(createTestTUI(), defaultEditorTheme);
+			single.setAutocompleteProvider(throwing(items.slice(0, 1)));
+			single.setText("src/");
+			assert.doesNotThrow(() => single.handleInput("\t"));
+			await flushAutocomplete();
+			assert.strictEqual(single.getText(), "src/");
+			single.handleInput("x");
+			assert.strictEqual(single.getText(), "src/x");
+		});
+
 		it("completes Chinese path prefixes after whitespace or CJK punctuation with Tab", async (t) => {
 			const baseDir = mkdtempSync(join(tmpdir(), "gama-editor-autocomplete-"));
 			t.after(() => rmSync(baseDir, { recursive: true, force: true }));
