@@ -131,6 +131,21 @@ async function exportSessionOrExit(sessionFile: string, outputPath?: string): Pr
 	process.exit(0);
 }
 
+/**
+ * Whether project settings may be read at startup, before the trust prompt.
+ * Only trust that is already known without asking counts; a project that has
+ * trust-requiring resources and no recorded decision stays untrusted here.
+ */
+export function isProjectTrustedAtStartup(
+	cwd: string,
+	trustOverride: boolean | undefined,
+	trustStore: ProjectTrustStore,
+): boolean {
+	return (
+		trustOverride ?? (!hasTrustRequiringProjectResources(cwd) || trustStore.get(cwd) === true)
+	);
+}
+
 function resolveSessionDir(parsed: Args, settingsManager: SettingsManager): string | undefined {
 	const explicit = parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined;
 	if (explicit) return explicit;
@@ -579,7 +594,10 @@ export async function main(args: string[], options?: MainOptions) {
 	const { migratedAuthProviders: migratedProviders, deprecationWarnings } = runMigrations(cwd);
 	time("runMigrations");
 
-	const startupSettingsManager = SettingsManager.create(cwd, agentDir);
+	const trustStore = new ProjectTrustStore(agentDir);
+	const startupSettingsManager = SettingsManager.create(cwd, agentDir, {
+		projectTrusted: isProjectTrustedAtStartup(cwd, parsed.projectTrustOverride, trustStore),
+	});
 	const startupSettingsDiagnostics = collectSettingsDiagnostics(startupSettingsManager);
 
 	if (
@@ -628,7 +646,6 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("createSessionManager");
 
-	const trustStore = new ProjectTrustStore(agentDir);
 	const sessionCwd = sessionManager.getCwd();
 	const autoTrustOnReloadCwd =
 		parsed.projectTrustOverride === undefined && !hasTrustRequiringProjectResources(sessionCwd)
