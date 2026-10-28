@@ -563,4 +563,67 @@ describe("RPC prompt response semantics", () => {
 			await cleanup();
 		}
 	});
+
+	it("cancels pending extension dialogs on stdin EOF so shutdown completes", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("input", async (_event, ctx) => {
+						await ctx.ui.confirm("Proceed?", "blocked on the client");
+					});
+				},
+			]),
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "dlg", type: "prompt", message: "Hello" }));
+			await vi.waitFor(() => {
+				expect(
+					parseOutputLines(rpcIo.outputLines).some((l) => l.type === "extension_ui_request"),
+				).toBe(true);
+			});
+
+			process.stdin.emit("end");
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+			expect(exit).toHaveBeenCalled();
+		} finally {
+			exit.mockRestore();
+			await cleanup();
+		}
+	});
+
+	it("stops waiting for hung in-flight work after the EOF drain cap", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("input", () => new Promise<void>(() => {}));
+				},
+			]),
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "hung", type: "prompt", message: "Hello" }));
+			await sleep(20);
+
+			vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+			process.stdin.emit("end");
+			await vi.advanceTimersByTimeAsync(29_000);
+			expect(runtimeHost.dispose).not.toHaveBeenCalled();
+			await vi.advanceTimersByTimeAsync(2_000);
+			vi.useRealTimers();
+
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+		} finally {
+			vi.useRealTimers();
+			exit.mockRestore();
+			await cleanup();
+		}
+	});
 });

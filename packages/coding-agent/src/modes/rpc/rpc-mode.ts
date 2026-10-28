@@ -33,6 +33,9 @@ export type {
 	RpcSessionState,
 } from "./rpc-types.ts";
 
+/** Longest wait for in-flight work after stdin EOF before shutting down anyway. */
+const EOF_DRAIN_TIMEOUT_MS = 30_000;
+
 export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
@@ -751,10 +754,24 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	};
 
 	const onInputEnd = () => {
+		// Stdin is closed, so no extension UI response can arrive. Cancel the
+		// pending dialogs so work blocked on them can finish.
+		for (const [id, pending] of [...pendingExtensionRequests]) {
+			pendingExtensionRequests.delete(id);
+			pending.resolve({ type: "extension_ui_response", id, cancelled: true });
+		}
 		void (async () => {
-			while (inFlight.size > 0) {
-				await Promise.all(inFlight);
-			}
+			const drained = (async () => {
+				while (inFlight.size > 0) {
+					await Promise.all(inFlight);
+				}
+			})();
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			const timedOut = new Promise<void>((resolve) => {
+				timer = setTimeout(resolve, EOF_DRAIN_TIMEOUT_MS);
+			});
+			await Promise.race([drained, timedOut]);
+			clearTimeout(timer);
 			await shutdown();
 		})();
 	};
