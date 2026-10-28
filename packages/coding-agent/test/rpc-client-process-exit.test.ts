@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, test } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { RpcClient } from "../src/modes/rpc/rpc-client.ts";
 
 const tempDirs: string[] = [];
@@ -36,5 +36,40 @@ process.stdin.resume();
 		await expect(client.getCommands()).rejects.toThrow(
 			/Agent process exited \(code=43 signal=null\)/,
 		);
+	});
+
+	test("times out quick commands but lets long-running commands wait", async () => {
+		const client = new RpcClient({
+			cliPath: writeChildScript(`
+process.stdin.resume();
+setInterval(() => {}, 1000);
+`),
+		});
+		await client.start();
+
+		vi.useFakeTimers();
+		try {
+			const quick = expect(client.getCommands()).rejects.toThrow(
+				/Timeout waiting for response to get_commands/,
+			);
+			let bashSettled = false;
+			const bash = client.bash("sleep 60");
+			bash.then(
+				() => {
+					bashSettled = true;
+				},
+				() => {
+					bashSettled = true;
+				},
+			);
+
+			await vi.advanceTimersByTimeAsync(31_000);
+
+			await quick;
+			expect(bashSettled).toBe(false);
+		} finally {
+			vi.useRealTimers();
+			await client.stop();
+		}
 	});
 });
