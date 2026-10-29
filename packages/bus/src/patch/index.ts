@@ -11,13 +11,13 @@ export type NonEmptyPath = readonly [Seg, ...Seg[]];
 export type PathRef<P extends Path = Path> = P | number;
 
 export type Op =
-	| readonly ["r", JsonValue]
-	| readonly ["s", NonEmptyPath, JsonValue]
-	| readonly ["d", NonEmptyPath]
-	| readonly ["a", NonEmptyPath, string]
-	| readonly ["t", NonEmptyPath, number]
-	| readonly ["p", Path, number, number, JsonValue[]]
-	| readonly ["m", Path, number[]];
+	| readonly ["r", JsonValue] // replace
+	| readonly ["s", NonEmptyPath, JsonValue] // set
+	| readonly ["d", NonEmptyPath] // delete
+	| readonly ["a", NonEmptyPath, string] // append
+	| readonly ["t", NonEmptyPath, number] // trim
+	| readonly ["p", Path, number, number, JsonValue[]] // patch
+	| readonly ["m", Path, number[]]; // move
 
 export type WireOp =
 	| readonly ["r", JsonValue]
@@ -45,31 +45,56 @@ export interface Decoder {
 	decode(wire: readonly WireOp[]): Op[];
 }
 
-const isObj = (value: unknown): value is object => value !== null && typeof value === "object";
+export const DEFAULT_OVERLAP_SCAN = 65_536;
 
-export const isReplace = (op: Op | WireOp): boolean => op[0] === "r";
+const DEFAULT_OVERLAP_PROBE = 64;
+
+const DEFAULT_OVERLAP_CANDIDATES = 8;
+
+const isObj = (value: unknown): value is object =>
+	value !== null && typeof value === "object";
 
 export const isBase = (ops: readonly (Op | WireOp)[]): boolean =>
 	ops.length > 0 && ops[0]![0] === "r";
 
-export function overlap(a: string, b: string, scan: number, probe = 64, maxCandidates = 8): number {
+export function overlap(
+	a: string,
+	b: string,
+	scan: number,
+	probe = DEFAULT_OVERLAP_PROBE,
+	maxCandidates = DEFAULT_OVERLAP_CANDIDATES,
+): number {
 	if (a.length === 0 || b.length === 0 || scan === 0) return 0;
-	const tail = a.length > scan ? a.slice(a.length - scan) : a;
 
-	for (const h of [Math.min(probe, b.length), 1]) {
-		const head = b.slice(0, h);
+	const tail = a.length > scan ? a.slice(a.length - scan) : a;
+	const probeLengths = [Math.min(probe, b.length), 1];
+
+	for (const probeLength of probeLengths) {
+		const head = b.slice(0, probeLength);
 		let tried = 0;
-		for (let k = tail.indexOf(head); k !== -1; k = tail.indexOf(head, k + 1)) {
-			if (++tried > maxCandidates) break;
-			const n = tail.length - k;
-			if (n <= b.length && tail.slice(k) === b.slice(0, n)) return n;
+		let foundAt = tail.indexOf(head);
+
+		while (foundAt !== -1) {
+			tried += 1;
+
+			if (tried > maxCandidates) break;
+
+			const overlapLength = tail.length - foundAt;
+			const matches = overlapLength <= b.length && tail.slice(foundAt) === b.slice(0, overlapLength);
+
+			if (matches) return overlapLength;
+
+			foundAt = tail.indexOf(head, foundAt + 1);
 		}
-		if (h === 1) break;
+
+		if (probeLength === 1) break;
 	}
+
 	return 0;
 }
 
 export { diffRevisions } from "./diff.ts";
+
 export { type Change, type Prepared, type Tracker, track } from "./tracker.ts";
 
 export const RESERVED_SEGMENTS: ReadonlySet<string> = new Set([
@@ -185,10 +210,19 @@ export function assertValidWireOp(op: unknown): asserts op is WireOp {
 			} else throw new TypeError("t arity");
 			return;
 		case "p": {
-			const [i, r, items] =
-				op.length === 5 ? [op[2], op[3], op[4]] : op.length === 4 ? [op[1], op[2], op[3]] : [];
-			if (items === undefined) throw new TypeError("p arity");
-			if (op.length === 5) okRef(op[1]);
+			let i: unknown;
+			let r: unknown;
+			let items: unknown;
+
+			if (op.length === 5) {
+				okRef(op[1]);
+				[i, r, items] = [op[2], op[3], op[4]];
+			} else if (op.length === 4) {
+				[i, r, items] = [op[1], op[2], op[3]];
+			} else {
+				throw new TypeError("p arity");
+			}
+
 			if (!Number.isInteger(i) || (i as number) < 0) throw new TypeError("p index");
 			if (!Number.isInteger(r) || (r as number) < 0) throw new TypeError("p remove");
 			if (!Array.isArray(items)) throw new TypeError("p items");

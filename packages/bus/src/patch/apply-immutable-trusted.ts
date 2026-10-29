@@ -2,6 +2,7 @@ import type { JsonValue } from "../types.ts";
 import type { Op, Path, Seg } from "./index.ts";
 
 type JsonContainer = JsonValue[] | Record<string, JsonValue>;
+
 type CopiedPath = { root: JsonValue; target: JsonContainer };
 
 const DATA_DESCRIPTOR: PropertyDescriptor = {
@@ -75,6 +76,7 @@ function copyPath(root: JsonValue, path: Path, length: number, owned: WeakSet<ob
 		copiedRoot = shallowCopy(root);
 		owned.add(copiedRoot);
 	}
+
 	let destination = copiedRoot as JsonContainer;
 	for (let index = 0; index < length; index++) {
 		const segment = path[index]!;
@@ -100,6 +102,7 @@ export function applyImmutableTrusted<T>(target: T, operations: readonly Op[]): 
 			root = operation[1];
 			continue;
 		}
+
 		if (operation[0] === "p" || operation[0] === "m") {
 			const copied = copyPath(root, operation[1], operation[1].length, owned);
 			root = copied.root;

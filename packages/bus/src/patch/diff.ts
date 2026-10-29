@@ -1,5 +1,6 @@
 import type { JsonValue } from "../types.ts";
 import {
+	DEFAULT_OVERLAP_SCAN,
 	type NonEmptyPath,
 	type Op,
 	overlap,
@@ -16,8 +17,10 @@ type MatchCandidate = {
 	previous: number;
 };
 
-const DEFAULT_OVERLAP_SCAN = 65_536;
+const MAX_DELTA_COST = 65_536;
+
 const MAX_DELTA_OPERATIONS = 4_096;
+
 const overflowedBatches = new WeakSet<Op[]>();
 
 const emitOperation = (operations: Op[], operation: Op): void => {
@@ -102,6 +105,7 @@ const emitString = (before: string, after: string, path: NonEmptyPath, operation
 };
 
 const MAX_IDENTITY_CANDIDATES = 200_000;
+
 const MAX_SEMANTIC_CELLS = 65_536;
 
 const sameValue = (left: JsonValue, right: JsonValue): boolean =>
@@ -490,6 +494,7 @@ function diffArrayRegion(
 
 const diffArray = (before: JsonValue[], after: JsonValue[], path: Path, operations: Op[]): void => {
 	if (before === after || equalJson(before, after)) return;
+
 	if (
 		before.length === after.length &&
 		before.length > 1 &&
@@ -539,6 +544,7 @@ const diffObject = (
 
 const diffValue = (before: JsonValue, after: JsonValue, path: Path, operations: Op[]): void => {
 	if (before === after || overflowedBatches.has(operations)) return;
+
 	if (typeof before === "string" && typeof after === "string" && path.length > 0) {
 		emitString(before, after, path as NonEmptyPath, operations);
 		return;
@@ -547,6 +553,7 @@ const diffValue = (before: JsonValue, after: JsonValue, path: Path, operations: 
 		diffArray(before, after, path, operations);
 		return;
 	}
+
 	if (
 		isContainer(before) &&
 		isContainer(after) &&
@@ -556,6 +563,7 @@ const diffValue = (before: JsonValue, after: JsonValue, path: Path, operations: 
 		diffObject(before, after, path, operations);
 		return;
 	}
+
 	emitSet(path, after, operations);
 };
 
@@ -586,6 +594,7 @@ const jsonCost = (value: JsonValue): number => {
 
 const pathCost = (path: Path): number => {
 	let cost = 2;
+
 	for (let index = 0; index < path.length; index++) {
 		const segment: Seg = path[index]!;
 		cost +=
@@ -629,7 +638,7 @@ export function diffRevisions(before: JsonValue, after: JsonValue): Op[] {
 	for (const operation of operations) {
 		deltaCost += operationCost(operation) + 1;
 	}
-	if (deltaCost < 65_536) return operations;
+	if (deltaCost < MAX_DELTA_COST) return operations;
 	const snapshotCost = jsonCost(after) + 6;
 	return deltaCost >= snapshotCost ? [["r", after]] : operations;
 }

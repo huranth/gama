@@ -4,6 +4,7 @@ import { applyImmutableTrusted } from "./apply-immutable-trusted.ts";
 import type { Draft } from "./draft.ts";
 import {
 	applyImmutable,
+	DEFAULT_OVERLAP_SCAN,
 	type NonEmptyPath,
 	type Op,
 	overlap,
@@ -140,8 +141,11 @@ export interface Tracker<T extends object> {
 }
 
 const NODE = Symbol("chord.delta.overlay.node");
+
 const PREPARED = new WeakMap<object, OverlayContext>();
+
 const RELEASED: Record<string, JsonValue> = {};
+
 const ARRAY_MUTATORS = new Set<PropertyKey>([
 	"push",
 	"pop",
@@ -153,8 +157,11 @@ const ARRAY_MUTATORS = new Set<PropertyKey>([
 	"fill",
 	"copyWithin",
 ]);
+
 const MAX_DELTA_OPERATIONS = 4_096;
+
 const MAX_SIMPLE_OBJECT_NODES = 128;
+
 const DATA_DESCRIPTOR: PropertyDescriptor = {
 	value: undefined,
 	writable: true,
@@ -201,7 +208,7 @@ class ChangeImpl<T extends object> implements Change<T> {
 	}
 
 	prepare(): Prepared<T> {
-		if (this.#settled) throw new Error("Change has already been settled");
+		if (this.#settled) throw new Error("Change settled");
 		const context = this.#context!;
 		assertWritable(context);
 		context.status.value = "prepared";
@@ -235,6 +242,20 @@ class ChangeImpl<T extends object> implements Change<T> {
 }
 
 const PRUNE_BUDGET = 256;
+
+const DENSE_REGION_MIN = 256;
+
+const DENSE_REGION_RATIO = 2;
+
+const ZERO_CODE = "0".charCodeAt(0);
+
+const ONE_CODE = "1".charCodeAt(0);
+
+const NINE_CODE = "9".charCodeAt(0);
+
+const MAX_INDEX = 4_294_967_295;
+
+const MAX_INDEX_DIGITS = 10;
 
 class TrackerImpl<T extends object> implements Tracker<T> {
 	readonly #owner = {};
@@ -293,21 +314,21 @@ class TrackerImpl<T extends object> implements Tracker<T> {
 	adopt(prepared: Prepared<T>): void {
 		const context = PREPARED.get(prepared as object);
 		if (context?.owner !== this.#owner)
-			throw new Error("Prepared change belongs to a different tracker");
+			throw new Error("Wrong tracker");
 		if (context.status.value === "consumed")
-			throw new Error("Prepared change has already been used");
-		if (context.status.value === "aborted") throw new Error("Prepared change has been aborted");
-		if (context.status.value === "stale") throw new Error("Prepared change is stale");
-		if (context.status.value !== "prepared") throw new Error("Prepared change is not ready");
+			throw new Error("Change used");
+		if (context.status.value === "aborted") throw new Error("Change aborted");
+		if (context.status.value === "stale") throw new Error("Stale change");
+		if (context.status.value !== "prepared") throw new Error("Change not ready");
 		if (context.baseRevision !== this.#revision) {
 			context.status.value = "stale";
 			clearContext(context);
-			throw new Error("Prepared change is stale");
+			throw new Error("Stale change");
 		}
 
 		if (this.#value !== prepared.base) {
 			context.status.value = "stale";
-			throw new Error("Prepared change is stale");
+			throw new Error("Stale change");
 		}
 		this.#value = prepared.value;
 		context.status.value = "consumed";
@@ -597,7 +618,7 @@ function getArrayIndex(node: OverlayNode, index: number): unknown {
 	const overlay = arrayOverlay(node);
 	if (index >= arrayLength(overlay)) return undefined;
 	const piece = locatePiece(overlay, index);
-	const sourceIndex = piece.start + piece.step * overlay.locatedOffset;
+	const sourceIndex = sourceIndexOf(piece, overlay);
 	const value = entryValueAt(node, piece, sourceIndex);
 	if (!isContainer(value)) return value;
 	return createNode(
@@ -1044,6 +1065,17 @@ function arrayLength(overlay: ArrayOverlay): number {
 	return treeElements(overlay.root);
 }
 
+function compareStrings(left: string, right: string): number {
+	if (left < right) return -1;
+	if (left > right) return 1;
+
+	return 0;
+}
+
+function sourceIndexOf(piece: Piece, overlay: ArrayOverlay): number {
+	return piece.start + piece.step * overlay.locatedOffset;
+}
+
 function locatePiece(overlay: ArrayOverlay, index: number): Piece {
 	let node = overlay.root;
 	while (node !== undefined) {
@@ -1061,18 +1093,25 @@ function locatePiece(overlay: ArrayOverlay, index: number): Piece {
 }
 
 function arrayIndex(property: PropertyKey): number | undefined {
-	if (typeof property !== "string" || property.length === 0 || property.length > 10)
-		return undefined;
+	if (typeof property !== "string" || property.length === 0) return undefined;
+	if (property.length > MAX_INDEX_DIGITS) return undefined;
 	if (property === "0") return 0;
+
 	const first = property.charCodeAt(0);
-	if (first < 49 || first > 57) return undefined;
-	let index = first - 48;
+	if (first < ONE_CODE || first > NINE_CODE) return undefined;
+
+	let index = first - ZERO_CODE;
+
 	for (let offset = 1; offset < property.length; offset++) {
-		const digit = property.charCodeAt(offset) - 48;
+		const digit = property.charCodeAt(offset) - ZERO_CODE;
+
 		if (digit < 0 || digit > 9) return undefined;
+
 		index = index * 10 + digit;
-		if (index >= 4_294_967_295) return undefined;
+
+		if (index >= MAX_INDEX) return undefined;
 	}
+
 	return index;
 }
 
@@ -1217,7 +1256,7 @@ function setArrayIndex(node: OverlayNode, index: number, stored: Stored): void {
 		return;
 	}
 	const piece = locatePiece(overlay, index);
-	const sourceIndex = piece.start + piece.step * overlay.locatedOffset;
+	const sourceIndex = sourceIndexOf(piece, overlay);
 	const current = entryValueAt(node, piece, sourceIndex);
 	if (!isContainer(stored) && current === stored) return;
 	if (piece.kind === "base") {
@@ -1414,10 +1453,10 @@ const arrayMutators = {
 		order.sort((left, right) => {
 			const leftValue = left < 0 ? insertedValues[-left - 1] : baseValues[left];
 			const rightValue = right < 0 ? insertedValues[-right - 1] : baseValues[right];
+
 			if (typeof comparator === "function") return Number(comparator(leftValue, rightValue));
-			const a = String(leftValue);
-			const b = String(rightValue);
-			return a < b ? -1 : a > b ? 1 : 0;
+
+			return compareStrings(String(leftValue), String(rightValue));
 		});
 		if (
 			baseSnapshot.size > 0 ||
@@ -1583,7 +1622,7 @@ function sameSortTokenAt(
 	indices: readonly number[],
 ): boolean {
 	const piece = locatePiece(overlay, logicalIndex);
-	const sourceIndex = piece.start + piece.step * overlay.locatedOffset;
+	const sourceIndex = sourceIndexOf(piece, overlay);
 	const tokenSource = sortTokenSource(token, sources);
 	return (
 		sourceIndex === sortTokenIndex(token, indices) &&
@@ -1896,6 +1935,7 @@ function emitSimpleObjectOperations(context: OverlayContext): Op[] | undefined {
 }
 
 let locatedDenseArray: OverlayNode | undefined;
+
 let locatedDenseIndex = 0;
 
 function locateDenseArrayPosition(node: OverlayNode): boolean {
@@ -1997,7 +2037,9 @@ function buildDenseRegions(candidates: DenseCandidates): DenseRegion[] {
 			at += 1;
 		}
 		const length = end - start + 1;
-		if (count >= 256 && count * 2 >= length) regions.push({ start, length });
+		const dense = count >= DENSE_REGION_MIN && count * DENSE_REGION_RATIO >= length;
+
+		if (dense) regions.push({ start, length });
 	}
 	return regions;
 }
@@ -2225,7 +2267,7 @@ function cloneArrayRegion(node: OverlayNode, region: DenseRegion): JsonValue[] {
 	const result: JsonValue[] = [];
 	for (let index = region.start; index < region.start + region.length; index++) {
 		const piece = locatePiece(overlay, index);
-		const sourceIndex = piece.start + piece.step * overlay.locatedOffset;
+		const sourceIndex = sourceIndexOf(piece, overlay);
 		result.push(cloneStored(entryValueAt(node, piece, sourceIndex), node.context));
 	}
 	return result;
@@ -2244,7 +2286,7 @@ function emitChangedValue(
 			operations.push(["a", path, after.slice(before.length)]);
 			return true;
 		}
-		const shared = overlap(before, after, 65_536);
+		const shared = overlap(before, after, DEFAULT_OVERLAP_SCAN);
 		if (shared > 0) {
 			operations.push(["t", path, before.length - shared]);
 			if (after.length > shared) operations.push(["a", path, after.slice(shared)]);

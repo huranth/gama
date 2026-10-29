@@ -19,6 +19,9 @@ function assertPlainObject(value: object): void {
 }
 
 function assertDenseArray(value: readonly unknown[]): void {
+	if (Object.getPrototypeOf(value) !== Array.prototype) {
+		throw new TypeError("Replicated state arrays must be plain arrays");
+	}
 	const keys = Reflect.ownKeys(value);
 	if (keys.length !== value.length + 1 || keys.some((key) => typeof key !== "string")) {
 		throw new TypeError("Replicated state arrays must be dense and contain only indexed entries");
