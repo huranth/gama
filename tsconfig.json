@@ -5,40 +5,57 @@
 		"module": "NodeNext",
 		"moduleResolution": "NodeNext",
 		"paths": {
-			"@huranth/chord": ["./packages/chord/src/index.ts"],
-			"@huranth/chord/bundler": ["./packages/chord/src/bundler.ts"],
-			"@huranth/chord/context": ["./packages/chord/src/context/index.ts"],
-			"@huranth/chord/delta": ["./packages/chord/src/delta/index.ts"],
-			"@huranth/chord/node": ["./packages/chord/src/node.ts"],
-			"@huranth/gama-telemetry": ["./packages/telemetry/src/index.ts"],
-			"@huranth/gama-telemetry/testing": ["./packages/telemetry/src/testing/index.ts"],
-			"@huranth/gama-codemode": ["./packages/codemode/src/index.ts"],
-			"@huranth/gama-codemode/declarations": ["./packages/codemode/src/declarations.ts"],
-			"@huranth/gama-codemode/source": ["./packages/codemode/src/source.ts"],
-			"@huranth/gama-codemode/worker": ["./packages/codemode/src/runtime/worker.ts"],
-			"@huranth/gama-ai": ["./packages/ai/src/index.ts"],
-			"@huranth/gama-ai/oauth": ["./packages/ai/src/oauth.ts"],
-			"@huranth/gama-ai/*": ["./packages/ai/src/*.ts", "./packages/ai/src/providers/*.ts"],
-			"@huranth/gama-ai/dist/*": ["./packages/ai/src/*"],
-			"@huranth/gama-durable": ["./packages/durable/src/index.ts"],
-			"@huranth/gama-durable/testing": ["./packages/durable/src/testing/index.ts"],
+			"@huranth/gama-bus": ["./packages/bus/src/index.ts"],
+			"@huranth/gama-bus/bundler": ["./packages/bus/src/bundler.ts"],
+			"@huranth/gama-bus/context": ["./packages/bus/src/scope/index.ts"],
+			"@huranth/gama-bus/delta": ["./packages/bus/src/patch/index.ts"],
+			"@huranth/gama-bus/node": ["./packages/bus/src/host.ts"],
+			"@huranth/gama-telemetry": ["./packages/trace/src/index.ts"],
+			"@huranth/gama-telemetry/testing": ["./packages/trace/src/probe/index.ts"],
+			"@huranth/gama-codemode": ["./packages/script/src/index.ts"],
+			"@huranth/gama-codemode/types": ["./packages/script/src/types.ts"],
+			"@huranth/gama-codemode/tools": ["./packages/script/src/tools.ts"],
+			"@huranth/gama-codemode/worker": ["./packages/script/src/sandbox/worker.ts"],
+			"@huranth/gama-codemode/declarations": ["./packages/script/src/types.ts"],
+			"@huranth/gama-codemode/source": ["./packages/script/src/tools.ts"],
+			"@huranth/gama-ai": ["./packages/model/src/index.ts"],
+			"@huranth/gama-ai/models": ["./packages/model/src/registry.ts"],
+			"@huranth/gama-ai/*": ["./packages/model/src/*.ts", "./packages/model/src/catalog/*.ts"],
+			"@huranth/gama-durable": ["./packages/store/src/index.ts"],
+			"@huranth/gama-durable/testing": ["./packages/store/src/testing/index.ts"],
+			"@huranth/gama-durable/env": ["./packages/store/src/system/index.ts"],
+			"@huranth/gama-durable/env/node": ["./packages/store/src/system/node.ts"],
+			"@huranth/gama-durable/tools": ["./packages/store/src/ops/index.ts"],
+			"@huranth/gama-durable/storage/memory": ["./packages/store/src/backends/memory.ts"],
+			"@huranth/gama-durable/storage/jsonl": [
+				"./packages/store/src/backends/jsonl/index.ts"
+			],
+			"@huranth/gama-durable/storage/jsonl/node": [
+				"./packages/store/src/backends/jsonl/node.ts"
+			],
+			"@huranth/gama-durable/storage/sqlite": [
+				"./packages/store/src/backends/sqlite/index.ts"
+			],
+			"@huranth/gama-durable/storage/sqlite/node": [
+				"./packages/store/src/backends/sqlite/node.ts"
+			],
 			"@huranth/gama-durable/*": [
-				"./packages/durable/src/*.ts",
-				"./packages/durable/src/*/index.ts",
-				"./packages/durable/src/*"
+				"./packages/store/src/*.ts",
+				"./packages/store/src/*/index.ts",
+				"./packages/store/src/*"
 			],
-			"@huranth/gama-agent-core": ["./packages/agent/src/index.ts"],
-			"@huranth/gama-harness": ["./packages/coding-agent/src/index.ts"],
+			"@huranth/gama-agent-core": ["./packages/loop/src/index.ts"],
+			"@huranth/gama-harness": ["./packages/cli/src/index.ts"],
 			"@huranth/gama-harness/experimental/plugin": [
-				"./packages/coding-agent/src/experimental/plugin.ts"
+				"./packages/cli/src/experimental/plugin.ts"
 			],
-			"@huranth/gama-harness/hooks": ["./packages/coding-agent/src/core/hooks/index.ts"],
-			"@huranth/gama-harness/*": ["./packages/coding-agent/src/*"],
+			"@huranth/gama-harness/hooks": ["./packages/cli/src/core/hooks/index.ts"],
+			"@huranth/gama-harness/*": ["./packages/cli/src/*"],
 			"typebox": ["./node_modules/typebox"],
-			"@huranth/gama-tui": ["./packages/tui/src/index.ts"],
-			"@huranth/gama-tui/*": ["./packages/tui/src/*"]
+			"@huranth/gama-tui": ["./packages/ui/src/index.ts"],
+			"@huranth/gama-tui/*": ["./packages/ui/src/*"]
 		}
 	},
-	"include": ["update/**/*.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/coding-agent/examples/**/*"],
+	"include": ["update/**/*.ts", "packages/*/src/**/*", "packages/*/test/**/*", "packages/cli/examples/**/*"],
 	"exclude": ["**/dist/**"]
 }
