@@ -1,13 +1,14 @@
-import { BACKGROUND_CONTEXT } from "../context/index.ts";
-import { RemoteServiceBindingImpl } from "../services/consumer.ts";
-import { ServiceSlot } from "../services/handle.ts";
-import { InstanceDirectory, type InstanceDirectoryEntry } from "../services/instances.ts";
-import { createLoopbackServiceTransport } from "../services/loopback.ts";
+import { BACKGROUND_CONTEXT } from "../scope/index.ts";
+import { toError } from "../peers/errors.ts";
+import { RemoteServiceBindingImpl } from "../peers/consumer.ts";
+import { ServiceSlot } from "../peers/handle.ts";
+import { InstanceDirectory, type InstanceDirectoryEntry } from "../peers/instances.ts";
+import { createLoopbackServiceTransport } from "../peers/loopback.ts";
 import {
 	RemoteServiceProvider,
 	validateRemoteServiceImplementation,
-} from "../services/provider.ts";
-import { MutableReplicatedStateImpl } from "../services/state.ts";
+} from "../peers/provider.ts";
+import { MutableReplicatedStateImpl } from "../peers/state.ts";
 import type {
 	Context,
 	Facet,
@@ -109,27 +110,27 @@ class FacetLifecycle {
 		this.id = id;
 	}
 
-	assertSettingUp(operation: string): void {
+	assertSettingUp(_operation: string): void {
 		if (this.#state !== "setting_up") {
-			throw new Error(`Facet ${this.id} can ${operation} only during setup`);
+			throw new Error(`Facet setup: ${this.id}`);
 		}
 	}
 
-	assertRunning(operation: string): void {
+	assertRunning(_operation: string): void {
 		if (this.#state !== "setting_up" && this.#state !== "active") {
-			throw new Error(`Facet ${this.id} cannot ${operation} while ${this.#state}`);
+			throw new Error(`Facet state: ${this.#state}`);
 		}
 	}
 
-	assertActive(operation: string): void {
+	assertActive(_operation: string): void {
 		if (this.#state !== "active") {
-			throw new Error(`Facet ${this.id} can ${operation} only while active`);
+			throw new Error(`Facet inactive: ${this.id}`);
 		}
 	}
 
 	assertServiceAccess(): void {
 		if (!this.#serviceAccess) {
-			throw new Error(`Facet ${this.id} service handles cannot be used while ${this.#state}`);
+			throw new Error(`Facet state: ${this.#state}`);
 		}
 	}
 
@@ -159,7 +160,7 @@ class FacetLifecycle {
 
 	async activate(): Promise<void> {
 		if (this.#state !== "prepared") {
-			throw new Error(`Facet ${this.id} is not prepared`);
+			throw new Error(`Facet unprepared: ${this.id}`);
 		}
 
 		this.#state = "active";
@@ -228,7 +229,7 @@ class LocalKeyedServiceRegistry implements KeyedServiceSource {
 		}
 		const registration = this.#registration(service.id);
 		if (registration.directory.get(key) !== undefined) {
-			throw new Error(`Local service ${service.id} already has a live instance with key ${key}`);
+			throw new Error(`Duplicate instance: ${key}`);
 		}
 		const generation = (registration.generations.get(key) ?? 0) + 1;
 		registration.generations.set(key, generation);
@@ -267,14 +268,14 @@ class LocalKeyedServiceRegistry implements KeyedServiceSource {
 	#registration(serviceId: string): LocalKeyedRegistration {
 		const registration = this.#registrations.get(serviceId);
 		if (registration === undefined) {
-			throw new Error(`Local keyed service ${serviceId} is not registered`);
+			throw new Error(`Unknown service: ${serviceId}`);
 		}
 
 		return registration;
 	}
 
 	#assertActive(): void {
-		if (this.#disposed) throw new Error("Local keyed service registry is disposed");
+		if (this.#disposed) throw new Error("Registry disposed");
 	}
 }
 
@@ -301,7 +302,7 @@ class HostServiceSlots {
 		handler: (service: T, context: Context) => void | Promise<void>,
 	): Disposal {
 		const source = this.#keyedSources.get(service.id);
-		if (source === undefined) throw new Error(`Service ${service.id} is disconnected`);
+		if (source === undefined) throw new Error(`Service disconnected: ${service.id}`);
 		let stopped = false;
 		const stop = source.observe(service, (target, context) => {
 			const slot = new ServiceSlot(service.id, !service.local);
@@ -310,7 +311,7 @@ class HostServiceSlots {
 				slot.view<T>(() => {
 					assertAccess();
 					if (stopped || context.abortSignal?.aborted) {
-						throw new Error(`Keyed service ${service.id} observation is closed`);
+						throw new Error(`Observation closed: ${service.id}`);
 					}
 				}),
 				context,
@@ -353,7 +354,7 @@ class StagedServiceSpawner<T> implements ServiceSpawner<T> {
 
 	connect(installer: ServiceInstanceInstaller<T>): void {
 		if (this.#installer !== undefined) {
-			throw new Error("Facet service provider is already connected");
+			throw new Error("Provider connected");
 		}
 
 		this.#installer = installer;
@@ -368,19 +369,29 @@ class StagedServiceSpawner<T> implements ServiceSpawner<T> {
 		this.#validate(key, implementation);
 
 		if (this.#instances.has(key)) {
-			throw new Error(`Facet service already has a live instance with key ${key}`);
+			throw new Error(`Duplicate instance: ${key}`);
 		}
 
 		const instance: StagedServiceInstance<T> = { key, implementation };
 		this.#instances.set(key, instance);
-		if (this.#installer !== undefined) instance.release = this.#installer(key, implementation);
-		const close = (): void => {
-			if (this.#instances.get(key) !== instance) return;
+		try {
+			if (this.#installer !== undefined) instance.release = this.#installer(key, implementation);
+			const close = (): void => {
+				if (this.#instances.get(key) !== instance) return;
+				this.#instances.delete(key);
+				instance.release?.();
+			};
+			this.#lifecycle.own(close);
+			return close;
+		} catch (error) {
 			this.#instances.delete(key);
-			instance.release?.();
-		};
-		this.#lifecycle.own(close);
-		return close;
+			try {
+				instance.release?.();
+			} catch {
+				// Keep original
+			}
+			throw error;
+		}
 	}
 }
 
@@ -400,11 +411,11 @@ export class FacetKernel {
 	constructor(options: FacetOptions) {
 		const ids = options.facets.map((facet) => facet.id);
 		if (ids.some((id) => id.length === 0)) {
-			throw new Error("Facet ID must not be empty");
+			throw new Error("Empty facet ID");
 		}
 
 		if (new Set(ids).size !== ids.length) {
-			throw new Error("Facet IDs must be unique within a generation");
+			throw new Error("Duplicate facet ID");
 		}
 
 		this.#initialFacets = options.facets;
@@ -414,7 +425,7 @@ export class FacetKernel {
 	}
 
 	get provider(): RemoteServiceProvider {
-		if (this.#provider === undefined) throw new Error("Facet service provider is not assembled");
+		if (this.#provider === undefined) throw new Error("Provider missing");
 		return this.#provider;
 	}
 
@@ -429,13 +440,30 @@ export class FacetKernel {
 		};
 	}
 
-	#setupFacet(facet: Facet, record: FacetRuntime): void {
+	async #setupFacet(facet: Facet, record: FacetRuntime): Promise<void> {
 		const result: unknown = facet.setup(this.#environment(record));
-		if (isPromiseLike(result)) {
-			void Promise.resolve(result).catch(() => {});
-			throw new Error(`Facet ${facet.id} setup must be synchronous`);
+		if (!isPromiseLike(result)) {
+			record.lifecycle.prepared();
+			return;
 		}
-		record.lifecycle.prepared();
+
+		const failure = await Promise.resolve(result).then(
+			() => undefined,
+			(error: unknown) => toError(error),
+		);
+		if (failure !== undefined) this.#reportError(failure);
+		const reason = failure === undefined ? "" : `: ${failure.message}`;
+		throw new Error(`Async setup: ${facet.id}${reason}`, { cause: failure });
+	}
+
+	#reportError(error: unknown): void {
+		try {
+			this.#onError(toError(error));
+		} catch (reportError) {
+			queueMicrotask(() => {
+				throw toError(reportError);
+			});
+		}
 	}
 
 	async activate(): Promise<void> {
@@ -444,7 +472,7 @@ export class FacetKernel {
 			for (const facet of this.#initialFacets) {
 				const record = this.#createFacetRuntime(facet.id);
 				this.#facets.set(facet.id, record);
-				this.#setupFacet(facet, record);
+				await this.#setupFacet(facet, record);
 				records.push(record);
 			}
 
@@ -480,20 +508,20 @@ export class FacetKernel {
 
 	async reload(facets: readonly Facet[]): Promise<void> {
 		if (this.#phase !== "active") {
-			throw new Error(`Facet host cannot reload while ${this.#phase}`);
+			throw new Error(`Reload blocked: ${this.#phase}`);
 		}
 
 		const ids = facets.map(({ id }) => id);
 		if (ids.some((id) => id.length === 0)) {
-			throw new Error("Facet ID must not be empty");
+			throw new Error("Empty facet ID");
 		}
 
 		if (new Set(ids).size !== ids.length) {
-			throw new Error("Reloaded facet IDs must be unique");
+			throw new Error("Duplicate facet ID");
 		}
 
 		for (const id of ids) {
-			if (!this.#facets.has(id)) throw new Error(`Facet ${id} is not active`);
+			if (!this.#facets.has(id)) throw new Error(`Facet inactive: ${id}`);
 		}
 		this.#phase = "reloading";
 
@@ -503,11 +531,11 @@ export class FacetKernel {
 			for (const facet of facets) {
 				const record = this.#createFacetRuntime(facet.id);
 				staged.push(record);
-				this.#setupFacet(facet, record);
+				await this.#setupFacet(facet, record);
 				const previous = this.#facets.get(facet.id)!;
 				if (!sameFacetShape(previous, record)) {
 					throw new Error(
-						`Reloaded facet ${facet.id} must preserve its service requirements and provisions`,
+						`Changed services: ${facet.id}`,
 					);
 				}
 				this.#validateReplacementProvisions(record.provisions);
@@ -588,7 +616,7 @@ export class FacetKernel {
 		if (this.#phase === "dead") return;
 
 		if (this.#phase !== "active") {
-			throw new Error(`Facet host cannot be disposed while ${this.#phase}`);
+			throw new Error(`Dispose blocked: ${this.#phase}`);
 		}
 
 		const errors = await this.#terminate();
@@ -690,7 +718,7 @@ export class FacetKernel {
 			},
 			replicatedState: <T extends object>(initial: T) => {
 				lifecycle.assertRunning("create replicated state");
-				return new MutableReplicatedStateImpl(initial);
+				return new MutableReplicatedStateImpl(initial, this.#onError);
 			},
 			own: (disposal) => lifecycle.own(disposal),
 			onActivate: (callback) => lifecycle.onActivate(callback),
@@ -715,7 +743,7 @@ export class FacetKernel {
 			for (const { serviceId, mode } of entries) {
 				if (offered.has(serviceId)) {
 					throw new Error(
-						`Facet host service ${serviceId} is offered by more than one source`,
+						`Duplicate service: ${serviceId}`,
 					);
 				}
 				offered.set(serviceId, { mode, source });
@@ -736,7 +764,7 @@ export class FacetKernel {
 					);
 					if (deferred.length > 1) {
 						throw new Error(
-							`Facet host service ${requirement.serviceId} has more than one deferred source`,
+							`Duplicate source: ${requirement.serviceId}`,
 						);
 					}
 					if (deferred.length === 1) source = { mode: requirement.mode, source: deferred[0]! };
@@ -817,7 +845,7 @@ export class FacetKernel {
 		}
 		for (const [serviceId, { service, mode, source }] of externalServices) {
 			const services = this.#sourceBindings.get(source);
-			if (services === undefined) throw new Error(`Service source for ${serviceId} is not open`);
+			if (services === undefined) throw new Error(`Source closed: ${serviceId}`);
 			if (mode === "singleton") {
 				this.#serviceSlots.bindSingleton(serviceId, services.use(service) as object);
 			} else {
@@ -832,7 +860,7 @@ export class FacetKernel {
 
 	get #localKeyedRegistry(): LocalKeyedServiceRegistry {
 		if (this.#localKeyedServices === undefined) {
-			throw new Error("Facet keyed services are not assembled");
+			throw new Error("Keyed missing");
 		}
 
 		return this.#localKeyedServices;
@@ -840,7 +868,7 @@ export class FacetKernel {
 
 	get #internalServiceBinding(): RemoteServices {
 		if (this.#internalServices === undefined) {
-			throw new Error("Facet remote services are not assembled");
+			throw new Error("Remote missing");
 		}
 
 		return this.#internalServices;
@@ -864,7 +892,7 @@ export class FacetKernel {
 			this.#phase !== "reloading" &&
 			this.#phase !== "disposing"
 		) {
-			throw new Error(`Facet service targets cannot be used during ${this.#phase}`);
+			throw new Error(`Targets blocked: ${this.#phase}`);
 		}
 	}
 
@@ -951,18 +979,9 @@ function validateFacets(
 			const existing = providers.get(provision.serviceId);
 			if (existing !== undefined) {
 				if (existing.mode !== undefined && existing.mode !== provision.mode) {
-					throw new Error(
-						`Service ${provision.serviceId} is provided as both singleton and keyed`,
-					);
+					throw new Error(`Service mode: ${provision.serviceId}`);
 				}
-				if (existing.facetId === undefined) {
-					throw new Error(
-						`Service ${provision.serviceId} is provided by both the host and ${record.facetId}`,
-					);
-				}
-				throw new Error(
-					`Service ${provision.serviceId} is provided by both ${existing.facetId} and ${record.facetId}`,
-				);
+				throw new Error(`Duplicate service: ${provision.serviceId}`);
 			}
 			providers.set(provision.serviceId, { facetId: record.facetId, mode: provision.mode });
 		}
@@ -976,14 +995,13 @@ function validateFacets(
 			if (provider === undefined) {
 				const missing = `local/${requirement.serviceId}/${requirement.mode}`;
 				throw new Error(
-					`Facet ${record.facetId} requires ${missing}, but no facet provides it`,
+					`Missing service: ${missing}`,
 				);
 			}
 			if (provider.mode !== undefined && provider.mode !== requirement.mode) {
-				const owner = provider.facetId ?? "the host";
 				const detail = `${requirement.serviceId} as ${requirement.mode}`;
 				throw new Error(
-					`Facet ${record.facetId} requires ${detail}, but ${owner} provides it as ${provider.mode}`,
+					`Service mismatch: ${detail}`,
 				);
 			}
 			if (provider.facetId === undefined || provider.facetId === record.facetId) continue;
@@ -1012,8 +1030,7 @@ function topologicalOrder(
 		}
 	}
 	if (order.length !== records.length) {
-		const cycle = records.map((record) => record.facetId).filter((id) => remaining.get(id)! > 0);
-		throw new Error(`Facet dependency cycle: ${cycle.join(", ")}`);
+		throw new Error("Dependency cycle");
 	}
 	return order;
 }
