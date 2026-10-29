@@ -3,7 +3,7 @@ import { InMemoryTelemetryContext, type SpanAttributes } from "../src/index.ts";
 import {
 	createTelemetryAdapterConformance,
 	type TelemetryAdapterFixture,
-} from "../src/testing/index.ts";
+} from "../src/probe/index.ts";
 
 const conformance = createTelemetryAdapterConformance(() => {
 	const context = new InMemoryTelemetryContext();
