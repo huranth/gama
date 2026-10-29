@@ -7,26 +7,32 @@ export {
 	defineService,
 	replicatedState,
 } from "./api.ts";
-export type { Draft } from "./delta/index.ts";
+
+export type { Draft } from "./patch/index.ts";
+
 export { type CopyJsonOptions, copyJson, isJsonValue } from "./json.ts";
+
 export {
 	isRemoteServiceErrorCode,
 	REMOTE_SERVICE_ERROR_CODES,
 	RemoteServiceError,
 	type RemoteServiceErrorCode,
-} from "./services/errors.ts";
+} from "./peers/errors.ts";
+
 export {
 	createRemoteServiceEndpoint,
 	type RemoteServiceEndpoint,
 	RemoteServiceProvider,
 	type ServiceUpdatePublisher,
-} from "./services/provider.ts";
+} from "./peers/provider.ts";
+
 export {
 	createServiceStateDecoder,
 	createServiceStateEncoder,
 	type ServiceStateDecoder,
 	type ServiceStateEncoder,
-} from "./services/state-codec.ts";
+} from "./peers/state-codec.ts";
+
 export {
 	createServiceCatalogueCall,
 	createServiceSubscribeCall,
@@ -43,7 +49,8 @@ export {
 	type WireServiceMemberSnapshot,
 	type WireServiceProviderUpdate,
 	type WireServiceSubscriptionSnapshot,
-} from "./services/wire.ts";
+} from "./peers/wire.ts";
+
 export type {
 	AttachedReplicatedState,
 	Context,

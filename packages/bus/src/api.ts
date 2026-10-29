@@ -1,7 +1,7 @@
-import { FacetKernel } from "./facets/host.ts";
-import { disposeLoadedFacets } from "./facets/loader.ts";
-import { RemoteServiceBindingImpl } from "./services/consumer.ts";
-import { attachReplicatedStateSource, MutableReplicatedStateImpl } from "./services/state.ts";
+import { FacetKernel } from "./plugins/host.ts";
+import { disposeLoadedFacets } from "./plugins/loader.ts";
+import { RemoteServiceBindingImpl } from "./peers/consumer.ts";
+import { attachReplicatedStateSource, MutableReplicatedStateImpl } from "./peers/state.ts";
 import type {
 	AttachedReplicatedState,
 	Facet,
@@ -81,7 +81,10 @@ export function replicatedState<T>(
 	options?: ReplicatedStateSourceOptions,
 ): AttachedReplicatedState<T>;
 
-export function replicatedState<T extends object>(initial: T): MutableReplicatedState<T>;
+export function replicatedState<T extends object>(
+	initial: T,
+	options?: ReplicatedStateSourceOptions,
+): MutableReplicatedState<T>;
 
 export function replicatedState(
 	initialOrSource: object | ReplicatedStateSource<unknown>,
@@ -91,7 +94,7 @@ export function replicatedState(
 		return attachReplicatedStateSource(initialOrSource, options);
 	}
 
-	return new MutableReplicatedStateImpl(initialOrSource);
+	return new MutableReplicatedStateImpl(initialOrSource, options?.onError);
 }
 
 export function combineFacetLoaders(loaders: readonly FacetLoader[]): FacetLoader {

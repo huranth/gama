@@ -15,14 +15,14 @@ export function copyJson(value: unknown, options?: CopyJsonOptions): JsonValue {
 	return copy(value, undefined, options?.omitUndefinedProperties === true);
 }
 
+export function isJsonValue(value: unknown): value is JsonValue {
+	return check(value, new Set<object>());
+}
+
 function defineData(target: object, key: PropertyKey, value: JsonValue): void {
 	DATA_DESCRIPTOR.value = value;
 	Object.defineProperty(target, key, DATA_DESCRIPTOR);
 	DATA_DESCRIPTOR.value = undefined;
-}
-
-export function isJsonValue(value: unknown): value is JsonValue {
-	return check(value, new Set<object>());
 }
 
 function copy(
@@ -37,9 +37,11 @@ function copy(
 	}
 	if (typeof value !== "object")
 		throw new TypeError(`Value contains a non-JSON ${typeof value}; expected strict JSON`);
+
 	const active = ancestors ?? new Set<object>();
 	if (active.has(value)) throw new TypeError("Value contains cycles and is not strict JSON");
 	active.add(value);
+
 	try {
 		if (Array.isArray(value)) {
 			if (
@@ -48,6 +50,7 @@ function copy(
 			) {
 				throw new TypeError("Value must contain strict JSON dense plain arrays");
 			}
+
 			const result = new Array<JsonValue>(value.length);
 			for (let index = 0; index < value.length; index++) {
 				const descriptor = Object.getOwnPropertyDescriptor(value, index);
@@ -64,11 +67,13 @@ function copy(
 			}
 			return result;
 		}
+
 		const prototype = Object.getPrototypeOf(value);
 		if (prototype !== Object.prototype && prototype !== null) {
 			throw new TypeError("Value must contain strict JSON plain objects or arrays");
 		}
 		const result = Object.create(prototype) as Record<string, JsonValue>;
+
 		for (const key of Reflect.ownKeys(value)) {
 			if (typeof key === "symbol")
 				throw new TypeError("Value contains a symbol key and is not strict JSON");
@@ -88,11 +93,13 @@ function copy(
 function check(value: unknown, ancestors: Set<object>): boolean {
 	if (value === null || typeof value === "string" || typeof value === "boolean") return true;
 	if (typeof value === "number") return Number.isFinite(value);
+
 	if (Array.isArray(value)) {
 		if (Object.getPrototypeOf(value) !== Array.prototype) return false;
 		const keys = Reflect.ownKeys(value);
 		if (keys.length !== value.length + 1 || keys.some((key) => typeof key !== "string"))
 			return false;
+
 		if (ancestors.has(value)) return false;
 		ancestors.add(value);
 		try {
@@ -112,10 +119,13 @@ function check(value: unknown, ancestors: Set<object>): boolean {
 			ancestors.delete(value);
 		}
 	}
+
 	if (typeof value !== "object" || value === null) return false;
+
 	const prototype = Object.getPrototypeOf(value);
 	if (prototype !== Object.prototype && prototype !== null) return false;
 	if (Reflect.ownKeys(value).some((key) => typeof key !== "string")) return false;
+
 	if (ancestors.has(value)) return false;
 	ancestors.add(value);
 	try {

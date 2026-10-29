@@ -1,9 +1,9 @@
-import type { Draft, Op } from "./delta/index.ts";
-import type { RemoteServiceProvider } from "./services/provider.ts";
+import type { Draft, Op } from "./patch/index.ts";
+import type { RemoteServiceProvider } from "./peers/provider.ts";
 
-export type { RemoteServiceError } from "./services/errors.ts";
+export type { RemoteServiceError } from "./peers/errors.ts";
 
-export type { RemoteServiceProvider } from "./services/provider.ts";
+export type { RemoteServiceProvider } from "./peers/provider.ts";
 
 export interface ContextKey<T> {
 	readonly token: symbol;
