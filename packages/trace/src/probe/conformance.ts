@@ -43,16 +43,16 @@ function createCase(
 function unreadable<T extends object>(value: T): T {
 	return new Proxy(value, {
 		get: () => {
-			throw new Error("read");
+			throw new Error("Read failed");
 		},
 		getOwnPropertyDescriptor: () => {
-			throw new Error("inspect");
+			throw new Error("Inspect failed");
 		},
 		getPrototypeOf: () => {
-			throw new Error("prototype");
+			throw new Error("Prototype failed");
 		},
 		ownKeys: () => {
-			throw new Error("enumerate");
+			throw new Error("Enumerate failed");
 		},
 	});
 }
@@ -88,7 +88,7 @@ export function createTelemetryAdapterConformance(
 			"callback lifecycle",
 			"preserves synchronous and asynchronous rejection values",
 			async (fixture) => {
-				const syncError = new Error("sync");
+				const syncError = new Error("Sync failed");
 				await rejectsWithSameValue(
 					fixture.context.startSpan({ name: "sync-error" }, () => {
 						throw syncError;
@@ -150,7 +150,7 @@ export function createTelemetryAdapterConformance(
 					span.setStatus({ status: "ok" });
 				});
 
-				const thrown = new Error("after explicit status");
+				const thrown = new Error("Explicit status");
 				await rejectsWithSameValue(
 					fixture.context.startSpan({ name: "explicit-before-throw" }, (span) => {
 						span.setStatus({ status: "ok" });
@@ -159,7 +159,7 @@ export function createTelemetryAdapterConformance(
 					thrown,
 				);
 
-				const rejected = new Error("after async explicit status");
+				const rejected = new Error("Async explicit status");
 				await rejectsWithSameValue(
 					fixture.context.startSpan({ name: "explicit-before-rejection" }, (span) => {
 						span.setStatus({
@@ -348,7 +348,7 @@ export function createTelemetryAdapterConformance(
 			"passivity",
 			"ignores failed status calls atomically",
 			async (fixture) => {
-				const rejection = new Error("rejected after unreadable status");
+				const rejection = new Error("Unreadable status");
 				await rejectsWithSameValue(
 					fixture.context.startSpan({ name: "unreadable-status" }, (span) => {
 						const status = unreadable<SpanStatus>({ status: "ok" });
