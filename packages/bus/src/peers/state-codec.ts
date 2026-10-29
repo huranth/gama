@@ -1,4 +1,4 @@
-import { type Decoder, decoder, type Encoder, encoder } from "../delta/index.ts";
+import { type Decoder, decoder, type Encoder, encoder } from "../patch/index.ts";
 import type {
 	ServiceInstanceAddress,
 	ServiceInstanceSnapshot,
@@ -31,10 +31,6 @@ function sameAddress(
 	right: ServiceInstanceAddress,
 ): boolean {
 	return left?.key === right.key && left.generation === right.generation;
-}
-
-function describeState(instance: ServiceInstanceAddress | undefined, member: string): string {
-	return instance === undefined ? member : `${instance.key}@${instance.generation}.${member}`;
 }
 
 function encodeInstance(
@@ -172,7 +168,7 @@ class StateCodecRegistry<C> {
 	add(instance: ServiceInstanceAddress | undefined, member: string): C {
 		const key = stateKey(instance, member);
 		if (this.#entries.has(key)) {
-			throw new Error(`Duplicate service state ${describeState(instance, member)}`);
+			throw new Error("Duplicate state");
 		}
 
 		const codec = this.#create();
@@ -184,7 +180,7 @@ class StateCodecRegistry<C> {
 	get(instance: ServiceInstanceAddress | undefined, member: string): C {
 		const codec = this.#entries.get(stateKey(instance, member))?.codec;
 		if (codec === undefined) {
-			throw new Error(`Unknown service state ${describeState(instance, member)}`);
+			throw new Error("Unknown state");
 		}
 
 		return codec;

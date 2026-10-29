@@ -1,4 +1,4 @@
-import { assertValidOp, assertValidWireOp, type WireOp } from "../delta/index.ts";
+import { assertValidOp, assertValidWireOp, type WireOp } from "../patch/index.ts";
 import type {
 	ServiceCall,
 	ServiceCatalogueEntry,
@@ -53,8 +53,11 @@ export type ServiceControlCall =
 	| { readonly type: "unsubscribe"; readonly subscriptionId: string };
 
 const SERVICE_CONTROL_ID = "$chord.service";
+
 const SERVICE_CATALOGUE_MEMBER = "catalogue";
+
 const SERVICE_SUBSCRIBE_MEMBER = "subscribe";
+
 const SERVICE_UNSUBSCRIBE_MEMBER = "unsubscribe";
 
 export function createServiceCatalogueCall(): ServiceCall {
@@ -115,12 +118,11 @@ function isInteger(value: unknown, minimum: number): value is number {
 	return typeof value === "number" && Number.isInteger(value) && value >= minimum;
 }
 
-function assertAddress(value: unknown): asserts value is ServiceInstanceAddress {
-	const address = record(value, "service instance address");
-	assertKeys(address, ["key", "generation"], [], "service instance address");
-	if (!isId(address.key) || !isInteger(address.generation, 1)) {
-		throw new TypeError("Invalid service instance address");
+function record(value: unknown, description: string): Record<string, unknown> {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new TypeError(`Invalid ${description}`);
 	}
+	return value as Record<string, unknown>;
 }
 
 function assertKeys(
@@ -138,11 +140,12 @@ function assertKeys(
 	}
 }
 
-function record(value: unknown, description: string): Record<string, unknown> {
-	if (typeof value !== "object" || value === null || Array.isArray(value)) {
-		throw new TypeError(`Invalid ${description}`);
+function assertAddress(value: unknown): asserts value is ServiceInstanceAddress {
+	const address = record(value, "service instance address");
+	assertKeys(address, ["key", "generation"], [], "service instance address");
+	if (!isId(address.key) || !isInteger(address.generation, 1)) {
+		throw new TypeError("Invalid service instance address");
 	}
-	return value as Record<string, unknown>;
 }
 
 export function parseServiceCall(value: unknown): ServiceCall {
@@ -189,7 +192,7 @@ export function decodeServiceControlCall(call: ServiceCall): ServiceControlCall 
 		call.args.length === 3 &&
 		isId(call.args[0]) &&
 		isId(call.args[1]) &&
-		(call.args[2] === "singleton" || call.args[2] === "keyed")
+		isMode(call.args[2])
 	) {
 		return {
 			type: "subscribe",

@@ -17,6 +17,7 @@ export function toError(error: unknown): Error {
 
 export function throwCollectedErrors(errors: readonly unknown[], message: string): void {
 	if (errors.length === 1) throw errors[0];
+
 	if (errors.length > 1) throw new AggregateError(errors, message);
 }
 

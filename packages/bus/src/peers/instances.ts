@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT, withCancel } from "../context/index.ts";
+import { BACKGROUND_CONTEXT, withCancel } from "../scope/index.ts";
 import type { Context } from "../types.ts";
 import { toError } from "./errors.ts";
 
@@ -42,7 +42,7 @@ export class InstanceDirectory<TEntry extends InstanceDirectoryEntry> {
 	insert(entry: TEntry): void {
 		this.#assertActive();
 		if (this.#entries.has(entry.key)) {
-			throw new Error(`Keyed service already has a live instance with key ${entry.key}`);
+			throw new Error(`Duplicate instance: ${entry.key}`);
 		}
 
 		this.#entries.set(entry.key, entry);
@@ -57,7 +57,7 @@ export class InstanceDirectory<TEntry extends InstanceDirectoryEntry> {
 
 		if (previous !== undefined) {
 			if (previous.generation === entry.generation) {
-				throw new Error("Keyed service repeated a live generation");
+				throw new Error("Duplicate generation");
 			}
 
 			this.#remove(previous);
@@ -196,7 +196,7 @@ export class InstanceDirectory<TEntry extends InstanceDirectoryEntry> {
 
 	#assertActive(): void {
 		if (this.#disposed) {
-			throw new Error("Keyed service directory is disposed");
+			throw new Error("Directory disposed");
 		}
 	}
 }

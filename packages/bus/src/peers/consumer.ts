@@ -1,5 +1,5 @@
-import { awaitWithContext, BACKGROUND_CONTEXT } from "../context/index.ts";
-import type { Op } from "../delta/index.ts";
+import { awaitWithContext, BACKGROUND_CONTEXT } from "../scope/index.ts";
+import type { Op } from "../patch/index.ts";
 import type {
 	Context,
 	JsonValue,
@@ -56,7 +56,7 @@ function validateMembers(
 	const result = new Map<string, ServiceMemberSnapshot>();
 	for (const member of members) {
 		if (member.name.length === 0 || result.has(member.name)) {
-			throw new Error("Remote service has invalid member descriptions");
+			throw new Error("Invalid members");
 		}
 		result.set(member.name, member);
 	}
@@ -73,23 +73,23 @@ function validateResetSnapshot(
 		snapshot.mode !== mode ||
 		(mode === "singleton" && snapshot.instances.length > 1)
 	) {
-		throw new Error("Remote service reset has the wrong service or mode");
+		throw new Error("Wrong reset service");
 	}
 	const keys = new Set<string>();
 	for (const instance of snapshot.instances) {
 		if (
 			mode === "singleton" ? instance.instance !== undefined : instance.instance === undefined
 		) {
-			throw new Error("Remote service reset has an invalid instance address");
+			throw new Error("Invalid address");
 		}
 		if (instance.instance !== undefined) {
 			if (keys.has(instance.instance.key))
-				throw new Error("Remote service reset repeats an instance key");
+				throw new Error("Duplicate key");
 			keys.add(instance.instance.key);
 		}
 		for (const member of instance.members) {
 			if (member.kind === "state" && (member.ops.length !== 1 || member.ops[0]?.[0] !== "r")) {
-				throw new Error("Remote service reset must contain full root replacements");
+				throw new Error("Full reset required");
 			}
 		}
 	}
@@ -142,7 +142,7 @@ class MemberSlot {
 
 	setDescription(kind: ServiceMemberKind): void {
 		if (this.#kind !== undefined && this.#kind !== kind) {
-			throw new Error(`Remote service member ${this.#serviceId}.${this.#member} changed kind`);
+			throw new Error(`Kind changed: ${this.#serviceId}.${this.#member}`);
 		}
 		this.#kind = kind;
 		if (this.#expectedKind !== undefined && this.#expectedKind !== kind) {
@@ -254,7 +254,7 @@ class ServiceFacade {
 
 	install(snapshot: ServiceInstanceSnapshot, context: Context): void {
 		if (!sameAddress(snapshot.instance, this.#address)) {
-			throw new Error("Remote service snapshot has the wrong address");
+			throw new Error("Wrong address");
 		}
 		const members = validateMembers(snapshot.members);
 		for (const name of this.#slots.keys()) {
@@ -282,7 +282,7 @@ class ServiceFacade {
 	update(member: string, sequence: number, ops: readonly Op[], context: Context): void {
 		if (this.#descriptions.get(member) !== "state") {
 			throw new Error(
-				`Remote service update targets non-state member ${this.#serviceId}.${member}`,
+				`Non-state member: ${this.#serviceId}.${member}`,
 			);
 		}
 		this.#slot(member).update(sequence, ops, context);
@@ -352,7 +352,7 @@ class KeyedBinding<T> {
 	}
 
 	observe(handler: (service: T, context: Context) => void | Promise<void>): () => void {
-		if (this.#closed) throw new Error("Remote keyed service binding is closed");
+		if (this.#closed) throw new Error("Binding closed");
 		let stopped = false;
 		const stop = this.#instances.observe<T>((service, context) => {
 			const slot = new ServiceSlot(this.#service.id, true);
@@ -372,8 +372,7 @@ class KeyedBinding<T> {
 		});
 		if (this.#bound && this.#starting === undefined) {
 			const revision = this.#revision;
-			const starting = this.#start(revision);
-			this.#starting = starting;
+			const starting = this.#beginStart(revision);
 			void starting.catch((error: unknown) => {
 				if (!this.#closed && this.#revision === revision && this.#bound)
 					this.#reportError(toError(error));
@@ -394,9 +393,7 @@ class KeyedBinding<T> {
 		await this.#reset(context, false);
 		if (this.#closed || this.#revision !== revision || this.#bound !== bound) return;
 		if (bound && this.#instances.observerCount > 0) {
-			const starting = this.#start(revision);
-			this.#starting = starting;
-			await starting;
+			await this.#beginStart(revision);
 		}
 	}
 
@@ -424,6 +421,15 @@ class KeyedBinding<T> {
 		]);
 	}
 
+	#beginStart(revision: number): Promise<void> {
+		const starting = this.#start(revision);
+		this.#starting = starting;
+		void starting.catch(() => {
+			if (this.#starting === starting) this.#starting = undefined;
+		});
+		return starting;
+	}
+
 	async #start(revision: number): Promise<void> {
 		const subscription = await this.#transport.subscribe(
 			this.#service.id,
@@ -437,13 +443,14 @@ class KeyedBinding<T> {
 			await subscription.close(BACKGROUND_CONTEXT);
 			return;
 		}
-		this.#subscription = subscription;
 		if (
 			subscription.snapshot.mode !== "keyed" ||
 			subscription.snapshot.serviceId !== this.#service.id
 		) {
-			throw new Error(`Remote service ${this.#service.id} returned the wrong keyed snapshot`);
+			await subscription.close(BACKGROUND_CONTEXT);
+			throw new Error(`Wrong snapshot: ${this.#service.id}`);
 		}
+		this.#subscription = subscription;
 		for (const snapshot of subscription.snapshot.instances)
 			this.#spawn(snapshot, serviceDeliveryContext());
 		subscription.activate();
@@ -473,7 +480,7 @@ class KeyedBinding<T> {
 				}
 				case "unavailable":
 				case "replaced":
-					throw new Error("Keyed service received a singleton lifecycle update");
+					throw new Error("Wrong lifecycle");
 				case "spawned":
 					this.#spawn(update.instance, context);
 					break;
@@ -485,7 +492,7 @@ class KeyedBinding<T> {
 				}
 				case "state": {
 					if (update.instance === undefined)
-						throw new Error("Keyed state update has no instance address");
+						throw new Error("Missing address");
 					const instance = this.#instances.get(update.instance.key);
 					if (instance?.generation !== update.instance.generation) return;
 					instance.facade.update(update.member, update.sequence, update.ops, context);
@@ -499,7 +506,7 @@ class KeyedBinding<T> {
 
 	#spawn(snapshot: ServiceInstanceSnapshot, context: Context): void {
 		const address = snapshot.instance;
-		if (address === undefined) throw new Error("Keyed service instance snapshot has no address");
+		if (address === undefined) throw new Error("Missing address");
 		let active = true;
 		const facade = new ServiceFacade(
 			this.#service.id,
@@ -606,7 +613,7 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 	}
 
 	async ready(context: Context): Promise<void> {
-		if (this.#disposed) throw new Error("Remote service binding is disposed");
+		if (this.#disposed) throw new Error("Binding disposed");
 		while (true) {
 			const revision = this.#readinessRevision;
 			const starts = [
@@ -620,13 +627,13 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 				Promise.all(starts).then(() => undefined),
 				context,
 			);
-			if (this.#disposed) throw new Error("Remote service binding is disposed");
+			if (this.#disposed) throw new Error("Binding disposed");
 			if (revision === this.#readinessRevision) return;
 		}
 	}
 
 	async rebind(bound: boolean, context: Context): Promise<void> {
-		if (this.#disposed) throw new Error("Remote service binding is disposed");
+		if (this.#disposed) throw new Error("Binding disposed");
 		this.#bound = bound;
 		this.#readinessRevision += 1;
 		const transitions: Promise<void>[] = [];
@@ -708,7 +715,7 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 						binding.facade.clear();
 					} else if (update.type === "replaced") {
 						if (update.snapshot.instance !== undefined) {
-							throw new Error("Singleton replacement has an instance address");
+							throw new Error("Unexpected address");
 						}
 						binding.facade.install(update.snapshot, context);
 					} else if (update.type === "state" && update.instance === undefined) {
@@ -731,7 +738,7 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 			snapshot.instances.length !== 1
 		) {
 			await subscription.close(BACKGROUND_CONTEXT);
-			throw new Error(`Remote service ${serviceId} returned an invalid singleton snapshot`);
+			throw new Error(`Invalid snapshot: ${serviceId}`);
 		}
 		binding.subscription = subscription;
 		binding.facade.install(snapshot.instances[0]!, serviceDeliveryContext());
@@ -739,7 +746,7 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 	}
 
 	#assertHandleAccess(): void {
-		if (this.#disposed) throw new Error("Remote service binding is disposed");
+		if (this.#disposed) throw new Error("Binding disposed");
 		this.#assertAccess();
 	}
 
@@ -752,7 +759,7 @@ export class RemoteServiceBindingImpl implements RemoteServiceBinding {
 	}
 
 	#assertAvailable(serviceId: string, mode: "singleton" | "keyed"): void {
-		if (this.#disposed) throw new Error("Remote service binding is disposed");
+		if (this.#disposed) throw new Error("Binding disposed");
 		if (!this.#allowlist.has(serviceId)) {
 			throw new RemoteServiceError(
 				"service_not_allowed",

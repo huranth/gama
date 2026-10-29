@@ -1,4 +1,4 @@
-import { BACKGROUND_CONTEXT } from "../context/index.ts";
+import { BACKGROUND_CONTEXT } from "../scope/index.ts";
 import {
 	applyImmutable,
 	isBase,
@@ -6,8 +6,8 @@ import {
 	type Prepared,
 	type Tracker,
 	track,
-} from "../delta/index.ts";
-import { JsonRevisionValidator } from "../delta/revision-validator.ts";
+} from "../patch/index.ts";
+import { JsonRevisionValidator } from "../patch/revision-validator.ts";
 import type {
 	AttachedReplicatedState,
 	Context,
@@ -39,6 +39,8 @@ type Publication<T> = {
 	readonly sequence: number;
 	readonly context: Context;
 };
+
+export const MAX_PENDING = 100;
 
 export function serviceDeliveryContext(): Context {
 	return BACKGROUND_CONTEXT;
@@ -99,7 +101,7 @@ class StateSubscriber<T> {
 
 	push(frame: StateDelivery<T>): void {
 		if (this.#closed) return;
-		if (this.#pending.length === 100) {
+		if (this.#pending.length === MAX_PENDING) {
 			const hydration = this.#started ? undefined : this.#pending[0];
 			this.#pending.length = 0;
 			if (hydration !== undefined) this.#pending.push(hydration);
@@ -239,11 +241,13 @@ class ReplicatedStatePublisher<T> {
 export class MutableReplicatedStateImpl<T extends object> implements MutableReplicatedState<T> {
 	readonly #tracker: Tracker<T>;
 	readonly #publisher: ReplicatedStatePublisher<T>;
+	readonly #reportError: (error: Error) => void;
 	#changing = false;
 
-	constructor(initial: T) {
+	constructor(initial: T, reportError: (error: Error) => void = reportErrorAsync) {
 		this.#tracker = track(initial);
-		this.#publisher = new ReplicatedStatePublisher(this.#tracker.value);
+		this.#reportError = reportError;
+		this.#publisher = new ReplicatedStatePublisher(this.#tracker.value, reportError);
 		registerReplicatedStateInternals(this, {
 			snapshot: () => this.#publisher.snapshot(),
 			subscribe: (listener) => this.#publisher.subscribeSource(listener),
@@ -256,7 +260,7 @@ export class MutableReplicatedStateImpl<T extends object> implements MutableRepl
 
 	change(context: Context, mutate: Parameters<MutableReplicatedState<T>["change"]>[1]): void {
 		if (this.#changing)
-			throw new Error("Replicated state cannot be changed reentrantly from a change callback");
+			throw new Error("Reentrant change");
 		this.#changing = true;
 		let prepared: Prepared<T>;
 		try {
@@ -264,7 +268,13 @@ export class MutableReplicatedStateImpl<T extends object> implements MutableRepl
 			try {
 				const outcome = (mutate as (draft: typeof change.state) => unknown)(change.state);
 				if (isPromiseLike(outcome)) {
-					void Promise.resolve(outcome).catch(() => undefined);
+					void Promise.resolve(outcome).catch((error: unknown) => {
+						try {
+							this.#reportError(toError(error));
+						} catch (reportError) {
+							reportErrorAsync(toError(reportError));
+						}
+					});
 					throw new TypeError("Replicated state change callbacks must be synchronous");
 				}
 				prepared = change.prepare();
@@ -286,7 +296,7 @@ export class MutableReplicatedStateImpl<T extends object> implements MutableRepl
 
 	replace(context: Context, value: T): void {
 		if (this.#changing)
-			throw new Error("Replicated state cannot be replaced from a change callback");
+			throw new Error("Reentrant replace");
 		const prepared = this.#tracker.prepareReplace(value);
 		this.#tracker.adopt(prepared);
 		if (prepared.ops.length === 0) return;
@@ -351,7 +361,7 @@ class AttachedReplicatedStateImpl<T> implements AttachedReplicatedState<T> {
 			const expected = this.#cursor + 1;
 			if (frame.cursor !== expected) {
 				throw new Error(
-					`Replicated state source cursor has a gap: expected ${expected}, received ${frame.cursor}`,
+					`Cursor gap: ${frame.cursor}`,
 				);
 			}
 			this.#cursor = frame.cursor;
@@ -427,7 +437,7 @@ export class ReplicatedStateReplica<T extends JsonValue = JsonValue> implements 
 		let next: T;
 		try {
 			if (!isBase(ops))
-				throw new Error("Replicated state snapshot is not a base operation batch");
+				throw new Error("Invalid snapshot");
 			next = this.#validator.validate(applyImmutable<T>(undefined, ops));
 		} catch (error) {
 			this.clear();
@@ -440,11 +450,11 @@ export class ReplicatedStateReplica<T extends JsonValue = JsonValue> implements 
 
 	update(sequence: number, ops: readonly Op[], context: Context): void {
 		if (this.#sequence === undefined || this.#value === undefined) {
-			throw new Error("Replicated state received an update before hydration");
+			throw new Error("Early update");
 		}
 		if (sequence !== this.#sequence + 1) {
 			this.clear();
-			throw new Error("Replicated state update sequence has a gap");
+			throw new Error("Sequence gap");
 		}
 		let next: T;
 		try {

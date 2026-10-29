@@ -35,7 +35,7 @@ export class ServiceSlot {
 		assertAccess();
 		const implementation = this.#implementation;
 		if (implementation === undefined) {
-			throw new Error(`Service ${this.#serviceId} is disconnected`);
+			throw new Error(`Service disconnected: ${this.#serviceId}`);
 		}
 		return {
 			value: Reflect.get(implementation, property, implementation),

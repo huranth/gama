@@ -13,8 +13,8 @@ import type {
 	ServiceSubscription,
 	ServiceSubscriptionSnapshot,
 } from "../types.ts";
-import { RemoteServiceError, throwCollectedErrors } from "./errors.ts";
-import { serviceDeliveryContext } from "./state.ts";
+import { RemoteServiceError, throwCollectedErrors, toError } from "./errors.ts";
+import { MAX_PENDING, serviceDeliveryContext } from "./state.ts";
 import { getReplicatedStateInternals, type ReplicatedStateInternals } from "./state-internals.ts";
 import { decodeServiceControlCall } from "./wire.ts";
 
@@ -441,10 +441,17 @@ export class RemoteServiceProvider {
 			activate: () => {
 				if (subscriber.closed || subscriber.active) return;
 				subscriber.active = true;
-				throwCollectedErrors(
-					drainSubscriber(subscriber),
-					"Failed to activate remote service subscription",
-				);
+				try {
+					throwCollectedErrors(
+						drainSubscriber(subscriber),
+						"Failed to activate remote service subscription",
+					);
+				} catch (error) {
+					subscriber.closed = true;
+					subscriber.buffer.length = 0;
+					registration.subscribers.delete(subscriber);
+					throw error;
+				}
 			},
 			close: () => {
 				if (subscriber.closed) return;
@@ -497,13 +504,7 @@ export class RemoteServiceProvider {
 		}
 		this.#registrations.clear();
 
-		if (errors.length === 1) {
-			throw errors[0];
-		}
-
-		if (errors.length > 1) {
-			throw new AggregateError(errors, "Failed to dispose remote service provider");
-		}
+		throwCollectedErrors(errors, "Failed to dispose remote service provider");
 	}
 
 	#registration(serviceId: string, mode: ServiceMode): ServiceRegistration {
@@ -659,7 +660,7 @@ export class RemoteServiceProvider {
 		for (const subscriber of subscribers) {
 			if (subscriber.closed || updateCoveredBySnapshot(subscriber.snapshotSequences, update))
 				continue;
-			if (subscriber.buffer.length === 100) {
+			if (subscriber.buffer.length === MAX_PENDING) {
 				const snapshot = this.#snapshot(registration);
 				subscriber.buffer.length = 0;
 				subscriber.snapshotSequences.clear();
@@ -698,25 +699,26 @@ export class RemoteServiceProvider {
 
 	#assertActive(): void {
 		if (this.#disposed) {
-			throw new Error("Remote service provider is disposed");
+			throw new Error("Provider disposed");
 		}
 	}
 }
 
 export function createRemoteServiceEndpoint(
 	provider: RemoteServiceProvider,
+	onError: (error: Error) => void = console.error,
 ): RemoteServiceEndpoint {
 	const subscriptions = new Map<string, ServiceSubscription>();
 	let disposed = false;
 
 	return {
 		async invoke(call, publish, context) {
-			if (disposed) throw new Error("Remote service endpoint is disposed");
+			if (disposed) throw new Error("Endpoint disposed");
 			const control = decodeServiceControlCall(call);
 			if (control?.type === "catalogue") return provider.catalogue as unknown as JsonValue;
 			if (control?.type === "subscribe") {
 				if (subscriptions.has(control.subscriptionId)) {
-					throw new Error("Service subscription ID is already active");
+					throw new Error("Subscription active");
 				}
 				const subscription = provider.subscribe(
 					control.serviceId,
@@ -724,16 +726,22 @@ export function createRemoteServiceEndpoint(
 					(update, updateContext) => {
 						void Promise.resolve(
 							publish(control.subscriptionId, update, updateContext),
-						).catch(() => {});
+						).catch((error: unknown) => onError(toError(error)));
 					},
 				);
 				subscriptions.set(control.subscriptionId, subscription);
-				subscription.activate();
+				try {
+					subscription.activate();
+				} catch (error) {
+					subscriptions.delete(control.subscriptionId);
+					subscription.close();
+					throw error;
+				}
 				return subscription.snapshot as unknown as JsonValue;
 			}
 			if (control?.type === "unsubscribe") {
 				const subscription = subscriptions.get(control.subscriptionId);
-				if (subscription === undefined) throw new Error("Service subscription was not found");
+				if (subscription === undefined) throw new Error("Unknown subscription");
 				subscription.close();
 				subscriptions.delete(control.subscriptionId);
 				return undefined;

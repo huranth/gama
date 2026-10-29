@@ -1,4 +1,4 @@
-import type { Op } from "../delta/index.ts";
+import type { Op } from "../patch/index.ts";
 import type { Context } from "../types.ts";
 
 export interface ReplicatedStateInternals {
@@ -8,7 +8,15 @@ export interface ReplicatedStateInternals {
 	): () => void;
 }
 
-const sources = new WeakMap<object, ReplicatedStateInternals>();
+type InternalsGlobal = {
+	__gamaChordStateInternals?: WeakMap<object, ReplicatedStateInternals>;
+};
+
+const globalStore = globalThis as InternalsGlobal;
+
+const sources =
+	globalStore.__gamaChordStateInternals ?? new WeakMap<object, ReplicatedStateInternals>();
+globalStore.__gamaChordStateInternals = sources;
 
 export function registerReplicatedStateInternals(
 	value: object,
