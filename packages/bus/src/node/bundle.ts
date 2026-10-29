@@ -1,14 +1,16 @@
 import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
-import { basename, dirname, extname, join, relative, resolve, sep } from "node:path";
-import { type BuildOptions, build, type Message } from "esbuild";
+import { basename, dirname, extname, isAbsolute, join, relative, resolve, sep } from "node:path";
+import { type BuildOptions, build } from "esbuild";
 import {
 	FACET_BUNDLE_FORMAT,
 	FACET_BUNDLE_FORMAT_VERSION,
 	FACET_BUNDLE_MANIFEST_FILE,
+	isReservedEntryName,
 	type FacetBundleEntry,
 	type FacetBundleManifest,
 } from "./manifest.ts";
+import { isMissingPath } from "./value.ts";
 
 export type FacetBundlePlatform = "node" | "browser" | "neutral";
 
@@ -37,36 +39,6 @@ function shortHash(value: string): string {
 	return createHash("sha256").update(value).digest("hex").slice(0, 12);
 }
 
-function formatEsbuildMessage(message: Message): string {
-	const location = message.location;
-	return location === null
-		? message.text
-		: `${location.file}:${location.line}:${location.column + 1}: ${message.text}`;
-}
-
-function isMissingPath(error: unknown): boolean {
-	return isRecord(error) && error.code === "ENOENT";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function esbuildMessages(error: unknown): string[] {
-	if (!isRecord(error) || !Array.isArray(error.errors)) return [];
-	return (error.errors as readonly unknown[]).flatMap((candidate) =>
-		isEsbuildMessage(candidate) ? [formatEsbuildMessage(candidate)] : [],
-	);
-}
-
-function isEsbuildMessage(value: unknown): value is Message {
-	return (
-		isRecord(value) &&
-		typeof value.text === "string" &&
-		(value.location === null || isRecord(value.location))
-	);
-}
-
 function validateOptions(options: BundleFacetsOptions): void {
 	if (options.plugin.id.length === 0) {
 		throw new TypeError("Facet bundle plugin ID must not be empty");
@@ -84,6 +56,9 @@ function validateOptions(options: BundleFacetsOptions): void {
 	for (const [name, source] of entries) {
 		if (name.length === 0) {
 			throw new TypeError("Facet bundle entry name must not be empty");
+		}
+		if (isReservedEntryName(name)) {
+			throw new TypeError(`Facet bundle entry name ${name} is reserved`);
 		}
 
 		if (source.length === 0) {
@@ -103,6 +78,11 @@ export async function bundleFacets(options: BundleFacetsOptions): Promise<Bundle
 
 	const workingDirectory = resolve(options.workingDirectory ?? process.cwd());
 	const outputDirectory = resolve(workingDirectory, options.outdir);
+
+	if (containsPath(outputDirectory, workingDirectory)) {
+		throw new Error("Source in output");
+	}
+
 	const outputParent = dirname(outputDirectory);
 
 	await mkdir(outputParent, { recursive: true });
@@ -113,7 +93,7 @@ export async function bundleFacets(options: BundleFacetsOptions): Promise<Bundle
 	await mkdir(temporaryDirectory);
 
 	try {
-		const entries: Record<string, FacetBundleEntry> = {};
+		const entries: Record<string, FacetBundleEntry> = Object.create(null);
 		for (const [entryName, source] of Object.entries(options.entries).sort(([left], [right]) =>
 			left.localeCompare(right),
 		)) {
@@ -173,6 +153,11 @@ async function replaceDirectory(
 	if (movedExisting) await rm(backupDirectory, { force: true, recursive: true });
 }
 
+function containsPath(parent: string, child: string): boolean {
+	const relativePath = relative(parent, child);
+	return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
+}
+
 function resolveTarget(
 	target: string | readonly string[] | undefined,
 	platform: FacetBundlePlatform,
@@ -199,7 +184,11 @@ async function bundleEntry(input: {
 		entryNames: `${entryPrefix}-[hash]`,
 		entryPoints: [input.source],
 		external: [
-			...new Set(["@huranth/chord", "@huranth/chord/*", ...(input.options.external ?? [])]),
+			...new Set([
+				"@huranth/gama-bus",
+				"@huranth/gama-bus/*",
+				...(input.options.external ?? []),
+			]),
 		],
 		format: "cjs",
 		legalComments: "none",
@@ -218,27 +207,25 @@ async function bundleEntry(input: {
 	try {
 		result = await build(buildOptions);
 	} catch (error) {
-		const diagnostics = esbuildMessages(error);
-		const detail = diagnostics.length === 0 ? "" : `\n${diagnostics.join("\n")}`;
-		throw new Error(`Could not bundle facet entry ${input.entryName}${detail}`, { cause: error });
+		throw new Error(`Bundle failed: ${input.entryName}`, { cause: error });
 	}
 	const metafile = result.metafile;
 	if (metafile === undefined) {
-		throw new Error(`Facet entry ${input.entryName} produced no build metadata`);
+		throw new Error(`Missing metadata: ${input.entryName}`);
 	}
 
 	const outputs = Object.entries(metafile.outputs).filter(
 		([path, output]) => output.entryPoint !== undefined && extname(path) === ".cjs",
 	);
 	if (outputs.length !== 1) {
-		throw new Error(`Facet entry ${input.entryName} did not produce exactly one JavaScript file`);
+		throw new Error(`Invalid output: ${input.entryName}`);
 	}
 
 	const [outputPath, metadata] = outputs[0]!;
 	const absoluteOutputPath = resolve(input.workingDirectory, outputPath);
 	const file = relative(input.temporaryDirectory, absoluteOutputPath);
 	if (file.length === 0 || file.startsWith(`..${sep}`) || basename(file) !== file) {
-		throw new Error(`Facet entry ${input.entryName} produced an invalid output path`);
+		throw new Error(`Invalid path: ${input.entryName}`);
 	}
 	const sourceMap = input.options.sourceMap === true ? `${file}.map` : undefined;
 	const allowedOutputs = new Set([absoluteOutputPath]);
@@ -250,7 +237,7 @@ async function bundleEntry(input: {
 		.filter((path) => !allowedOutputs.has(path));
 	if (unexpectedOutputs.length > 0) {
 		throw new Error(
-			`Facet entry ${input.entryName} produced files other than its JavaScript bundle and source map`,
+			`Extra outputs: ${input.entryName}`,
 		);
 	}
 	const contents = await readFile(absoluteOutputPath);

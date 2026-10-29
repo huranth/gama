@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises";
 import { createRequire, isBuiltin } from "node:module";
 import { tmpdir } from "node:os";
-import { basename, dirname, isAbsolute, join, resolve } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { compileFunction } from "node:vm";
 import type { Facet, FacetLoader, LoadedFacets } from "../types.ts";
@@ -12,10 +12,12 @@ import {
 	FACET_BUNDLE_FORMAT,
 	FACET_BUNDLE_FORMAT_VERSION,
 	FACET_BUNDLE_MANIFEST_FILE,
+	isReservedEntryName,
 	type FacetBundleArtifact,
 	type FacetBundleEntry,
 	type FacetBundleManifest,
 } from "./manifest.ts";
+import { isRecord } from "./value.ts";
 
 export type FacetBundleExternalResolver = (specifier: string) => string | URL | undefined;
 
@@ -42,7 +44,7 @@ export async function readFacetBundleManifest(path: string | URL): Promise<Facet
 	try {
 		parsed = JSON.parse(await readFile(manifestPath, "utf8"));
 	} catch (error) {
-		throw new Error(`Could not read facet bundle manifest ${manifestPath}`, { cause: error });
+		throw new Error(`Unreadable manifest: ${manifestPath}`, { cause: error });
 	}
 	return validateManifest(parsed, manifestPath);
 }
@@ -51,19 +53,22 @@ export async function readFacetBundleArtifact(options: {
 	readonly manifestPath: string | URL;
 	readonly entry: string;
 }): Promise<FacetBundleArtifact> {
-	if (options.entry.length === 0) throw new TypeError("Facet bundle entry name must not be empty");
+	assertEntryName(options.entry);
 	const manifestPath = toFilePath(options.manifestPath);
 	const manifest = await readFacetBundleManifest(manifestPath);
 	const entry = manifest.entries[options.entry];
 	if (entry === undefined)
-		throw new Error(`Facet bundle ${manifest.plugin.id} has no entry named ${options.entry}`);
-	const modulePath = resolveBundleFile(manifestPath, entry.file, "entry");
+		throw new Error(`Missing entry: ${options.entry}`);
+	const modulePath = await readBundleFile(manifestPath, entry.file, "entry");
 	const source = await readFile(modulePath, "utf8");
 	verifySource(source, entry);
 	const sourceMapContents =
 		entry.sourceMap === undefined
 			? undefined
-			: await readFile(resolveBundleFile(manifestPath, entry.sourceMap, "source map"), "utf8");
+			: await readFile(
+					await readBundleFile(manifestPath, entry.sourceMap, "source map"),
+					"utf8",
+				);
 	return Object.freeze({
 		format: FACET_BUNDLE_ARTIFACT_FORMAT,
 		formatVersion: FACET_BUNDLE_ARTIFACT_FORMAT_VERSION,
@@ -131,7 +136,7 @@ export function createFacetBundleArtifactLoader(
 }
 
 export function createFacetBundleLoader(options: FacetBundleLoaderOptions): FacetLoader {
-	if (options.entry.length === 0) throw new TypeError("Facet bundle entry name must not be empty");
+	assertEntryName(options.entry);
 	const manifestPath = toFilePath(options.manifestPath);
 	return {
 		async load(): Promise<LoadedFacets> {
@@ -139,10 +144,10 @@ export function createFacetBundleLoader(options: FacetBundleLoaderOptions): Face
 			const entry = manifest.entries[options.entry];
 			if (entry === undefined) {
 				throw new Error(
-					`Facet bundle ${manifest.plugin.id} has no entry named ${options.entry}`,
+					`Missing entry: ${options.entry}`,
 				);
 			}
-			const modulePath = resolveBundleFile(manifestPath, entry.file, "entry");
+			const modulePath = await readBundleFile(manifestPath, entry.file, "entry");
 			try {
 				const source = await readFile(modulePath, "utf8");
 				if (options.verifyIntegrity !== false) verifySource(source, entry);
@@ -165,9 +170,8 @@ export function createFacetBundleLoader(options: FacetBundleLoaderOptions): Face
 					},
 				};
 			} catch (error) {
-				const detail = error instanceof Error ? `: ${error.message}` : "";
 				throw new Error(
-					`Could not load facet bundle entry ${manifest.plugin.id}/${options.entry}${detail}`,
+					`Bundle failed: ${options.entry}`,
 					{
 						cause: error,
 					},
@@ -195,7 +199,7 @@ function executeCommonJsModule(
 	const targetFor = (specifier: string): string => {
 		const target = externalTargets.get(specifier);
 		if (target === undefined)
-			throw new Error(`Facet bundle required undeclared external import: ${specifier}`);
+			throw new Error(`Undeclared import: ${specifier}`);
 		return target;
 	};
 	const requireExternal = Object.assign(
@@ -233,7 +237,7 @@ function toRequireSpecifier(target: string): string {
 	if (url.protocol === "file:") return fileURLToPath(url);
 	if (url.protocol === "node:") return url.href;
 	throw new Error(
-		`Facet bundle external target must be a file, package, or built-in module: ${target}`,
+		`Invalid target: ${target}`,
 	);
 }
 
@@ -244,6 +248,13 @@ function toFilePath(path: string | URL): string {
 	return fileURLToPath(path);
 }
 
+function assertEntryName(name: string): void {
+	if (name.length === 0) throw new TypeError("Facet bundle entry name must not be empty");
+	if (isReservedEntryName(name)) {
+		throw new TypeError(`Facet bundle entry name ${name} is reserved`);
+	}
+}
+
 function resolveBundleFile(manifestPath: string, file: string, label: string): string {
 	if (
 		file.length === 0 ||
@@ -252,57 +263,77 @@ function resolveBundleFile(manifestPath: string, file: string, label: string): s
 		file === "." ||
 		file === ".."
 	) {
-		throw new Error(`Facet bundle ${label} must be a filename relative to its manifest`);
+		throw new Error(`Invalid filename: ${label}`);
 	}
 	return resolve(dirname(manifestPath), file);
+}
+
+async function readBundleFile(
+	manifestPath: string,
+	file: string,
+	label: string,
+): Promise<string> {
+	const candidate = resolveBundleFile(manifestPath, file, label);
+	const root = await realpath(dirname(manifestPath));
+	let resolved: string;
+	try {
+		resolved = await realpath(candidate);
+	} catch (error) {
+		throw new Error(`Unreadable bundle: ${label}`, { cause: error });
+	}
+	const inside = relative(root, resolved);
+	if (inside === ".." || inside.startsWith(`..${sep}`) || isAbsolute(inside)) {
+		throw new Error(`Invalid path: ${label}`);
+	}
+	return resolved;
 }
 
 function verifySource(source: string, entry: FacetBundleEntry): void {
 	const expected = parseIntegrity(entry.integrity);
 	const actual = createHash("sha256").update(source, "utf8").digest("base64");
 	if (actual !== expected)
-		throw new Error(`Facet bundle integrity check failed for ${entry.file}`);
+		throw new Error(`Integrity failed: ${entry.file}`);
 }
 
 function parseIntegrity(integrity: string): string {
 	const prefix = "sha256-";
 	if (!integrity.startsWith(prefix) || integrity.length === prefix.length) {
-		throw new Error("Facet bundle entry has an invalid SHA-256 integrity value");
+		throw new Error("Invalid integrity");
 	}
 	return integrity.slice(prefix.length);
 }
 
 function facetsFromModule(
 	imported: unknown,
-	pluginId: string,
+	_pluginId: string,
 	entryName: string,
 ): readonly Facet[] {
 	if (!isRecord(imported))
-		throw new Error(`Facet bundle entry ${pluginId}/${entryName} did not export a module`);
+		throw new Error(`Missing module: ${entryName}`);
 	const exported = imported.default;
 	const candidates: readonly unknown[] = Array.isArray(exported)
 		? (exported as readonly unknown[])
 		: [exported];
 	if (candidates.length === 0) {
-		throw new Error(`Facet bundle entry ${pluginId}/${entryName} exported no facets`);
+		throw new Error(`Missing facets: ${entryName}`);
 	}
 	const facets: Facet[] = [];
 	for (const candidate of candidates) {
 		if (!isRecord(candidate) || typeof candidate.id !== "string" || candidate.id.length === 0) {
 			throw new Error(
-				`Facet bundle entry ${pluginId}/${entryName} has a facet with an invalid ID`,
+				"Invalid facet ID",
 			);
 		}
 		if (typeof candidate.setup !== "function") {
 			throw new Error(
-				`Facet bundle entry ${pluginId}/${entryName} facet ${candidate.id} has no setup function`,
+				`Missing setup: ${candidate.id}`,
 			);
 		}
 		facets.push(candidate as unknown as Facet);
 	}
 	const ids = facets.map(({ id }) => id);
 	if (new Set(ids).size !== ids.length) {
-		throw new Error(`Facet bundle entry ${pluginId}/${entryName} exports duplicate facet IDs`);
+		throw new Error("Duplicate facet ID");
 	}
 	return Object.freeze(facets);
 }
@@ -316,7 +347,7 @@ function validateArtifact(value: unknown): FacetBundleArtifact {
 		value.entryName.length === 0 ||
 		typeof value.source !== "string"
 	) {
-		throw new Error("Invalid facet bundle artifact");
+		throw new Error("Invalid artifact");
 	}
 	const manifest = validateManifest(
 		{
@@ -330,10 +361,10 @@ function validateArtifact(value: unknown): FacetBundleArtifact {
 	const entry = manifest.entries[value.entryName]!;
 	if (entry.sourceMap === undefined) {
 		if (value.sourceMapContents !== undefined) {
-			throw new Error("Facet bundle artifact has source map contents without a source map");
+			throw new Error("Missing source map");
 		}
 	} else if (typeof value.sourceMapContents !== "string") {
-		throw new Error("Facet bundle artifact is missing its source map contents");
+		throw new Error("Missing source map");
 	}
 	verifySource(value.source, entry);
 	return Object.freeze({
@@ -382,13 +413,13 @@ function resolveExternalTarget(specifier: string, resolver?: FacetBundleExternal
 	const resolved = resolver?.(specifier);
 	if (resolved !== undefined) return typeof resolved === "string" ? resolved : resolved.href;
 	const extension = import.meta.url.endsWith(".ts") ? "ts" : "js";
-	if (specifier === "@huranth/chord")
+	if (specifier === "@huranth/gama-bus")
 		return new URL(`../index.${extension}`, import.meta.url).href;
-	if (specifier === "@huranth/chord/context") {
-		return new URL(`../context/index.${extension}`, import.meta.url).href;
+	if (specifier === "@huranth/gama-bus/context") {
+		return new URL(`../scope/index.${extension}`, import.meta.url).href;
 	}
-	if (specifier === "@huranth/chord/node")
-		return new URL(`../node.${extension}`, import.meta.url).href;
+	if (specifier === "@huranth/gama-bus/node")
+		return new URL(`../host.${extension}`, import.meta.url).href;
 	return import.meta.resolve(specifier);
 }
 
@@ -404,17 +435,17 @@ function validatePackageSpecifier(specifier: string): void {
 		segments.length < packageParts ||
 		segments.some((part) => part.length === 0 || part === "." || part === "..")
 	) {
-		throw new Error(`Facet bundle artifact has an unsupported external import: ${specifier}`);
+		throw new Error(`Unsupported import: ${specifier}`);
 	}
 }
 
 function validateManifest(value: unknown, path: string): FacetBundleManifest {
 	if (!isRecord(value) || value.format !== FACET_BUNDLE_FORMAT) {
-		throw new Error(`Invalid facet bundle manifest format in ${path}`);
+		throw new Error(`Invalid manifest: ${path}`);
 	}
 	if (value.formatVersion !== FACET_BUNDLE_FORMAT_VERSION) {
 		throw new Error(
-			`Unsupported facet bundle manifest version in ${path}: ${String(value.formatVersion)}`,
+			`Manifest version: ${String(value.formatVersion)}`,
 		);
 	}
 	if (
@@ -422,41 +453,41 @@ function validateManifest(value: unknown, path: string): FacetBundleManifest {
 		typeof value.plugin.id !== "string" ||
 		value.plugin.id.length === 0
 	) {
-		throw new Error(`Facet bundle manifest has an invalid plugin identity in ${path}`);
+		throw new Error(`Invalid plugin: ${path}`);
 	}
 	if (
 		value.plugin.version !== undefined &&
 		(typeof value.plugin.version !== "string" || value.plugin.version.length === 0)
 	) {
-		throw new Error(`Facet bundle manifest has an invalid plugin version in ${path}`);
+		throw new Error(`Invalid version: ${path}`);
 	}
 	if (!isRecord(value.entries) || Object.keys(value.entries).length === 0) {
-		throw new Error(`Facet bundle manifest has no entries in ${path}`);
+		throw new Error(`Missing entries: ${path}`);
 	}
-	const entries: Record<string, FacetBundleEntry> = {};
+	const entries: Record<string, FacetBundleEntry> = Object.create(null);
 	for (const [name, candidate] of Object.entries(value.entries)) {
-		if (name.length === 0 || !isRecord(candidate)) {
-			throw new Error(`Facet bundle manifest has an invalid entry in ${path}`);
+		if (name.length === 0 || isReservedEntryName(name) || !isRecord(candidate)) {
+			throw new Error(`Invalid entry: ${path}`);
 		}
 		if (typeof candidate.file !== "string")
-			throw new Error(`Facet bundle entry ${name} has no file`);
+			throw new Error(`Missing file: ${name}`);
 		resolveBundleFile(path, candidate.file, `entry ${name}`);
 		if (typeof candidate.integrity !== "string")
-			throw new Error(`Facet bundle entry ${name} has no integrity`);
+			throw new Error(`Missing integrity: ${name}`);
 		parseIntegrity(candidate.integrity);
 		if (
 			!Array.isArray(candidate.externalImports) ||
 			candidate.externalImports.some((item) => typeof item !== "string")
 		) {
-			throw new Error(`Facet bundle entry ${name} has invalid external imports`);
+			throw new Error(`Invalid imports: ${name}`);
 		}
 		const externalImports = Object.freeze([...(candidate.externalImports as readonly string[])]);
 		if (new Set(externalImports).size !== externalImports.length) {
-			throw new Error(`Facet bundle entry ${name} has duplicate external imports`);
+			throw new Error(`Duplicate imports: ${name}`);
 		}
 		if (candidate.sourceMap !== undefined) {
 			if (typeof candidate.sourceMap !== "string")
-				throw new Error(`Facet bundle entry ${name} has an invalid source map`);
+				throw new Error(`Invalid map: ${name}`);
 			resolveBundleFile(path, candidate.sourceMap, `entry ${name} source map`);
 		}
 		entries[name] = Object.freeze({
@@ -475,8 +506,4 @@ function validateManifest(value: unknown, path: string): FacetBundleManifest {
 		}),
 		entries: Object.freeze(entries),
 	});
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }

@@ -1,6 +1,8 @@
 import { readFile, realpath, stat } from "node:fs/promises";
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { type BundleFacetsResult, bundleFacets } from "./bundle.ts";
+import { isReservedEntryName } from "./manifest.ts";
+import { isMissingPath, isRecord } from "./value.ts";
 
 export interface BundleFacetPackageOptions {
 	readonly packagePath: string;
@@ -52,24 +54,18 @@ export async function bundleFacetPackage(
 	});
 }
 
-function isMissingPath(error: unknown): boolean {
-	return isRecord(error) && error.code === "ENOENT";
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function validateFacetMapping(name: string, source: string, kind: string): void {
-	if (name.length === 0) throw new Error(`Facet package ${kind} entry name must not be empty`);
+function validateFacetMapping(name: string, source: string, _kind: string): void {
+	if (name.length === 0) throw new Error("Empty entry name");
+	if (isReservedEntryName(name))
+		throw new Error(`Reserved entry: ${name}`);
 	if (source.length === 0)
-		throw new Error(`Facet package ${kind} entry ${name} must have a source path`);
+		throw new Error(`Missing source: ${name}`);
 }
 
 function validateCanonicalPackageEntry(packageDirectory: string, path: string, name: string): void {
 	const relativePath = relative(packageDirectory, path);
 	if (relativePath === ".." || relativePath.startsWith(`..${sep}`) || isAbsolute(relativePath)) {
-		throw new Error(`Facet package entry ${name} resolves outside the package directory`);
+		throw new Error(`Outside package: ${name}`);
 	}
 }
 
@@ -81,14 +77,14 @@ function parsePeerDependencies(value: unknown, packageJsonPath: string): readonl
 			([name, version]) => name.length === 0 || typeof version !== "string",
 		)
 	) {
-		throw new Error(`Facet package has invalid peerDependencies: ${packageJsonPath}`);
+		throw new Error(`Invalid peerDependencies: ${packageJsonPath}`);
 	}
 	return Object.freeze(Object.keys(value).sort());
 }
 
 function resolvePackageEntry(packageDirectory: string, source: string, name: string): string {
 	if (isAbsolute(source))
-		throw new Error(`Facet package entry ${name} must be relative to the package directory`);
+		throw new Error(`Absolute entry: ${name}`);
 	const path = resolve(packageDirectory, source);
 	const relativePath = relative(packageDirectory, path);
 	if (
@@ -97,7 +93,7 @@ function resolvePackageEntry(packageDirectory: string, source: string, name: str
 		relativePath.startsWith(`..${sep}`) ||
 		isAbsolute(relativePath)
 	) {
-		throw new Error(`Facet package entry ${name} escapes the package directory`);
+		throw new Error(`Escaping entry: ${name}`);
 	}
 	return path;
 }
@@ -106,14 +102,14 @@ async function resolveFacetEntries(
 	metadata: FacetPackageMetadata,
 	defaultFacets: Readonly<Record<string, string>>,
 ): Promise<Readonly<Record<string, string>>> {
-	const entries: Record<string, string> = {};
+	const entries: Record<string, string> = Object.create(null);
 	for (const [name, source] of Object.entries(defaultFacets)) {
 		validateFacetMapping(name, source, "default");
 		const path = resolvePackageEntry(metadata.packageDirectory, source, name);
 		try {
 			const entryStats = await stat(path);
 			if (!entryStats.isFile())
-				throw new Error(`Default facet entry ${name} is not a file: ${path}`);
+				throw new Error(`Invalid entry: ${name}`);
 			const canonicalPath = await realpath(path);
 			validateCanonicalPackageEntry(metadata.packageDirectory, canonicalPath, name);
 			entries[name] = canonicalPath;
@@ -134,19 +130,19 @@ async function resolveFacetEntries(
 		try {
 			entryStats = await stat(path);
 		} catch (error) {
-			throw new Error(`Could not access configured facet entry ${name}: ${path}`, {
+			throw new Error(`Unreadable entry: ${name}`, {
 				cause: error,
 			});
 		}
 		if (!entryStats.isFile())
-			throw new Error(`Configured facet entry ${name} is not a file: ${path}`);
+			throw new Error(`Invalid entry: ${name}`);
 		const canonicalPath = await realpath(path);
 		validateCanonicalPackageEntry(metadata.packageDirectory, canonicalPath, name);
 		entries[name] = canonicalPath;
 	}
 	if (Object.keys(entries).length === 0) {
 		throw new Error(
-			`Facet package ${metadata.name} has no configured or conventional facet entries`,
+			`Missing entries: ${metadata.name}`,
 		);
 	}
 
@@ -162,7 +158,7 @@ async function readFacetPackageMetadata(packagePath: string): Promise<FacetPacka
 	try {
 		candidateStats = await stat(candidate);
 	} catch (error) {
-		throw new Error(`Could not access facet package ${candidate}`, { cause: error });
+		throw new Error(`Unreadable package: ${candidate}`, { cause: error });
 	}
 	if (candidateStats.isDirectory()) {
 		packageDirectory = await realpath(candidate);
@@ -171,23 +167,23 @@ async function readFacetPackageMetadata(packagePath: string): Promise<FacetPacka
 		packageJsonPath = await realpath(candidate);
 		packageDirectory = dirname(packageJsonPath);
 	} else {
-		throw new Error(`Facet package path must name a directory or package.json: ${candidate}`);
+		throw new Error(`Invalid path: ${candidate}`);
 	}
 
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(await readFile(packageJsonPath, "utf8"));
 	} catch (error) {
-		throw new Error(`Could not read facet package metadata ${packageJsonPath}`, { cause: error });
+		throw new Error(`Unreadable metadata: ${packageJsonPath}`, { cause: error });
 	}
 	if (!isRecord(parsed))
-		throw new Error(`Facet package metadata must be an object: ${packageJsonPath}`);
+		throw new Error(`Invalid metadata: ${packageJsonPath}`);
 
 	if (typeof parsed.name !== "string" || parsed.name.length === 0) {
-		throw new Error(`Facet package must have a non-empty name: ${packageJsonPath}`);
+		throw new Error("Missing package name");
 	}
 	if (typeof parsed.version !== "string" || parsed.version.length === 0) {
-		throw new Error(`Facet package must have a non-empty version: ${packageJsonPath}`);
+		throw new Error("Missing package version");
 	}
 	const peerDependencies = parsePeerDependencies(parsed.peerDependencies, packageJsonPath);
 	const chord = parseChordConfiguration(parsed.chord, packageJsonPath);
@@ -215,26 +211,27 @@ function parseChordConfiguration(
 	if (value === undefined)
 		return { facets: Object.freeze({}), external: Object.freeze([]), sourceMap: true };
 	if (!isRecord(value))
-		throw new Error(`Facet package chord configuration must be an object: ${packageJsonPath}`);
+		throw new Error(`Invalid config: ${packageJsonPath}`);
 	if (
 		Object.keys(value).some(
 			(key) => key !== "facets" && key !== "external" && key !== "sourceMap",
 		)
 	) {
-		throw new Error(`Facet package chord configuration has an unknown field: ${packageJsonPath}`);
+		throw new Error("Unknown config field");
 	}
-	const facets: Record<string, string | false> = {};
+	const facets: Record<string, string | false> = Object.create(null);
 	if (value.facets !== undefined) {
 		if (!isRecord(value.facets)) {
-			throw new Error(`Facet package chord.facets must be an object: ${packageJsonPath}`);
+			throw new Error(`Invalid facets: ${packageJsonPath}`);
 		}
 		for (const [name, source] of Object.entries(value.facets)) {
 			if (
 				name.length === 0 ||
+				isReservedEntryName(name) ||
 				(typeof source !== "string" && source !== false) ||
 				source === ""
 			) {
-				throw new Error(`Facet package has an invalid chord.facets entry: ${packageJsonPath}`);
+				throw new Error("Invalid facet entry");
 			}
 			facets[name] = source;
 		}
@@ -247,14 +244,14 @@ function parseChordConfiguration(
 			value.external.some((specifier) => typeof specifier !== "string" || specifier.length === 0)
 		) {
 			throw new Error(
-				`Facet package chord.external must contain non-empty strings: ${packageJsonPath}`,
+				`Invalid externals: ${packageJsonPath}`,
 			);
 		}
 		external = Object.freeze([...new Set(value.external as readonly string[])].sort());
 	}
 
 	if (value.sourceMap !== undefined && typeof value.sourceMap !== "boolean") {
-		throw new Error(`Facet package chord.sourceMap must be a boolean: ${packageJsonPath}`);
+		throw new Error(`Invalid sourceMap: ${packageJsonPath}`);
 	}
 
 	return {
