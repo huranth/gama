@@ -47,39 +47,62 @@ interface InMemoryTelemetryState {
 	nextEndSequence: number;
 }
 
-export class InMemoryTelemetryContext implements TelemetryContext {
-	private readonly state: InMemoryTelemetryState = {
-		spans: [],
-		nextSpanId: 1,
-		nextEndSequence: 1,
-	};
-
-	startSpan<T>(
-		options: SpanOptions,
-		callback: (span: TelemetrySpan) => T | Promise<T>,
-	): Promise<T> {
-		return startInMemorySpan(this.state, undefined, options, callback);
-	}
-
-	getSpans(): readonly RecordedTelemetrySpan[] {
-		return this.state.spans.map((span) => ({
-			id: span.id,
-			parentId: span.parentId,
-			name: span.name,
-			attributes: copyAttributes(span.attributes),
-			events: span.events.map((event) => ({
-				name: event.name,
-				attributes: copyAttributes(event.attributes),
-			})),
-			status: copyStatus(span.status),
-			settled: span.settled,
-			...(span.endSequence === undefined ? {} : { endSequence: span.endSequence }),
-		}));
-	}
-}
-
 function copyAttributeValue(value: AttributeValue): AttributeValue {
 	return Array.isArray(value) ? ([...value] as AttributeValue) : value;
+}
+
+function defineAttribute(
+	attributes: SpanAttributes,
+	name: string,
+	value: AttributeValue,
+): void {
+	Object.defineProperty(attributes, name, {
+		value: copyAttributeValue(value),
+		enumerable: true,
+		configurable: true,
+		writable: true,
+	});
+}
+
+function copyAttributes(attributes?: SpanAttributes): SpanAttributes {
+	const copy: SpanAttributes = {};
+	if (!attributes) {
+		return copy;
+	}
+
+	for (const [name, value] of Object.entries(attributes)) {
+		if (value !== undefined && name !== "__proto__") {
+			defineAttribute(copy, name, value);
+		}
+	}
+
+	return copy;
+}
+
+function copyStatus(status: SpanStatus): SpanStatus {
+	if (status.status === "ok") return { status: "ok" };
+	return status.error
+		? { status: "error", error: { name: status.error.name, message: status.error.message } }
+		: { status: "error" };
+}
+
+function automaticErrorStatus(error: unknown): SpanStatus {
+	try {
+		if (error instanceof Error) {
+			return { status: "error", error: { name: error.name, message: error.message } };
+		}
+	} catch { /* unreadable */ }
+	return { status: "error" };
+}
+
+function mergeAttributes(current: SpanAttributes, attributes: SpanAttributes): SpanAttributes {
+	const merged = copyAttributes(current);
+	for (const [name, value] of Object.entries(attributes)) {
+		if (value !== undefined && name !== "__proto__") {
+			defineAttribute(merged, name, value);
+		}
+	}
+	return merged;
 }
 
 function createSpan(
@@ -101,30 +124,6 @@ function createSpan(
 	};
 }
 
-function copyStatus(status: SpanStatus): SpanStatus {
-	if (status.status === "ok") return { status: "ok" };
-	return status.error
-		? { status: "error", error: { name: status.error.name, message: status.error.message } }
-		: { status: "error" };
-}
-
-function automaticErrorStatus(error: unknown): SpanStatus {
-	try {
-		if (error instanceof Error) {
-			return { status: "error", error: { name: error.name, message: error.message } };
-		}
-	} catch {}
-	return { status: "error" };
-}
-
-function mergeAttributes(current: SpanAttributes, attributes: SpanAttributes): SpanAttributes {
-	const merged = copyAttributes(current);
-	for (const [name, value] of Object.entries(attributes)) {
-		if (value !== undefined) merged[name] = copyAttributeValue(value);
-	}
-	return merged;
-}
-
 function settleSpan(
 	state: InMemoryTelemetryState,
 	span: MutableRecordedTelemetrySpan,
@@ -141,21 +140,6 @@ function settleSpan(
 
 	span.settled = true;
 	span.endSequence = state.nextEndSequence++;
-}
-
-function copyAttributes(attributes?: SpanAttributes): SpanAttributes {
-	const copy: SpanAttributes = {};
-	if (!attributes) {
-		return copy;
-	}
-
-	for (const [name, value] of Object.entries(attributes)) {
-		if (value !== undefined) {
-			copy[name] = copyAttributeValue(value);
-		}
-	}
-
-	return copy;
 }
 
 function startInMemorySpan<T>(
@@ -188,7 +172,7 @@ function startInMemorySpan<T>(
 
 			try {
 				recordedSpan.events.push({ name, attributes: copyAttributes(attributes) });
-			} catch {}
+			} catch { /* unreadable */ }
 		},
 		setAttributes(attributes) {
 			if (recordedSpan.settled) {
@@ -197,7 +181,7 @@ function startInMemorySpan<T>(
 
 			try {
 				recordedSpan.attributes = mergeAttributes(recordedSpan.attributes, attributes);
-			} catch {}
+			} catch { /* unreadable */ }
 		},
 		setStatus(status) {
 			if (recordedSpan.settled) {
@@ -205,9 +189,9 @@ function startInMemorySpan<T>(
 			}
 
 			try {
-				recordedSpan.status = copyStatus(status);
+				recordedSpan.status = copyStatus(status); // copy first
 				recordedSpan.explicitStatus = true;
-			} catch {}
+			} catch { /* unreadable */ }
 		},
 	};
 
@@ -229,4 +213,35 @@ function startInMemorySpan<T>(
 			throw error;
 		},
 	);
+}
+
+export class InMemoryTelemetryContext implements TelemetryContext {
+	private readonly state: InMemoryTelemetryState = {
+		spans: [],
+		nextSpanId: 1,
+		nextEndSequence: 1,
+	};
+
+	startSpan<T>(
+		options: SpanOptions,
+		callback: (span: TelemetrySpan) => T | Promise<T>,
+	): Promise<T> {
+		return startInMemorySpan(this.state, undefined, options, callback);
+	}
+
+	getSpans(): readonly RecordedTelemetrySpan[] {
+		return this.state.spans.map((span) => ({
+			id: span.id,
+			parentId: span.parentId,
+			name: span.name,
+			attributes: copyAttributes(span.attributes),
+			events: span.events.map((event) => ({
+				name: event.name,
+				attributes: copyAttributes(event.attributes),
+			})),
+			status: copyStatus(span.status),
+			settled: span.settled,
+			...(span.endSequence === undefined ? {} : { endSequence: span.endSequence }),
+		}));
+	}
 }
