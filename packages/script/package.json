@@ -2,7 +2,7 @@
 	"name": "@huranth/gama-codemode",
 	"version": "1.0.3",
 	"private": true,
-	"description": "Sandboxed JavaScript execution where the only capability is calling injected tools",
+	"description": "Sandboxed scripts with injected tools",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -12,20 +12,30 @@
 			"types": "./dist/index.d.ts",
 			"import": "./dist/index.js"
 		},
-		"./declarations": {
-			"source": "./src/declarations.ts",
-			"types": "./dist/declarations.d.ts",
-			"import": "./dist/declarations.js"
+		"./types": {
+			"source": "./src/types.ts",
+			"types": "./dist/types.d.ts",
+			"import": "./dist/types.js"
 		},
-		"./source": {
-			"source": "./src/source.ts",
-			"types": "./dist/source.d.ts",
-			"import": "./dist/source.js"
+		"./tools": {
+			"source": "./src/tools.ts",
+			"types": "./dist/tools.d.ts",
+			"import": "./dist/tools.js"
 		},
 		"./worker": {
-			"source": "./src/runtime/worker.ts",
-			"types": "./dist/runtime/worker.d.ts",
-			"import": "./dist/runtime/worker.js"
+			"source": "./src/sandbox/worker.ts",
+			"types": "./dist/sandbox/worker.d.ts",
+			"import": "./dist/sandbox/worker.js"
+		},
+		"./declarations": {
+			"source": "./src/types.ts",
+			"types": "./dist/types.d.ts",
+			"import": "./dist/types.js"
+		},
+		"./source": {
+			"source": "./src/tools.ts",
+			"types": "./dist/tools.d.ts",
+			"import": "./dist/tools.js"
 		}
 	},
 	"files": [
@@ -50,7 +60,7 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/huranth/gama.git",
-		"directory": "packages/codemode"
+		"directory": "packages/script"
 	},
 	"engines": {
 		"node": ">=22.19.0"
