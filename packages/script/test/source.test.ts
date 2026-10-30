@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CodemodeSourceError, parseCodemodeSource } from "../src/source.ts";
+import { CodemodeSourceError, parseCodemodeSource } from "../src/tools.ts";
 
 describe("parseCodemodeSource", () => {
 	it("returns plain code unchanged", () => {

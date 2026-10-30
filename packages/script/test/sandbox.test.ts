@@ -4,10 +4,11 @@ import { afterEach, describe, expect, it } from "vitest";
 import {
 	CodemodeSandbox,
 	type CodemodeTool,
+	loadQuickJSWasm,
 	MAX_OUTPUT_CHARS,
 	MAX_OUTPUT_ITEMS,
 } from "../src/index.ts";
-import { PRELUDE_SOURCE } from "../src/runtime/prelude-source.ts";
+import { PRELUDE_SOURCE } from "../src/sandbox/prelude-source.ts";
 
 const sandboxes: CodemodeSandbox[] = [];
 
@@ -364,8 +365,8 @@ describe("tools", () => {
 			return result.ok ? result.value : result.error.message;
 		};
 		expect(await attempt("tools.Echo")).toBe(
-			"tools.Echo does not exist. Did you mean tools.echo? ALL_TOOLS lists every tool; " +
-				'searchTools(query) finds tools by topic. Check for a member with "Echo" in tools.',
+			"tools.Echo does not exist. Did you mean tools.echo? ALL_TOOLS lists every tool. " +
+				'Check for a member with "Echo" in tools.',
 		);
 		expect(await attempt("tools.websearch")).toContain("Did you mean tools.web_search?");
 		expect(await attempt("tools.nothing")).toContain("Available: echo, web_search.");
@@ -379,7 +380,7 @@ describe("tools", () => {
 	it("supports register and unregister between executions", async () => {
 		const sandbox = createSandbox();
 		sandbox.registerTool(echo);
-		expect(() => sandbox.registerTool(echo)).toThrow(/already registered/);
+		expect(() => sandbox.registerTool(echo)).toThrow(/Tool exists/);
 		expect(sandbox.tools.map((tool) => tool.name)).toEqual(["echo"]);
 		expect(await sandbox.execute("return await tools.echo('a')")).toMatchObject({
 			ok: true,
@@ -430,13 +431,22 @@ describe("store and load", () => {
 	it("rejects invalid keys, values, and oversized writes inside the script", async () => {
 		const sandbox = createSandbox();
 		const result = await sandbox.execute(`
-			const attempt = (fn) => { try { fn(); return "ok"; } catch (error) { return error.name; } };
+			const attempt = (fn) => {
+				try {
+					fn();
+					return "ok";
+				} catch (error) {
+					return error.name;
+				}
+			};
 			return [
 				attempt(() => store(1, "x")),
 				attempt(() => load({})),
 				attempt(() => store("fn", () => 1)),
 				attempt(() => store("big", "x".repeat(300 * 1024))),
-				attempt(() => { for (let i = 0; i < 8; i++) store("k" + i, "x".repeat(200 * 1024)); }),
+				attempt(() => {
+					for (let i = 0; i < 8; i++) store("k" + i, "x".repeat(200 * 1024));
+				}),
 			];
 		`);
 		expect(result).toMatchObject({
@@ -454,13 +464,24 @@ describe("store and load", () => {
 		expect(result.error.message).toContain("Show images with image()");
 	});
 
+	it("rejects oversized initial stores before starting the worker", async () => {
+		const sandbox = createSandbox();
+		await expect(
+			sandbox.execute("return 1;", { store: { big: "x".repeat(300 * 1024) } }),
+		).rejects.toThrow(/value has .* more than the limit/);
+		const store = Object.fromEntries(
+			Array.from({ length: 5 }, (_, index) => [`k${index}`, "x".repeat(250 * 1024)]),
+		);
+		await expect(sandbox.execute("return 1;", { store })).rejects.toThrow("store is full");
+	});
+
 	it("reserves the store and load names", () => {
 		const execute = () => undefined;
 		expect(() => new CodemodeSandbox({ globals: [{ name: "store", execute }] })).toThrow(
-			/Invalid global/,
+			/Bad global/,
 		);
 		expect(() => new CodemodeSandbox({ globals: [{ name: "load", execute }] })).toThrow(
-			/Invalid global/,
+			/Bad global/,
 		);
 	});
 });
@@ -524,7 +545,7 @@ describe("globals", () => {
 		const execute = () => undefined;
 		for (const name of ["a.b.c", "a.", ".a", "tools.x", "store.x", "a.not-valid"]) {
 			expect(() => new CodemodeSandbox({ globals: [{ name, execute }] }), name).toThrow(
-				/Invalid global/,
+				/Bad global/,
 			);
 		}
 		expect(
@@ -535,15 +556,15 @@ describe("globals", () => {
 						{ name: "models.list", execute },
 					],
 				}),
-		).toThrow(/conflicts with the namespace/);
+		).toThrow(/Name conflict/);
 		expect(() => new CodemodeSandbox({ globals: [{ name: "not-valid", execute }] })).toThrow(
-			/Invalid global/,
+			/Bad global/,
 		);
 		expect(() => new CodemodeSandbox({ globals: [{ name: "tools", execute }] })).toThrow(
-			/Invalid global/,
+			/Bad global/,
 		);
 		expect(() => new CodemodeSandbox({ globals: [{ name: "console", execute }] })).toThrow(
-			/Invalid global/,
+			/Bad global/,
 		);
 	});
 });
@@ -555,6 +576,15 @@ describe("limits and lifetime", () => {
 		const result = await sandbox.execute("while (true) {}", { timeoutMs: 200 });
 		expect(result).toMatchObject({ ok: false, error: { kind: "timeout" } });
 		expect(performance.now() - started).toBeLessThan(5_000);
+	});
+
+	it("starts the deadline when the worker starts, not while wasm loads", async () => {
+		const wasm = await loadQuickJSWasm();
+		const slowWasm = new Promise<typeof wasm>((resolve) => setTimeout(() => resolve(wasm), 1_500));
+		const sandbox = new CodemodeSandbox({ wasm: slowWasm, timeoutMs: 1_000 });
+		sandboxes.push(sandbox);
+
+		expect(await sandbox.execute("return 1")).toMatchObject({ ok: true, value: 1 });
 	});
 
 	it("runs without a deadline when timeoutMs is Infinity", async () => {
@@ -692,14 +722,17 @@ describe("limits and lifetime", () => {
 		const sandbox = createSandbox();
 		const result = await sandbox.execute(`
 			let depth = 0;
-			function dive() { depth++; dive(); }
+			function dive() {
+				depth++;
+				dive();
+			}
 			try { dive(); } catch (error) { return [error.name, depth > 1000]; }
 		`);
 		expect(result).toMatchObject({ ok: true, value: ["RangeError", true] });
 	});
 
 	it("accepts a worker path string", async () => {
-		const workerPath = fileURLToPath(new URL("../src/runtime/worker.ts", import.meta.url));
+		const workerPath = fileURLToPath(new URL("../src/sandbox/worker.ts", import.meta.url));
 		const sandbox = new CodemodeSandbox({ workerUrl: workerPath });
 		sandboxes.push(sandbox);
 		expect(await sandbox.execute("return 1")).toMatchObject({ ok: true, value: 1 });
