@@ -13,13 +13,19 @@ function crash(error: unknown): void {
 	post({ type: "crash", message });
 }
 
+const IOVEC_SIZE = 8;
+
+const IOVEC_LENGTH_OFFSET = 4;
+
 function discardOutput(memory: { readonly buffer: ArrayBufferLike }) {
 	return {
 		fd_write(_fd: number, iovsPtr: number, iovsLen: number, nwrittenPtr: number): number {
 			const view = new DataView(memory.buffer);
 			let written = 0;
+
 			for (let i = 0; i < iovsLen; i++) {
-				written += view.getUint32(iovsPtr + i * 8 + 4, true);
+				const lengthAt = iovsPtr + i * IOVEC_SIZE + IOVEC_LENGTH_OFFSET;
+				written += view.getUint32(lengthAt, true);
 			}
 
 			view.setUint32(nwrittenPtr, written, true);
@@ -98,9 +104,11 @@ async function main(data: WorkerData): Promise<void> {
 			),
 		),
 	);
+
 	const settle = api.getProp("settle");
 	const run = api.getProp("run");
 	const stalled = api.getProp("stalled");
+
 	const drain = () => {
 		vm.executePendingJobs();
 		vm.callFunction(stalled, api).dispose();

@@ -8,15 +8,19 @@ export {
 	renderToolSample,
 	renderToolSignature,
 	schemaToType,
-} from "./declarations.ts";
+} from "./types.ts";
+
 export { toCodemodeIdentifier } from "./identifier.ts";
-export { CodemodeSandbox } from "./runtime/host.ts";
+
+export { CodemodeSandbox } from "./sandbox/host.ts";
+
 export {
 	MAX_OUTPUT_CHARS,
 	MAX_OUTPUT_ITEMS,
 	MAX_STORE_TOTAL_CHARS,
 	MAX_STORE_VALUE_CHARS,
-} from "./runtime/prelude-source.ts";
+} from "./sandbox/prelude-source.ts";
+
 export {
 	CODEMODE_OPTIONS_PREFIX,
 	CODEMODE_SOURCE_GRAMMAR,
@@ -24,7 +28,8 @@ export {
 	type CodemodeSourceOptions,
 	type ParsedCodemodeSource,
 	parseCodemodeSource,
-} from "./source.ts";
+} from "./tools.ts";
+
 export type {
 	CodemodeCall,
 	CodemodeCallStatus,
@@ -39,4 +44,5 @@ export type {
 	CodemodeTool,
 	CodemodeToolContext,
 } from "./types.ts";
+
 export { type CodemodeWasmModule, loadQuickJSWasm } from "./wasm.ts";

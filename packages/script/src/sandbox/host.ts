@@ -1,5 +1,5 @@
 import { Worker } from "node:worker_threads";
-import { toCodemodeIdentifier } from "../identifier.ts";
+import { IDENTIFIER, toCodemodeIdentifier } from "../identifier.ts";
 import type {
 	CodemodeCall,
 	CodemodeCallStatus,
@@ -12,6 +12,7 @@ import type {
 	CodemodeTool,
 } from "../types.ts";
 import { type CodemodeWasmModule, loadQuickJSWasm } from "../wasm.ts";
+import { MAX_STORE_TOTAL_CHARS, MAX_STORE_VALUE_CHARS } from "./prelude-source.ts";
 import {
 	type HostToWorkerMessage,
 	isWorkerToHostMessage,
@@ -38,7 +39,17 @@ interface ExecutionOptions {
 }
 
 const DEFAULT_TIMEOUT_MS = 300_000;
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+
+function validateTimeout(value: number): number {
+	if (value !== Number.POSITIVE_INFINITY && (!Number.isFinite(value) || value < 0)) {
+		throw new RangeError("timeoutMs must be a non-negative finite number or Infinity");
+	}
+	if (value !== Number.POSITIVE_INFINITY && value > 2_147_483_647) {
+		throw new RangeError("timeoutMs must not exceed 2147483647");
+	}
+	return value;
+}
+
 const RESERVED_GLOBALS: ReadonlySet<string> = new Set([
 	"tools",
 	"ALL_TOOLS",
@@ -58,19 +69,47 @@ function errorMessage(error: unknown): string {
 function serializeStore(
 	store: Readonly<Record<string, unknown>> | undefined,
 ): Record<string, string> {
-	const serialized: Record<string, string> = {};
+	const serialized = Object.create(null) as Record<string, string>;
+	let totalChars = 0;
+
 	for (const [key, value] of Object.entries(store ?? {})) {
 		const json = JSON.stringify(value);
-		if (json !== undefined) serialized[key] = json;
+		if (json === undefined) continue;
+		if (json.length > MAX_STORE_VALUE_CHARS) {
+			throw new RangeError(
+				`store(${JSON.stringify(key)}) value has ${json.length} characters of JSON, ` +
+					`more than the limit of ${MAX_STORE_VALUE_CHARS}.`,
+			);
+		}
+		totalChars += key.length + json.length;
+		if (totalChars > MAX_STORE_TOTAL_CHARS) {
+			throw new RangeError(
+				`store is full: stored values would exceed ${MAX_STORE_TOTAL_CHARS} ` +
+					"characters of JSON. Delete keys with store(key, undefined).",
+			);
+		}
+		serialized[key] = json;
 	}
+
 	return serialized;
 }
 
 function parseStoreWrites(json: string): CodemodeStoreWrites {
-	const writes: CodemodeStoreWrites = { set: {}, delete: [] };
+	const writes: CodemodeStoreWrites = {
+		set: Object.create(null) as Record<string, unknown>,
+		delete: [],
+	};
 	for (const [key, value] of JSON.parse(json) as [string, string?][]) {
-		if (value === undefined) writes.delete.push(key);
-		else writes.set[key] = JSON.parse(value);
+		if (value === undefined) {
+			writes.delete.push(key);
+			continue;
+		}
+		Object.defineProperty(writes.set, key, {
+			value: JSON.parse(value),
+			enumerable: true,
+			configurable: true,
+			writable: true,
+		}); // proto guard
 	}
 	return writes;
 }
@@ -88,7 +127,7 @@ class Execution {
 	private readonly tools: ReadonlyMap<string, CodemodeTool>;
 	private readonly globals: ReadonlyMap<string, CodemodeTool>;
 	private readonly signal: AbortSignal | undefined;
-	private readonly timer: NodeJS.Timeout | undefined;
+	private timer: NodeJS.Timeout | undefined;
 	private readonly output: CodemodeOutputItem[] = [];
 	private readonly calls: CodemodeCall[] = [];
 	private readonly pending = new Map<number, PendingCall>();
@@ -101,15 +140,6 @@ class Execution {
 		this.tools = options.tools;
 		this.globals = options.globals;
 		this.signal = options.signal;
-
-		if (Number.isFinite(options.timeoutMs)) {
-			this.timer = setTimeout(() => {
-				this.finish({
-					kind: "timeout",
-					message: `Execution timed out after ${options.timeoutMs} ms`,
-				});
-			}, options.timeoutMs);
-		}
 
 		if (options.signal) {
 			if (options.signal.aborted) {
@@ -165,6 +195,16 @@ class Execution {
 		}
 		this.worker = worker;
 
+		// Start deadline
+		if (Number.isFinite(options.timeoutMs)) {
+			this.timer = setTimeout(() => {
+				this.finish({
+					kind: "timeout",
+					message: `Execution timed out after ${options.timeoutMs} ms`,
+				});
+			}, options.timeoutMs);
+		}
+
 		worker.on("message", (message: unknown) => this.handleMessage(message));
 		worker.on("error", (error: unknown) => {
 			this.finish({
@@ -194,7 +234,13 @@ class Execution {
 	}
 
 	private handleMessage(message: unknown): void {
-		if (this.finished || !isWorkerToHostMessage(message)) return;
+		if (this.finished) return;
+		if (!isWorkerToHostMessage(message)) {
+			// Unknown shape
+			this.finish({ kind: "sandbox", message: "Invalid worker message" });
+			return;
+		}
+
 		switch (message.type) {
 			case "output":
 				this.output.push(message.item);
@@ -251,7 +297,7 @@ class Execution {
 		let reply: HostToWorkerMessage;
 		try {
 			const tool = (isTool ? this.tools : this.globals).get(name);
-			if (!tool) throw new Error(`Unknown ${isTool ? "tool" : "global"} "${name}"`);
+			if (!tool) throw new Error(`Unknown name: ${name}`);
 			const args: unknown = message.args === undefined ? undefined : JSON.parse(message.args);
 			const value = await tool.execute(args, { signal: pending.controller.signal });
 			reply = {
@@ -333,13 +379,14 @@ export class CodemodeSandbox {
 	private closed = false;
 
 	constructor(options: CodemodeSandboxOptions = {}) {
-		this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
+		this.timeoutMs = validateTimeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 		this.memoryLimitBytes = options.memoryLimitBytes;
 		this.wasm = options.wasm;
 		this.workerUrl = options.workerUrl ?? defaultWorkerUrl();
 		for (const tool of options.tools ?? []) {
 			this.registerTool(tool);
 		}
+
 		const namespaces = new Set<string>();
 
 		for (const global of options.globals ?? []) {
@@ -349,22 +396,33 @@ export class CodemodeSandbox {
 				!parts.every((part) => IDENTIFIER.test(part)) ||
 				RESERVED_GLOBALS.has(parts[0])
 			) {
-				throw new Error(`Invalid global name "${global.name}"`);
+				throw new Error(`Bad global: ${global.name}`);
 			}
-			if (this.globalsByName.has(global.name))
-				throw new Error(`Global "${global.name}" is already registered`);
+
+			if (this.globalsByName.has(global.name)) {
+				throw new Error(`Global exists: ${global.name}`);
+			}
+
 			if (parts.length === 2) namespaces.add(parts[0]);
 			this.globalsByName.set(global.name, global);
 		}
+
 		for (const name of namespaces) {
-			if (this.globalsByName.has(name))
-				throw new Error(`Global "${name}" conflicts with the namespace "${name}"`);
+			if (this.globalsByName.has(name)) {
+				throw new Error(`Name conflict: ${name}`);
+			}
 		}
 	}
 
 	registerTool(tool: CodemodeTool): void {
-		if (this.toolsByName.has(tool.name))
-			throw new Error(`Tool "${tool.name}" is already registered`);
+		if (this.toolsByName.has(tool.name)) {
+			throw new Error(`Tool exists: ${tool.name}`);
+		}
+		const identifier = toCodemodeIdentifier(tool.name);
+		if (RESERVED_GLOBALS.has(identifier)) {
+			throw new Error(`Reserved tool: ${tool.name}`);
+		}
+
 		this.toolsByName.set(tool.name, tool);
 	}
 
@@ -380,25 +438,35 @@ export class CodemodeSandbox {
 		return [...this.globalsByName.values()];
 	}
 
+	async close(): Promise<void> {
+		this.closed = true;
+		await Promise.all([...this.running].map((execution) => execution.abort("Sandbox closed")));
+	}
+
 	execute(code: string, options: CodemodeExecuteOptions = {}): Promise<CodemodeResult> {
 		if (this.closed) return Promise.reject(new Error("Sandbox is closed"));
+		let store: Record<string, string>;
+		let timeoutMs: number;
+		let wasm: Promise<CodemodeWasmModule>;
+		try {
+			store = serializeStore(options.store);
+			timeoutMs = validateTimeout(options.timeoutMs ?? this.timeoutMs);
+			wasm = this.wasm === undefined ? loadQuickJSWasm() : Promise.resolve(this.wasm);
+		} catch (error) {
+			return Promise.reject(error);
+		}
 		const execution = new Execution({
 			code,
 			tools: new Map(this.toolsByName),
 			globals: this.globalsByName,
-			timeoutMs: options.timeoutMs ?? this.timeoutMs,
+			timeoutMs,
 			signal: options.signal,
 			memoryLimitBytes: this.memoryLimitBytes,
-			store: serializeStore(options.store),
-			wasm: this.wasm === undefined ? loadQuickJSWasm() : Promise.resolve(this.wasm),
+			store,
+			wasm,
 			workerUrl: this.workerUrl,
 		});
 		this.running.add(execution);
 		return execution.promise.finally(() => this.running.delete(execution));
-	}
-
-	async close(): Promise<void> {
-		this.closed = true;
-		await Promise.all([...this.running].map((execution) => execution.abort("Sandbox closed")));
 	}
 }

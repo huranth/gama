@@ -119,8 +119,9 @@ export const PRELUDE_SOURCE: string = `(function (bridge, toolsJson, globalsJson
 				if (close.length > 0) {
 					const suggestions = close.slice(0, 5).map((name) => label + "." + name);
 					message += " Did you mean " + suggestions.join(", ") + "?";
+				} else if (names.length <= 20) {
+					message += " Available: " + names.join(", ") + ".";
 				}
-				else if (names.length <= 20) message += " Available: " + names.join(", ") + ".";
 				if (hint) message += " " + hint;
 				message += ' Check for a member with "' + property + '" in ' + label + ".";
 				throw new TypeErrorCtor(message);
@@ -131,7 +132,7 @@ export const PRELUDE_SOURCE: string = `(function (bridge, toolsJson, globalsJson
 		tools,
 		"tools",
 		allTools.map((tool) => tool.name),
-		"ALL_TOOLS lists every tool; searchTools(query) finds tools by topic.",
+		"ALL_TOOLS lists every tool.",
 	);
 
 	const namespaces = new Map();

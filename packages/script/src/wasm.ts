@@ -1,7 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 
-export type CodemodeWasmModule = object;
+export type CodemodeWasmModule = object; // wasm module
 
 interface WebAssemblyGlobal {
 	compile(bytes: Uint8Array): Promise<CodemodeWasmModule>;
