@@ -1,5 +1,73 @@
-import { toCodemodeIdentifier } from "./identifier.ts";
-import type { CodemodeJsonSchema, CodemodeTool } from "./types.ts";
+import type { CodemodeWasmModule } from "./wasm.ts";
+
+export interface CodemodeToolContext {
+	signal: AbortSignal;
+}
+
+export type CodemodeJsonSchema = { [key: string]: unknown } | boolean;
+
+export interface CodemodeTool {
+	name: string;
+	description?: string;
+	inputSchema?: CodemodeJsonSchema;
+	outputSchema?: CodemodeJsonSchema;
+	spread?: boolean;
+	signature?: string;
+	execute(args: unknown, context: CodemodeToolContext): Promise<unknown> | unknown;
+}
+
+export type CodemodeOutputItem =
+	| { type: "text"; text: string }
+	| { type: "image"; data: string; mimeType: string };
+
+export type CodemodeCallStatus = "ok" | "error" | "cancelled";
+
+export interface CodemodeCall {
+	name: string;
+	status: CodemodeCallStatus;
+	durationMs: number;
+}
+
+export type CodemodeErrorKind = "script" | "timeout" | "aborted" | "sandbox";
+
+export interface CodemodeError {
+	kind: CodemodeErrorKind;
+	name?: string;
+	message: string;
+	stack?: string;
+}
+
+export interface CodemodeStoreWrites {
+	set: Record<string, unknown>;
+	delete: string[];
+}
+
+export type CodemodeResult =
+	| {
+			ok: true;
+			value: unknown;
+			output: CodemodeOutputItem[];
+			calls: CodemodeCall[];
+			storeWrites: CodemodeStoreWrites;
+	  }
+	| { ok: false; error: CodemodeError; output: CodemodeOutputItem[]; calls: CodemodeCall[] };
+
+export interface CodemodeSandboxOptions {
+	tools?: CodemodeTool[];
+	globals?: CodemodeTool[];
+	timeoutMs?: number;
+	memoryLimitBytes?: number;
+	wasm?: CodemodeWasmModule | Promise<CodemodeWasmModule>;
+	workerUrl?: string | URL;
+}
+
+export interface CodemodeExecuteOptions {
+	signal?: AbortSignal;
+	timeoutMs?: number;
+	store?: Readonly<Record<string, unknown>>;
+}
+
+import { IDENTIFIER, toCodemodeIdentifier } from "./identifier.ts";
 
 export { toCodemodeIdentifier };
 
@@ -14,42 +82,50 @@ interface SchemaContext {
 	expansions: number;
 }
 
-const IDENTIFIER = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
 const INDENT = "  ";
+
 export const DEFAULT_INPUT_SCHEMA_MAX_CHARS = 16_000;
+
 const MAX_REF_EXPANSIONS = 32;
 
 export const MCP_TYPESCRIPT_PREAMBLE = `type Role = "user" | "assistant";
+
 type MetaObject = Record<string, unknown>;
+
 type Annotations = {
   audience?: Role[];
   priority?: number;
   lastModified?: string;
 };
+
 type Icon = {
   src: string;
   mimeType?: string;
   sizes?: string[];
   theme?: "light" | "dark";
 };
+
 type TextResourceContents = {
   uri: string;
   mimeType?: string;
   _meta?: MetaObject;
   text: string;
 };
+
 type BlobResourceContents = {
   uri: string;
   mimeType?: string;
   _meta?: MetaObject;
   blob: string;
 };
+
 type TextContent = {
   type: "text";
   text: string;
   annotations?: Annotations;
   _meta?: MetaObject;
 };
+
 type ImageContent = {
   type: "image";
   data: string;
@@ -57,6 +133,7 @@ type ImageContent = {
   annotations?: Annotations;
   _meta?: MetaObject;
 };
+
 type AudioContent = {
   type: "audio";
   data: string;
@@ -64,6 +141,7 @@ type AudioContent = {
   annotations?: Annotations;
   _meta?: MetaObject;
 };
+
 type ResourceLink = {
   icons?: Icon[];
   name: string;
@@ -76,18 +154,21 @@ type ResourceLink = {
   _meta?: MetaObject;
   type: "resource_link";
 };
+
 type EmbeddedResource = {
   type: "resource";
   resource: TextResourceContents | BlobResourceContents;
   annotations?: Annotations;
   _meta?: MetaObject;
 };
+
 type ContentBlock =
   | TextContent
   | ImageContent
   | AudioContent
   | ResourceLink
   | EmbeddedResource;
+
 type CallToolResult<TStructured = { [key: string]: unknown }> = {
   _meta?: MetaObject;
   content: ContentBlock[];
@@ -96,8 +177,52 @@ type CallToolResult<TStructured = { [key: string]: unknown }> = {
   [key: string]: unknown;
 };`;
 
+function isObject(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function propertyKey(name: string): string {
 	return IDENTIFIER.test(name) ? name : JSON.stringify(name);
+}
+
+function pickVariants(schema: Record<string, unknown>): unknown[] | undefined {
+	if (Array.isArray(schema.anyOf)) {
+		return schema.anyOf;
+	}
+
+	if (Array.isArray(schema.oneOf)) {
+		return schema.oneOf;
+	}
+
+	return undefined;
+}
+
+function union(types: string[]): string {
+	const unique = [...new Set(types)];
+
+	if (unique.includes("unknown")) {
+		return "unknown";
+	}
+
+	return unique.length === 0 ? "never" : unique.join(" | ");
+}
+
+function descriptionOf(property: unknown): string {
+	return isObject(property) && typeof property.description === "string"
+		? property.description.trim()
+		: "";
+}
+
+function literalType(value: unknown): string {
+	if (
+		typeof value === "string" ||
+		typeof value === "number" ||
+		typeof value === "boolean" ||
+		value === null
+	) {
+		return JSON.stringify(value) ?? "unknown";
+	}
+	return "unknown";
 }
 
 export function renderToolSignature(
@@ -132,12 +257,6 @@ export function schemaToType(
 	return options.maxChars !== undefined && type.length > options.maxChars ? "unknown" : type;
 }
 
-function descriptionOf(property: unknown): string {
-	return isObject(property) && typeof property.description === "string"
-		? property.description.trim()
-		: "";
-}
-
 export function renderToolOutputType(schema: CodemodeJsonSchema | undefined): string {
 	const structured = mcpStructuredContentSchema(schema);
 	if (structured !== undefined) {
@@ -157,17 +276,6 @@ function renderGlobal(head: string, global: CodemodeTool, indent: string): strin
 	return `${comment}${indent}${head}(args: ${input}): Promise<${output}>;`;
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-// Scalar literals
-function union(types: string[]): string {
-	const unique = [...new Set(types)];
-	if (unique.includes("unknown")) return "unknown";
-	return unique.length === 0 ? "never" : unique.join(" | ");
-}
-
 function docComment(description: string | undefined, indent: string): string {
 	const text = description?.trim();
 	if (!text) return "";
@@ -177,30 +285,30 @@ function docComment(description: string | undefined, indent: string): string {
 	return `${indent}/**\n${body}\n${indent} */\n`;
 }
 
+function tupleItems(schema: Record<string, unknown>): unknown[] {
+	if (Array.isArray(schema.prefixItems)) {
+		return schema.prefixItems;
+	}
+
+	if (Array.isArray(schema.items)) {
+		return schema.items;
+	}
+
+	return [];
+}
+
 function arrayType(schema: Record<string, unknown>, context: SchemaContext): string {
 	if (schema.items !== undefined && !Array.isArray(schema.items)) {
 		return `Array<${toType(schema.items as CodemodeJsonSchema, context)}>`;
 	}
-	const tuple = Array.isArray(schema.prefixItems)
-		? schema.prefixItems
-		: Array.isArray(schema.items)
-			? schema.items
-			: [];
-	if (tuple.length > 0)
-		return `[${tuple.map((item) => toType(item as CodemodeJsonSchema, context)).join(", ")}]`;
-	return "unknown[]";
-}
 
-function literalType(value: unknown): string {
-	if (
-		typeof value === "string" ||
-		typeof value === "number" ||
-		typeof value === "boolean" ||
-		value === null
-	) {
-		return JSON.stringify(value) ?? "unknown";
+	const tuple = tupleItems(schema);
+
+	if (tuple.length > 0) {
+		return `[${tuple.map((item) => toType(item as CodemodeJsonSchema, context)).join(", ")}]`;
 	}
-	return "unknown";
+
+	return "unknown[]";
 }
 
 function resolveRef(ref: string, root: CodemodeJsonSchema): CodemodeJsonSchema | undefined {
@@ -293,7 +401,10 @@ function objectType(schema: Record<string, unknown>, context: SchemaContext): st
 	} else if (additional === undefined && names.length === 0) {
 		members.push("[key: string]: unknown;");
 	}
-	if (members.length === 0) return "{}";
+	if (members.length === 0) {
+		return "{}";
+	}
+
 	if (!names.some((name) => descriptionOf(properties[name]))) return `{ ${members.join(" ")} }`;
 
 	const lines = ["{"];
@@ -331,11 +442,8 @@ function toType(schema: CodemodeJsonSchema, context: SchemaContext): string {
 	if ("const" in schema) return literalType(schema.const);
 	if (Array.isArray(schema.enum)) return union(schema.enum.map(literalType));
 
-	const variants = Array.isArray(schema.anyOf)
-		? schema.anyOf
-		: Array.isArray(schema.oneOf)
-			? schema.oneOf
-			: undefined;
+	const variants = pickVariants(schema);
+
 	if (variants)
 		return union(variants.map((variant) => toType(variant as CodemodeJsonSchema, context)));
 	if (Array.isArray(schema.allOf)) {

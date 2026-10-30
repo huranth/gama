@@ -45,16 +45,24 @@ export function parseCodemodeSource(input: string): ParsedCodemodeSource {
 		);
 	}
 	const newline = input.indexOf("\n");
-	const firstLine = (newline === -1 ? input : input.slice(0, newline)).replace(/\r$/, "");
-	const trimmed = firstLine.trimStart();
-	if (!trimmed.startsWith(CODEMODE_OPTIONS_PREFIX)) return { code: input, options: {} };
+	const line = newline === -1 ? input : input.slice(0, newline);
+	const trimmed = line.replace(/\r$/, "").trimStart();
+
+	if (!trimmed.startsWith(CODEMODE_OPTIONS_PREFIX)) {
+		return { code: input, options: {} };
+	}
+
 	const code = newline === -1 ? "" : input.slice(newline);
+
 	if (code.trim() === "") {
 		throw new CodemodeSourceError(
 			"The @options line must be followed by JavaScript source on subsequent lines",
 		);
 	}
-	return { code, options: parseOptions(trimmed.slice(CODEMODE_OPTIONS_PREFIX.length).trim()) };
+
+	const directive = trimmed.slice(CODEMODE_OPTIONS_PREFIX.length).trim();
+
+	return { code, options: parseOptions(directive) };
 }
 
 function parseOptions(directive: string): CodemodeSourceOptions {
