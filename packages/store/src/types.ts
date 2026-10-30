@@ -1,7 +1,7 @@
-import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@huranth/chord";
-import type { Op } from "@huranth/chord/delta";
+import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@huranth/gama-bus";
+import type { Op } from "@huranth/gama-bus/delta";
 import type { Message, Models } from "@huranth/gama-ai";
-import type { ExecutionEnv } from "./env/index.ts";
+import type { ExecutionEnv } from "./system/index.ts";
 import type {
 	Agent,
 	ContextView,
@@ -9,7 +9,15 @@ import type {
 	RegistrySnapshot,
 	Settings,
 	SettledTask,
-} from "./harness/types.ts";
+} from "./engine/types.ts";
+
+declare const idBrand: unique symbol;
+
+declare const seqBrand: unique symbol;
+
+declare const docType: unique symbol;
+
+export const ROOT_CONVERSATION_ID = 1 as ConversationId;
 
 export type JsonObject = { [key: string]: JsonValue };
 
@@ -928,14 +936,5 @@ export interface Storage {
 		cursor: Cursor | undefined,
 		context: Context,
 	): Promise<Page<DocumentRecord, Cursor>>;
-
 	close(context: Context): Promise<void>;
 }
-
-declare const idBrand: unique symbol;
-
-declare const seqBrand: unique symbol;
-
-export const ROOT_CONVERSATION_ID = 1 as ConversationId;
-
-declare const docType: unique symbol;

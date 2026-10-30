@@ -1,5 +1,5 @@
-import type { JsonValue } from "@huranth/chord";
-import type { CompactionReason, ToolDiagnostic } from "./harness/types.ts";
+import type { JsonValue } from "@huranth/gama-bus";
+import type { CompactionReason, ToolDiagnostic } from "./engine/types.ts";
 import type { Entry, EntryRecord, TypedEntry } from "./types.ts";
 
 export function defineEntry<D extends JsonValue = never>(kind: string): Entry<D> {

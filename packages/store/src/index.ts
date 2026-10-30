@@ -1,4 +1,5 @@
-export { defineDoc, defineDocFamily } from "./documents.ts";
+export { defineDoc, defineDocFamily } from "./docs.ts";
+
 export {
 	AssistantEntry,
 	CompactionEntry,
@@ -7,20 +8,24 @@ export {
 	SystemEntry,
 	ToolResultEntry,
 	UserEntry,
-} from "./entries.ts";
+} from "./messages.ts";
+
 export { ConversationBusy, ReadAfterWrite, StorageRejected } from "./errors.ts";
+
 export {
 	AgentDoc,
 	configure,
 	DEFAULT_COMPACTION_POLICY,
 	DEFAULT_RETRY_POLICY,
-} from "./harness/agent.ts";
+} from "./engine/agent.ts";
+
 export {
 	type CompactionCheckpoint,
 	type CompactionInput,
 	CompactionTask,
 	type SummaryRequest,
-} from "./harness/compaction.ts";
+} from "./engine/compaction.ts";
+
 export {
 	defineExtension,
 	defineTool,
@@ -28,36 +33,45 @@ export {
 	section,
 	wrapSection,
 	wrapTool,
-} from "./harness/define.ts";
+} from "./engine/define.ts";
+
 export {
 	type AgentEvent,
 	type AgentEventStream,
 	type MessageChange,
 	type SnapshotEvent,
 	watchEvents,
-} from "./harness/events.ts";
+} from "./engine/events.ts";
+
 export {
 	type GenerationCheckpoint,
 	type GenerationInput,
 	type GenerationResult,
 	GenerationTask,
-} from "./harness/generation.ts";
-export { Harness } from "./harness/harness.ts";
-export { InboxDoc, type InboxItem, type InboxState } from "./harness/inbox.ts";
-export { type CompactionStatus, LiveDoc, type LiveState, type ToolSlot } from "./harness/live.ts";
-export { createRegistry } from "./harness/registry.ts";
+} from "./engine/generation.ts";
+
+export { Harness } from "./engine/harness.ts";
+
+export { InboxDoc, type InboxItem, type InboxState } from "./engine/inbox.ts";
+
+export { type CompactionStatus, LiveDoc, type LiveState, type ToolSlot } from "./engine/live.ts";
+
+export { createRegistry } from "./engine/registry.ts";
+
 export type {
 	TaskGraph,
 	TaskGraphNode,
 	TaskGraphState,
 	TaskGraphWatch,
-} from "./harness/task-graph.ts";
+} from "./engine/task-graph.ts";
+
 export {
 	ToolTask,
 	type ToolTaskCheckpoint,
 	type ToolTaskInput,
 	type ToolTaskResult,
-} from "./harness/tool.ts";
+} from "./engine/tool.ts";
+
 export type {
 	Agent,
 	AgentChange,
@@ -109,12 +123,18 @@ export type {
 	ToolRegistration,
 	UserInput,
 	Wrap,
-} from "./harness/types.ts";
-export { UsageDoc, type UsageState } from "./harness/usage.ts";
-export type { ConversationView } from "./harness/view.ts";
-export { createSession } from "./session/session.ts";
-export { MemoryStorage } from "./storage/memory.ts";
+} from "./engine/types.ts";
+
+export { UsageDoc, type UsageState } from "./engine/usage.ts";
+
+export type { ConversationView } from "./engine/view.ts";
+
+export { createSession } from "./records/session.ts";
+
+export { MemoryStorage } from "./backends/memory.ts";
+
 export { defineTask } from "./tasks.ts";
+
 export type {
 	CheckpointInfo,
 	CommitChange,
@@ -195,4 +215,5 @@ export type {
 	WatchEnd,
 	WatchHandle,
 } from "./types.ts";
+
 export { ROOT_CONVERSATION_ID } from "./types.ts";
