@@ -8,7 +8,7 @@ import {
 } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { agentLoop, agentLoopContinue, runAgentLoop, runToolCall } from "../src/agent-loop.ts";
+import { agentLoop, agentLoopContinue, runAgentLoop, runToolCall } from "../src/run-loop.ts";
 import { setDefaultStreamFn } from "../src/index.ts";
 import type {
 	AgentContext,
@@ -127,7 +127,7 @@ describe("default stream function compatibility", () => {
 });
 
 describe("agentLoop with AgentMessage", () => {
-	it("should emit events with AgentMessage types", async () => {
+	it("emit events with AgentMessage types", async () => {
 		const context: AgentContext = {
 			messages: [],
 			tools: [],
@@ -171,7 +171,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(eventTypes).toContain("agent_end");
 	});
 
-	it("should build provider context exclusively from transcript messages", async () => {
+	it("build provider context exclusively from transcript messages", async () => {
 		const initialSystem: AgentMessage = {
 			role: "system",
 			content: "Transcript prompt",
@@ -209,7 +209,7 @@ describe("agentLoop with AgentMessage", () => {
 		await stream.result();
 	});
 
-	it("should handle custom message types via convertToLlm", async () => {
+	it("handle custom message types via convertToLlm", async () => {
 		interface CustomNotification {
 			role: "notification";
 			text: string;
@@ -262,7 +262,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(convertedMessages[0].role).toBe("user");
 	});
 
-	it("should apply transformContext before convertToLlm", async () => {
+	it("apply transformContext before convertToLlm", async () => {
 		const context: AgentContext = {
 			messages: [
 				createUserMessage("old message 1"),
@@ -310,7 +310,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(convertedMessages.length).toBe(2);
 	});
 
-	it("should handle tool calls and results", async () => {
+	it("handle tool calls and results", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
 		const toolUsage = {
@@ -404,7 +404,7 @@ describe("agentLoop with AgentMessage", () => {
 		);
 	});
 
-	it("should not execute tool calls from a length-truncated assistant message", async () => {
+	it("not execute tool calls from a length-truncated assistant message", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
@@ -477,7 +477,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(messages[messages.length - 1].role).toBe("assistant");
 	});
 
-	it("should execute mutated beforeToolCall args without revalidation", async () => {
+	it("execute mutated beforeToolCall args without revalidation", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: Array<string | number> = [];
 		const tool: AgentTool<typeof toolSchema, { value: string | number }> = {
@@ -537,7 +537,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(executed).toEqual([123]);
 	});
 
-	it("should prepare tool arguments for validation", async () => {
+	it("prepare tool arguments for validation", async () => {
 		const replaceSchema = Type.Object({ oldText: Type.String(), newText: Type.String() });
 		const toolSchema = Type.Object({ edits: Type.Array(replaceSchema) });
 		const executed: Array<Array<{ oldText: string; newText: string }>> = [];
@@ -615,7 +615,9 @@ describe("agentLoop with AgentMessage", () => {
 		expect(executed).toEqual([[{ oldText: "before", newText: "after" }]]);
 	});
 
-	it("emits tool_execution_end in completion order but persists results in source order", async () => {
+	it(
+		"emits tool_execution_end in completion order but persists results in source order",
+		async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let firstResolved = false;
 		let parallelObserved = false;
@@ -719,7 +721,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(turnToolResultIds).toEqual(["tool-1", "tool-2"]);
 	});
 
-	it("should inject queued messages after all tool calls complete", async () => {
+	it("inject queued messages after all tool calls complete", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
@@ -837,7 +839,9 @@ describe("agentLoop with AgentMessage", () => {
 		expect(sawInterruptInContext).toBe(true);
 	});
 
-	it("forces sequential execution for executionMode=sequential under default parallel config", async () => {
+	it(
+		"forces sequential execution for executionMode=sequential under default parallel config",
+		async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let firstResolved = false;
 		let parallelObserved = false;
@@ -927,7 +931,9 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolResultIds).toEqual(["tool-1", "tool-2"]);
 	});
 
-	it("forces sequential execution when one of multiple tools is executionMode=sequential", async () => {
+	it(
+		"forces sequential execution when one of multiple tools is executionMode=sequential",
+		async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executionOrder: string[] = [];
 		let releaseSlow: (() => void) | undefined;
@@ -1010,7 +1016,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(executionOrder).toContain("fast:b");
 	});
 
-	it("should allow parallel execution when all tools have executionMode=parallel", async () => {
+	it("allow parallel execution when all tools have executionMode=parallel", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let firstResolved = false;
 		let parallelObserved = false;
@@ -1205,6 +1211,60 @@ describe("agentLoop with AgentMessage", () => {
 			expect(providerCalls).toBe(1);
 			expect(steeringPolls).toBe(1);
 			expect(followUpPolls).toBe(0);
+		},
+	);
+
+	it.each(["error", "aborted"] as const)(
+		"synthesizes a tool result for a tool call left open by a %s assistant",
+		async (reason) => {
+			const events: AgentEvent[] = [];
+			let finishCalls = 0;
+			const messages = await runAgentLoop(
+				[createUserMessage("run")],
+				{ messages: [], tools: [] },
+				{
+					model: createModel(),
+					convertToLlm: identityConverter,
+					finishTurn: ({ toolResults }) => {
+						finishCalls++;
+						expect(toolResults).toMatchObject([
+							{ toolCallId: "call-open", isError: true },
+						]);
+					},
+				},
+				(event) => {
+					events.push(event);
+				},
+				undefined,
+				() => {
+					const stream = new MockAssistantStream();
+					queueMicrotask(() => {
+						stream.push({
+							type: "error",
+							reason,
+							error: {
+								...createAssistantMessage(
+									[{ type: "toolCall", id: "call-open", name: "echo", arguments: {} }],
+									reason,
+								),
+								errorMessage: reason,
+							},
+						});
+					});
+					return stream;
+				},
+			);
+
+			const turnEnd = events.find((event) => event.type === "turn_end");
+			expect(turnEnd?.type === "turn_end" ? turnEnd.toolResults : []).toMatchObject([
+				{ role: "toolResult", toolCallId: "call-open", isError: true },
+			]);
+			expect(events.at(-1)?.type).toBe("agent_end");
+			expect(finishCalls).toBe(1);
+			expect(messages.slice(-2)).toMatchObject([
+				{ role: "assistant", stopReason: reason },
+				{ role: "toolResult", toolCallId: "call-open", isError: true },
+			]);
 		},
 	);
 
@@ -1519,7 +1579,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(steeringPolls).toBe(3);
 	});
 
-	it("should use prepareNextTurn snapshot before continuing", async () => {
+	it("use prepareNextTurn snapshot before continuing", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
 			name: "echo",
@@ -1782,7 +1842,7 @@ describe("agentLoop with AgentMessage", () => {
 		]);
 	});
 
-	it("should stop after a tool batch when every tool result sets terminate=true", async () => {
+	it("stop after a tool batch when every tool result sets terminate=true", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
 			name: "echo",
@@ -1844,7 +1904,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(events.filter((event) => event.type === "turn_end")).toHaveLength(1);
 	});
 
-	it("should stop after a blocked tool call when beforeToolCall sets terminate=true", async () => {
+	it("stop after a blocked tool call when beforeToolCall sets terminate=true", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let executed = false;
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
@@ -1922,7 +1982,7 @@ describe("agentLoop with AgentMessage", () => {
 		});
 	});
 
-	it("should continue after a mixed batch with one terminating blocked call", async () => {
+	it("continue after a mixed batch with one terminating blocked call", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
@@ -1991,7 +2051,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(llmCalls).toBe(2);
 	});
 
-	it("should continue after parallel tool calls when not all tool results terminate", async () => {
+	it("continue after parallel tool calls when not all tool results terminate", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
 			name: "echo",
@@ -2065,7 +2125,7 @@ describe("agentLoop with AgentMessage", () => {
 		]);
 	});
 
-	it("should allow afterToolCall to mark a tool batch as terminating", async () => {
+	it("allow afterToolCall to mark a tool batch as terminating", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
 			name: "echo",
@@ -2119,7 +2179,7 @@ describe("agentLoop with AgentMessage", () => {
 });
 
 describe("agentLoopContinue with AgentMessage", () => {
-	it("should throw when context has no messages", () => {
+	it("throw when context has no messages", () => {
 		const context: AgentContext = {
 			messages: [],
 			tools: [],
@@ -2134,10 +2194,10 @@ describe("agentLoopContinue with AgentMessage", () => {
 			agentLoopContinue(context, config, undefined, () => {
 				throw new Error("Unexpected stream call");
 			}),
-		).toThrow("Cannot continue: no messages in context");
+		).toThrow("No messages");
 	});
 
-	it("should continue from existing context without emitting user message events", async () => {
+	it("continue from existing context without emitting user message events", async () => {
 		const userMessage: AgentMessage = createUserMessage("Hello");
 
 		const context: AgentContext = {
@@ -2176,7 +2236,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 		expect((messageEndEvents[0] as any).message.role).toBe("assistant");
 	});
 
-	it("should allow custom message types as last message (caller responsibility)", async () => {
+	it("allow custom message types as last message (caller responsibility)", async () => {
 		interface CustomMessage {
 			role: "custom";
 			text: string;
@@ -2334,7 +2394,9 @@ describe("runToolCall", () => {
 		expect(hookCalls).toEqual(["before a", "after a", "before c", "before e", "after e"]);
 	});
 
-	it("lets afterToolCall replace structured content and drop it when only content is replaced", async () => {
+	it(
+		"lets afterToolCall replace structured content and drop it when only content is replaced",
+		async () => {
 		const redacted = [{ type: "text" as const, text: "redacted" }];
 		const results = [
 			{ content: redacted },
@@ -2358,5 +2420,100 @@ describe("runToolCall", () => {
 			{ value: "both" },
 			{ value: "original" },
 		]);
+	});
+});
+
+class ThrowingStream extends MockAssistantStream {
+	override async *[Symbol.asyncIterator](): AsyncIterator<AssistantMessageEvent> {
+		throw new Error("stream broke");
+	}
+}
+
+describe("agent loop failures", () => {
+	it("observes the stream result when no terminal event arrives", async () => {
+		const context: AgentContext = { messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+		const unhandled: unknown[] = [];
+		const onUnhandled = (error: unknown) => unhandled.push(error);
+		process.on("unhandledRejection", onUnhandled);
+
+		try {
+			const stream = agentLoop([createUserMessage("Hello")], context, config, undefined, () => {
+				const response = new MockAssistantStream();
+				queueMicrotask(() => {
+					response.push({ type: "start", partial: createAssistantMessage([]) });
+					response.end();
+				});
+				return response;
+			});
+
+			for await (const event of stream) void event;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+
+			const messages = await stream.result();
+			const last = messages[messages.length - 1];
+			expect(last).toMatchObject({ role: "assistant", stopReason: "error" });
+			expect(last?.role === "assistant" ? last.errorMessage : undefined).toContain(
+				"The model stream ended before the final message",
+			);
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+	});
+
+	it("observes the stream result when the iterator throws", async () => {
+		const context: AgentContext = { messages: [], tools: [] };
+		const config: AgentLoopConfig = { model: createModel(), convertToLlm: identityConverter };
+		const unhandled: unknown[] = [];
+		const onUnhandled = (error: unknown) => unhandled.push(error);
+		process.on("unhandledRejection", onUnhandled);
+
+		try {
+			const stream = agentLoop([createUserMessage("Hello")], context, config, undefined, () => {
+				const response = new ThrowingStream();
+				queueMicrotask(() => response.end());
+				return response;
+			});
+
+			for await (const event of stream) void event;
+			await new Promise((resolve) => setTimeout(resolve, 10));
+
+			const messages = await stream.result();
+			const last = messages[messages.length - 1];
+			expect(last).toMatchObject({ role: "assistant", stopReason: "error" });
+			expect(last?.role === "assistant" ? last.errorMessage : undefined).toBe("stream broke");
+			expect(unhandled).toEqual([]);
+		} finally {
+			process.off("unhandledRejection", onUnhandled);
+		}
+	});
+
+	it("emits one agent_end when the stream function throws", async () => {
+		const context: AgentContext = { messages: [], tools: [] };
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		const stream = agentLoop([createUserMessage("Hello")], context, config, undefined, () => {
+			throw new Error("provider failed");
+		});
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) events.push(event);
+
+		const ends = events.filter(
+			(event): event is Extract<AgentEvent, { type: "agent_end" }> =>
+				event.type === "agent_end",
+		);
+		expect(ends).toHaveLength(1);
+		expect(ends[0]?.messages).toHaveLength(2);
+		expect(ends[0]?.messages[0]).toMatchObject({ role: "user" });
+		expect(ends[0]?.messages[1]).toMatchObject({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "provider failed",
+		});
+		await expect(stream.result()).resolves.toHaveLength(2);
 	});
 });

@@ -115,4 +115,27 @@ describe("streamProxy", () => {
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toContain("Connection closed by proxy server");
 	});
+
+	it("reports an aborted stream as aborted", async () => {
+		const controller = new AbortController();
+		controller.abort(new Error("cancelled"));
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => {
+				throw new Error("cancelled");
+			}),
+		);
+
+		const stream = streamProxy(model, normalizeContext({ systemPrompt: "", messages: [] }), {
+			authToken: "test-token",
+			proxyUrl: "https://proxy.example.com",
+			signal: controller.signal,
+		});
+		const events: AssistantMessageEvent[] = [];
+		for await (const event of stream) events.push(event);
+		const result = await stream.result();
+
+		expect(events.map((event) => event.type)).toEqual(["error"]);
+		expect(result.stopReason).toBe("aborted");
+	});
 });

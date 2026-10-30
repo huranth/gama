@@ -12,7 +12,7 @@ import {
 	type UserMessage,
 } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
-import { Agent, type AgentEvent } from "../src/index.ts";
+import { Runner, type AgentEvent } from "../src/index.ts";
 import { calculateTool } from "./utils/calculate.ts";
 
 const registrations: FauxProviderRegistration[] = [];
@@ -39,7 +39,7 @@ afterEach(() => {
 });
 
 async function basicPrompt(model: Model<string>) {
-	const agent = new Agent({
+	const agent = new Runner({
 		streamFn: streamSimple,
 		initialState: {
 			systemPrompt: "You are a helpful assistant. Keep your responses concise.",
@@ -63,7 +63,7 @@ async function basicPrompt(model: Model<string>) {
 }
 
 async function toolExecution(model: Model<string>) {
-	const agent = new Agent({
+	const agent = new Runner({
 		streamFn: streamSimple,
 		initialState: {
 			systemPrompt: "You are a helpful assistant. Always use the calculator tool for math.",
@@ -103,7 +103,7 @@ async function toolExecution(model: Model<string>) {
 }
 
 async function abortExecution(model: Model<string>) {
-	const agent = new Agent({
+	const agent = new Runner({
 		streamFn: streamSimple,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
@@ -113,12 +113,18 @@ async function abortExecution(model: Model<string>) {
 		},
 	});
 
-	const promptPromise = agent.prompt("Count slowly from 1 to 20.");
-	setTimeout(() => {
+	let aborted = false;
+	const unsubscribe = agent.subscribe((event) => {
+		if (aborted || event.type !== "message_update") return;
+		aborted = true;
 		agent.abort();
-	}, 30);
+	});
 
-	await promptPromise;
+	try {
+		await agent.prompt("Count slowly from 1 to 20.");
+	} finally {
+		unsubscribe();
+	}
 
 	expect(agent.state.isStreaming).toBe(false);
 	expect(agent.state.messages.length).toBeGreaterThanOrEqual(2);
@@ -131,7 +137,7 @@ async function abortExecution(model: Model<string>) {
 }
 
 async function stateUpdates(model: Model<string>) {
-	const agent = new Agent({
+	const agent = new Runner({
 		streamFn: streamSimple,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
@@ -164,7 +170,7 @@ async function stateUpdates(model: Model<string>) {
 }
 
 async function multiTurnConversation(model: Model<string>) {
-	const agent = new Agent({
+	const agent = new Runner({
 		streamFn: streamSimple,
 		initialState: {
 			systemPrompt: "You are a helpful assistant.",
@@ -185,7 +191,7 @@ async function multiTurnConversation(model: Model<string>) {
 	expect(getTextContent(lastMessage).toLowerCase()).toContain("alice");
 }
 
-describe("Agent integration with faux provider", () => {
+describe("Runner integration with faux provider", () => {
 	it("handles a basic text prompt", async () => {
 		const faux = createFauxRegistration();
 		faux.setResponses([fauxAssistantMessage("4")]);
@@ -250,7 +256,7 @@ describe("Agent integration with faux provider", () => {
 		const faux = createFauxRegistration({ models: [{ id: "faux-reasoning", reasoning: true }] });
 		faux.setResponses([fauxAssistantMessage([fauxThinking("step by step"), fauxText("4")])]);
 
-		const agent = new Agent({
+		const agent = new Runner({
 			streamFn: streamSimple,
 			initialState: {
 				systemPrompt: "You are a helpful assistant.",
@@ -271,11 +277,11 @@ describe("Agent integration with faux provider", () => {
 	});
 });
 
-describe("Agent.continue() with faux provider", () => {
+describe("Runner.continue() with faux provider", () => {
 	describe("validation", () => {
 		it("throws when no messages in context", async () => {
 			const faux = createFauxRegistration();
-			const agent = new Agent({
+			const agent = new Runner({
 				streamFn: streamSimple,
 				initialState: {
 					systemPrompt: "Test",
@@ -283,13 +289,13 @@ describe("Agent.continue() with faux provider", () => {
 				},
 			});
 
-			await expect(agent.continue()).rejects.toThrow("No messages to continue from");
+			await expect(agent.continue()).rejects.toThrow("No messages");
 		});
 
 		it("throws when last message is assistant", async () => {
 			const faux = createFauxRegistration();
 			const model = faux.getModel();
-			const agent = new Agent({
+			const agent = new Runner({
 				streamFn: streamSimple,
 				initialState: {
 					systemPrompt: "Test",
@@ -316,9 +322,7 @@ describe("Agent.continue() with faux provider", () => {
 			};
 			agent.state.messages = [assistantMessage];
 
-			await expect(agent.continue()).rejects.toThrow(
-				"Cannot continue from message role: assistant",
-			);
+			await expect(agent.continue()).rejects.toThrow("Invalid message role");
 		});
 	});
 
@@ -326,7 +330,7 @@ describe("Agent.continue() with faux provider", () => {
 		it("continues and gets a response when last message is user", async () => {
 			const faux = createFauxRegistration();
 			faux.setResponses([fauxAssistantMessage("HELLO WORLD")]);
-			const agent = new Agent({
+			const agent = new Runner({
 				streamFn: streamSimple,
 				initialState: {
 					systemPrompt: "You are a helpful assistant. Follow instructions exactly.",
@@ -361,7 +365,7 @@ describe("Agent.continue() with faux provider", () => {
 			const faux = createFauxRegistration();
 			const model = faux.getModel();
 			faux.setResponses([fauxAssistantMessage("The answer is 8.")]);
-			const agent = new Agent({
+			const agent = new Runner({
 				streamFn: streamSimple,
 				initialState: {
 					systemPrompt:
