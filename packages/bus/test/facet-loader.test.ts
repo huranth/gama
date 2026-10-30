@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/context/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	combineFacetLoaders,
@@ -170,7 +170,7 @@ describe("facet loader", () => {
 				}),
 			]),
 		).rejects.toThrow(
-			"Reloaded facet provider must preserve its service requirements and provisions",
+			"Changed services",
 		);
 		await expect(localRead(BACKGROUND_CONTEXT)).resolves.toBe("A");
 		await expect(remoteRead(BACKGROUND_CONTEXT)).resolves.toBe("A");
@@ -275,7 +275,7 @@ describe("facet loader", () => {
 		await expect(host.reload([provider("B", false)])).rejects.toThrow(
 			"Facet reload failed after cutover",
 		);
-		await expect(host.reload([])).rejects.toThrow("Facet host cannot reload while dead");
+		await expect(host.reload([])).rejects.toThrow("Reload blocked: dead");
 		await host.dispose();
 	});
 
@@ -348,7 +348,7 @@ describe("facet loader", () => {
 		await expect(host.reload([provider("B")])).rejects.toThrow(
 			"Facet reload failed after cutover",
 		);
-		await expect(host.reload([])).rejects.toThrow("Facet host cannot reload while dead");
+		await expect(host.reload([])).rejects.toThrow("Reload blocked: dead");
 		await host.dispose();
 	});
 

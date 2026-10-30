@@ -1,6 +1,6 @@
-import { describe, expect, it } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/context/index.ts";
-import type { Draft, Op } from "../src/delta/index.ts";
+import { describe, expect, it, vi } from "vitest";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
+import type { Draft, Op } from "../src/patch/index.ts";
 import {
 	type Context,
 	type JsonValue,
@@ -9,8 +9,8 @@ import {
 	type ReplicatedStateSourceFrame,
 	replicatedState,
 } from "../src/index.ts";
-import { ReplicatedStateReplica } from "../src/services/state.ts";
-import { getReplicatedStateInternals } from "../src/services/state-internals.ts";
+import { ReplicatedStateReplica } from "../src/peers/state.ts";
+import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
 
 describe("transactional replicated state", () => {
 	it("publishes one immutable structurally shared revision", () => {
@@ -58,6 +58,23 @@ describe("transactional replicated state", () => {
 		expect(state.value).toBe(previous);
 	});
 
+	it("reports rejected async change callbacks without applying their draft", async () => {
+		const errors: Error[] = [];
+		const state = replicatedState(
+			{ value: 0 },
+			{ onError: (error) => errors.push(error) },
+		);
+		const failure = new Error("async change failed");
+		expect(() =>
+			state.change(BACKGROUND_CONTEXT, ((draft: Draft<{ value: number }>) => {
+				draft.value = 1;
+				return Promise.reject(failure);
+			}) as (draft: Draft<{ value: number }>) => void),
+		).toThrow(/synchronous/);
+		await vi.waitFor(() => expect(errors).toEqual([failure]));
+		expect(state.value).toEqual({ value: 0 });
+	});
+
 	it("rejects nested changes and replacements without losing the outer rollback", () => {
 		const state = replicatedState({ left: 0, right: 0 });
 		expect(() =>
@@ -67,13 +84,13 @@ describe("transactional replicated state", () => {
 					nested.right = 2;
 				});
 			}),
-		).toThrow(/reentrantly/);
+		).toThrow(/Reentrant change/);
 		expect(state.value).toEqual({ left: 0, right: 0 });
 		expect(() =>
 			state.change(BACKGROUND_CONTEXT, () => {
 				state.replace(BACKGROUND_CONTEXT, { left: 1, right: 2 });
 			}),
-		).toThrow(/change callback/);
+		).toThrow(/Reentrant replace/);
 		expect(state.value).toEqual({ left: 0, right: 0 });
 	});
 
@@ -213,7 +230,7 @@ describe("transactional replicated state", () => {
 		);
 		expect(replica.value).toBeUndefined();
 		expect(() => replica.update(2, [["s", ["value"], 2]], BACKGROUND_CONTEXT)).toThrow(
-			/before hydration/,
+			/Early update/,
 		);
 
 		const malformed = new ReplicatedStateReplica<{ values: number[] }>((error) =>
@@ -421,7 +438,7 @@ describe("authoritative replicated state sources", () => {
 			BACKGROUND_CONTEXT,
 			7,
 		);
-		expect(errors[0]?.message).toContain("expected 6, received 7");
+		expect(errors[0]?.message).toContain("Cursor gap: 7");
 		expect(source.attachments.size).toBe(0);
 		expect(state.value).toEqual({ value: 0 });
 		source.commit(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applyImmutable, type Draft, type JsonValue, track } from "../src/delta/index.ts";
+import { applyImmutable, type Draft, type JsonValue, track } from "../src/patch/index.ts";
 
 describe("transactional overlay drafts", () => {
 	it("copies only changed branches", () => {

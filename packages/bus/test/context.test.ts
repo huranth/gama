@@ -8,7 +8,7 @@ import {
 	withCancel,
 	withContextValue,
 	withoutAbortSignal,
-} from "../src/context/index.ts";
+} from "../src/scope/index.ts";
 
 describe("Context", () => {
 	it("provides distinct empty root contexts", () => {

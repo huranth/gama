@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { track } from "../src/delta/index.ts";
+import { track } from "../src/patch/index.ts";
 
 describe("immutable revision ownership", () => {
 	it("takes ownership of an alias-free mutable JSON root without freezing", () => {

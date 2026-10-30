@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/context/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	createRemoteServiceBinding,
@@ -510,10 +510,10 @@ describe("remote services", () => {
 		expect(state.value).toBeUndefined();
 		await expect(
 			models.select({ provider: "test", modelId: "one" }, BACKGROUND_CONTEXT),
-		).rejects.toThrow("Remote service provider is disposed");
+		).rejects.toThrow("Provider disposed");
 
 		await namespace.dispose(BACKGROUND_CONTEXT);
-		expect(() => state.value).toThrow("Remote service binding is disposed");
+		expect(() => state.value).toThrow("Binding disposed");
 	});
 
 	test("applies provider disposal buffered while subscriptions are starting", async () => {
@@ -683,7 +683,7 @@ describe("remote services", () => {
 		});
 		expect(models.state.value).toBeUndefined();
 		expect(errors).toHaveLength(1);
-		expect(errors[0]?.message).toContain("sequence has a gap");
+		expect(errors[0]?.message).toContain("Sequence gap");
 		await namespace.dispose(BACKGROUND_CONTEXT);
 	});
 

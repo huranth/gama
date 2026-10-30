@@ -1,5 +1,5 @@
 import { expect, it } from "vitest";
-import { applyImmutable, type Draft, type Op, track } from "../src/delta/index.ts";
+import { applyImmutable, type Draft, type Op, track } from "../src/patch/index.ts";
 
 type Item = { id: number; text: string; score: number };
 type Document = {

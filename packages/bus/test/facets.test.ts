@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/context/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	createFacetHost,
@@ -73,7 +73,7 @@ describe("facet host", () => {
 				trace.push("setup projection");
 				sourceHandle = env.use(Source);
 				expect(() => sourceHandle!.read(BACKGROUND_CONTEXT)).toThrow(
-					"Facet projection service handles cannot be used while setting_up",
+					"Facet state: setting_up",
 				);
 				env.provide(Projection, {
 					read: (context) => sourceHandle!.read(context),
@@ -196,7 +196,7 @@ describe("facet host", () => {
 		await host.reload([provider("B")]);
 		await vi.waitFor(() => expect(observed).toHaveLength(2));
 		expect(first.context.abortSignal?.aborted).toBe(true);
-		expect(() => first.service.read(first.context)).toThrow("observation is closed");
+		expect(() => first.service.read(first.context)).toThrow("Observation closed");
 		await expect(observed[1]!.service.read(observed[1]!.context)).resolves.toBe("B");
 
 		await host.dispose();
@@ -228,8 +228,8 @@ describe("facet host", () => {
 		await expect(host.reload([provider("B")])).rejects.toThrow(
 			"Facet reload failed after cutover",
 		);
-		await expect(host.reload([])).rejects.toThrow("Facet host cannot reload while dead");
-		expect(() => host.services.use(KeyedValue)).toThrow("Remote service provider is disposed");
+		await expect(host.reload([])).rejects.toThrow("Reload blocked: dead");
+		expect(() => host.services.use(KeyedValue)).toThrow("Provider disposed");
 		await host.dispose();
 	});
 
@@ -258,7 +258,7 @@ describe("facet host", () => {
 		await expect(host.reload([provider("B")])).rejects.toThrow(
 			"Facet reload failed after cutover",
 		);
-		await expect(host.reload([])).rejects.toThrow("Facet host cannot reload while dead");
+		await expect(host.reload([])).rejects.toThrow("Reload blocked: dead");
 		await host.dispose();
 	});
 
@@ -300,7 +300,7 @@ describe("facet host", () => {
 		await vi.waitFor(() => expect(observed).toHaveLength(2));
 		expect(first.context.abortSignal?.aborted).toBe(true);
 		expect(() => first.service.read()).toThrow(
-			`Keyed service ${LocalKeyedValue.id} observation is closed`,
+			`Observation closed: ${LocalKeyedValue.id}`,
 		);
 		expect(observed[1]!.service.read()).toBe("B");
 		expect(observed[1]!.service.metadata.get("value")).toBe("B");
@@ -348,7 +348,7 @@ describe("facet host", () => {
 
 		await host.dispose();
 		expect(() => retainedState.value).toThrow(
-			"Facet state-consumer service handles cannot be used while dead",
+			"Facet state: dead",
 		);
 	});
 
@@ -364,7 +364,7 @@ describe("facet host", () => {
 					expect(env.use(Source)).toBe(source);
 					consumerHandles.push(source);
 					expect(() => source.read(BACKGROUND_CONTEXT)).toThrow(
-						"Facet scoped-consumer service handles cannot be used while setting_up",
+						"Facet state: setting_up",
 					);
 					env.onDeactivate(async () => {
 						cleanupValues.push(`${generation}:${await source.read(BACKGROUND_CONTEXT)}`);
@@ -395,10 +395,10 @@ describe("facet host", () => {
 		expect(cleanupValues).toEqual(["A:value"]);
 		expect(Object.is(consumerHandles[1], consumerHandles[0])).toBe(false);
 		expect(() => consumerHandles[0]!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet scoped-consumer service handles cannot be used while dead",
+			"Facet state: dead",
 		);
 		expect(() => retainedOldRead(BACKGROUND_CONTEXT)).toThrow(
-			"Facet scoped-consumer service handles cannot be used while dead",
+			"Facet state: dead",
 		);
 		await expect(consumerHandles[1]!.read(BACKGROUND_CONTEXT)).resolves.toBe("value");
 		await expect(peerHandle!.read(BACKGROUND_CONTEXT)).resolves.toBe("value");
@@ -406,10 +406,10 @@ describe("facet host", () => {
 		await host.dispose();
 		expect(cleanupValues).toEqual(["A:value", "B:value"]);
 		expect(() => consumerHandles[1]!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet scoped-consumer service handles cannot be used while dead",
+			"Facet state: dead",
 		);
 		expect(() => peerHandle!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet peer-consumer service handles cannot be used while dead",
+			"Facet state: dead",
 		);
 	});
 
@@ -457,7 +457,7 @@ describe("facet host", () => {
 			setup(env) {
 				const hostValues = env.use(HostValues);
 				expect(() => hostValues.use).toThrow(
-					"Facet host-service-consumer service handles cannot be used while setting_up",
+					"Facet state: setting_up",
 				);
 				env.onActivate(() => {
 					expect(hostValues).not.toBe(values);
@@ -566,7 +566,7 @@ describe("facet host", () => {
 		});
 		await expect(
 			createFacetHost({ facets: [consumer], serviceSources: [duplicate, duplicate] }),
-		).rejects.toThrow(`Facet host service ${LeftValue.id} is offered by more than one source`);
+		).rejects.toThrow(`Duplicate service: ${LeftValue.id}`);
 	});
 
 	test("reopens source bindings from changed catalogues for a replacement generation", async () => {
@@ -658,7 +658,7 @@ describe("facet host", () => {
 			},
 		});
 		await expect(createFacetHost({ facets: [missing] })).rejects.toThrow(
-			"Facet missing requires local/test.experimental.source/singleton, but no facet provides it",
+			"Missing service",
 		);
 		expect(activated).toBe(false);
 
@@ -685,17 +685,21 @@ describe("facet host", () => {
 			},
 		});
 		await expect(createFacetHost({ facets: [first, second] })).rejects.toThrow(
-			"Facet dependency cycle: first, second",
+			"Dependency cycle",
 		);
 
+		const errors: Error[] = [];
+		const failure = new Error("async setup failed");
 		const asynchronous = defineFacet({
 			id: "asynchronous",
 			async setup() {
 				await Promise.resolve();
+				throw failure;
 			},
 		});
-		await expect(createFacetHost({ facets: [asynchronous] })).rejects.toThrow(
-			"Facet asynchronous setup must be synchronous",
-		);
+		await expect(
+			createFacetHost({ facets: [asynchronous], onError: (error) => errors.push(error) }),
+		).rejects.toThrow("Async setup: asynchronous: async setup failed");
+		await vi.waitFor(() => expect(errors).toEqual([failure]));
 	});
 });

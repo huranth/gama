@@ -7,7 +7,7 @@ import {
 	diffRevisions,
 	encoder,
 	type Op,
-} from "../src/delta/index.ts";
+} from "../src/patch/index.ts";
 import type { JsonValue } from "../src/types.ts";
 
 const expectDiff = (before: JsonValue, after: JsonValue, expected: unknown): void => {

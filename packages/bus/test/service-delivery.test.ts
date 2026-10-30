@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { BACKGROUND_CONTEXT, withCancel } from "../src/context/index.ts";
+import { describe, expect, test, vi } from "vitest";
+import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 import {
 	type Context,
 	createRemoteServiceBinding,
@@ -14,16 +14,18 @@ import {
 	replicatedState,
 	type ServiceProviderUpdate,
 } from "../src/index.ts";
-import { getReplicatedStateInternals } from "../src/services/state-internals.ts";
+import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
 
 interface Counter {
 	readonly state: ReplicatedState<{ value: number }>;
 }
+
 const Counter = defineService<Counter>("test.delivery-counter");
 interface Pair {
 	readonly left: ReplicatedState<{ value: number }>;
 	readonly right: ReplicatedState<{ value: number }>;
 }
+
 const Pair = defineService<Pair>("test.delivery-pair");
 
 function wireTransport(
@@ -312,6 +314,59 @@ test("an overflow reset can make a singleton unavailable before a later replacem
 	expect(errors).toEqual([]);
 	await namespace.dispose(BACKGROUND_CONTEXT);
 	provider.dispose();
+});
+
+test("closes a keyed subscription when its snapshot is wrong", async () => {
+	let closed = false;
+	const binding = createRemoteServiceBinding({
+		services: [Counter],
+		transport: {
+			invoke: () => Promise.reject(new Error("unexpected invocation")),
+			async subscribe() {
+				return {
+					snapshot: { serviceId: "wrong", mode: "keyed", instances: [] },
+					activate() {},
+					close() {
+						closed = true;
+					},
+				};
+			},
+		},
+		onError: () => {},
+	});
+	binding.observe(Counter, () => {});
+	await expect(binding.ready(BACKGROUND_CONTEXT)).rejects.toThrow("Wrong snapshot");
+	expect(closed).toBe(true);
+	await binding.dispose(BACKGROUND_CONTEXT);
+});
+
+test("retries a keyed subscription after a failed start", async () => {
+	const failure = new Error("subscribe failed");
+	const errors: Error[] = [];
+	let attempts = 0;
+	const binding = createRemoteServiceBinding({
+		services: [Counter],
+		transport: {
+			invoke: () => Promise.reject(new Error("unexpected invocation")),
+			async subscribe() {
+				attempts += 1;
+				if (attempts === 1) throw failure;
+				return {
+					snapshot: { serviceId: Counter.id, mode: "keyed", instances: [] },
+					activate() {},
+					close() {},
+				};
+			},
+		},
+		onError: (error) => errors.push(error),
+	});
+	binding.observe(Counter, () => {});
+	await vi.waitFor(() => expect(errors).toEqual([failure]));
+
+	binding.observe(Counter, () => {});
+	await binding.ready(BACKGROUND_CONTEXT);
+	expect(attempts).toBe(2);
+	await binding.dispose(BACKGROUND_CONTEXT);
 });
 
 test("keyed resets retain live generations and reconcile closed and reused keys", async () => {

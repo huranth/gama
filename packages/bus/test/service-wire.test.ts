@@ -1,5 +1,5 @@
-import { describe, expect, test } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/context/index.ts";
+import { describe, expect, test, vi } from "vitest";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	createRemoteServiceEndpoint,
 	createServiceCatalogueCall,
@@ -317,7 +317,7 @@ describe("service wire protocol", () => {
 		expect(dec.decodeUpdate(enc.encodeUpdate(update))).toEqual(update);
 		const closed: ServiceProviderUpdate = { type: "closed", instance: address };
 		expect(dec.decodeUpdate(enc.encodeUpdate(closed))).toEqual(closed);
-		expect(() => enc.encodeUpdate({ ...update, sequence: 2 })).toThrow("Unknown service state");
+		expect(() => enc.encodeUpdate({ ...update, sequence: 2 })).toThrow("Unknown state");
 	});
 });
 
@@ -359,5 +359,64 @@ test("remote service endpoints publish and clean up provider subscriptions", asy
 		draft.value = 2;
 	});
 	expect(updates).toHaveLength(1);
+	provider.dispose();
+});
+
+test("reports endpoint publish failures", async () => {
+	const provider = new RemoteServiceProvider([Counter]);
+	const state = replicatedState({ value: 0 });
+	provider.provide(Counter, { state });
+	const failure = new Error("publish failed");
+	const errors: Error[] = [];
+	const endpoint = createRemoteServiceEndpoint(provider, (error) => errors.push(error));
+
+	await endpoint.invoke(
+		createServiceSubscribeCall("subscription-1", Counter.id, "singleton"),
+		() => Promise.reject(failure),
+		BACKGROUND_CONTEXT,
+	);
+	state.change(BACKGROUND_CONTEXT, (draft) => {
+		draft.value = 1;
+	});
+
+	await vi.waitFor(() => expect(errors).toEqual([failure]));
+	endpoint.dispose();
+	provider.dispose();
+});
+
+test("rolls back endpoint subscriptions when activation throws", async () => {
+	const provider = new RemoteServiceProvider([Counter]);
+	const state = replicatedState({ value: 0 });
+	provider.provide(Counter, { state });
+	const failure = new Error("activation failed");
+	const subscribe = provider.subscribe.bind(provider);
+	vi.spyOn(provider, "subscribe").mockImplementation((...args) => {
+		const subscription = subscribe(...args);
+		return {
+			...subscription,
+			activate: () => {
+				subscription.activate();
+				throw failure;
+			},
+		};
+	});
+	const endpoint = createRemoteServiceEndpoint(provider);
+	const updates: ServiceProviderUpdate[] = [];
+
+	await expect(
+		endpoint.invoke(
+			createServiceSubscribeCall("subscription-1", Counter.id, "singleton"),
+			(_subscriptionId, update) => {
+				updates.push(update);
+			},
+			BACKGROUND_CONTEXT,
+		),
+	).rejects.toBe(failure);
+
+	state.change(BACKGROUND_CONTEXT, (draft) => {
+		draft.value = 1;
+	});
+	expect(updates).toEqual([]);
+	endpoint.dispose();
 	provider.dispose();
 });

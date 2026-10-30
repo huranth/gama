@@ -1,5 +1,5 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT, withCancel } from "../src/context/index.ts";
+import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 import {
 	type Context,
 	type ReplicatedState,
@@ -7,8 +7,8 @@ import {
 	type ReplicatedStateSourceFrame,
 	replicatedState,
 } from "../src/index.ts";
-import { ReplicatedStateReplica } from "../src/services/state.ts";
-import { getReplicatedStateInternals } from "../src/services/state-internals.ts";
+import { ReplicatedStateReplica } from "../src/peers/state.ts";
+import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
 
 type Value = { value: number };
 type Kind = "mutable" | "attached" | "replica";
@@ -119,7 +119,7 @@ describe.each<Kind>(["mutable", "attached", "replica"])("%s public delivery", (k
 	);
 
 	test(
-		"excludes a running update from overflow and retains exact " + "value/context/delivery",
+		"excludes a running update from overflow and retains exact " + "value/scope/delivery",
 		async () => {
 			const { state, publish } = fixture(kind);
 			const gate = deferred();
