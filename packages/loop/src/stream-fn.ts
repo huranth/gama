@@ -8,9 +8,8 @@ export function setDefaultStreamFn(streamFn: StreamFn | undefined): void {
 
 export function getDefaultStreamFn(): StreamFn {
 	if (!defaultStreamFn) {
-		throw new Error(
-			"No default stream function configured. Pass streamFn explicitly or call setDefaultStreamFn().",
-		);
+		throw new Error("No stream function");
 	}
+
 	return defaultStreamFn;
 }

@@ -2,16 +2,18 @@ import {
 	createInitialSystemMessage,
 	getCurrentSystemMessage,
 	getCurrentSystemPrompt,
+	type AssistantMessage,
 	type ImageContent,
 	type Message,
 	type Model,
 	type SimpleStreamOptions,
 	type TextContent,
 	type ThinkingBudgets,
+	type ToolResultMessage,
 	type Transport,
 	toToolDeclaration,
 } from "@huranth/gama-ai";
-import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
+import { runAgentLoop, runAgentLoopContinue } from "./run-loop.ts";
 import { getDefaultStreamFn } from "./stream-fn.ts";
 import type {
 	AfterToolCallContext,
@@ -49,7 +51,7 @@ export type AgentInitialState = Partial<
 	Omit<AgentState, "pendingToolCalls" | "isStreaming" | "streamingMessage" | "errorMessage">
 >;
 
-export interface AgentOptions {
+export interface RunnerOptions {
 	initialState?: AgentInitialState;
 	convertToLlm?: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	transformContext?: (messages: AgentMessage[], signal?: AbortSignal) => Promise<AgentMessage[]>;
@@ -77,6 +79,7 @@ export interface AgentOptions {
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
+	coalesceQueuedMessages?: boolean;
 	sessionId?: string;
 	thinkingBudgets?: ThinkingBudgets;
 	transport?: Transport;
@@ -111,6 +114,71 @@ const DEFAULT_MODEL = {
 	contextWindow: 0,
 	maxTokens: 0,
 } satisfies Model<any>;
+
+function queuedText(message: AgentMessage): string | undefined {
+	const content = (message as { content?: unknown }).content;
+	if (typeof content === "string") return content;
+	if (!Array.isArray(content) || content.length !== 1) return undefined;
+	const part = content[0] as { type?: unknown; text?: unknown };
+	return part.type === "text" && typeof part.text === "string" ? part.text : undefined;
+}
+
+function coalesceQueued(messages: AgentMessage[]): AgentMessage[] {
+	const coalesced: AgentMessage[] = [];
+	let run: { message: AgentMessage; text: string }[] = [];
+
+	const flush = () => {
+		if (run.length === 0) return;
+		if (run.length === 1) {
+			coalesced.push(run[0].message);
+		} else {
+			const text = run.map((entry) => entry.text.trim()).join("\n\n");
+			const first = run[0].message as { timestamp: number; steering?: boolean };
+			coalesced.push({
+				role: "user",
+				content: [{ type: "text", text }],
+				timestamp: first.timestamp,
+				...(first.steering === undefined ? {} : { steering: first.steering }),
+			});
+		}
+		run = [];
+	};
+
+	for (const message of messages) {
+		const text = message.role === "user" ? queuedText(message) : undefined;
+		if (text === undefined) {
+			flush();
+			coalesced.push(message);
+			continue;
+		}
+		run.push({ message, text });
+	}
+
+	flush();
+	return coalesced;
+}
+
+function orphanedToolCalls(messages: AgentMessage[]): { id: string; name: string }[] {
+	const answered = new Set<string>();
+	for (const message of messages) {
+		if (message.role === "toolResult") answered.add(message.toolCallId);
+	}
+
+	const orphans: { id: string; name: string }[] = [];
+	for (const message of messages) {
+		if (message.role !== "assistant") continue;
+
+		for (const content of message.content) {
+			if (content.type !== "toolCall") continue;
+			if (answered.has(content.id)) continue;
+
+			answered.add(content.id);
+			orphans.push({ id: content.id, name: content.name });
+		}
+	}
+
+	return orphans;
+}
 
 function defaultConvertToLlm(messages: AgentMessage[]): Message[] {
 	return messages.filter(
@@ -189,15 +257,22 @@ class PendingMessageQueue {
 	clear(): void {
 		this.messages = [];
 	}
+
+	remove(predicate: (message: AgentMessage) => boolean): number {
+		const before = this.messages.length;
+		this.messages = this.messages.filter((message) => !predicate(message));
+		return before - this.messages.length;
+	}
 }
 
-export class Agent {
+export class Runner {
 	private _state: MutableAgentState;
 	private readonly listeners = new Set<
 		(event: AgentEvent, signal: AbortSignal) => Promise<void> | void
 	>();
 	private readonly steeringQueue: PendingMessageQueue;
 	private readonly followUpQueue: PendingMessageQueue;
+	private readonly coalesceQueuedMessages: boolean;
 
 	public convertToLlm: (messages: AgentMessage[]) => Message[] | Promise<Message[]>;
 	public transformContext?: (
@@ -233,7 +308,7 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	public toolExecution: ToolExecutionMode;
 
-	constructor(options: AgentOptions) {
+	constructor(options: RunnerOptions) {
 		const runtimeOptions = options;
 
 		// State
@@ -257,6 +332,7 @@ export class Agent {
 		// Queues
 		this.steeringQueue = new PendingMessageQueue(runtimeOptions.steeringMode ?? "one-at-a-time");
 		this.followUpQueue = new PendingMessageQueue(runtimeOptions.followUpMode ?? "one-at-a-time");
+		this.coalesceQueuedMessages = runtimeOptions.coalesceQueuedMessages === true;
 
 		// Run
 		this.sessionId = runtimeOptions.sessionId;
@@ -314,6 +390,10 @@ export class Agent {
 		this.clearFollowUpQueue();
 	}
 
+	removeQueuedMessages(predicate: (message: AgentMessage) => boolean): number {
+		return this.steeringQueue.remove(predicate) + this.followUpQueue.remove(predicate);
+	}
+
 	hasQueuedMessages(): boolean {
 		return this.steeringQueue.hasItems() || this.followUpQueue.hasItems();
 	}
@@ -337,7 +417,7 @@ export class Agent {
 
 	reset(): void {
 		if (this.activeRun) {
-			throw new Error("Agent is already processing. Wait for completion before resetting.");
+			throw new Error("Agent is busy");
 		}
 
 		const baseline = getCurrentSystemMessage(this._state.messages);
@@ -357,39 +437,42 @@ export class Agent {
 		images?: ImageContent[],
 	): Promise<void> {
 		if (this.activeRun) {
-			throw new Error(
-				"Agent is already processing a prompt. Use steer() or followUp() to queue messages, " +
-					"or wait for completion.",
-			);
+			throw new Error("Agent is busy");
 		}
+
 		const messages = this.normalizePromptInput(input, images);
 		await this.runPromptMessages(messages);
 	}
 
 	async continue(): Promise<void> {
 		if (this.activeRun) {
-			throw new Error("Agent is already processing. Wait for completion before continuing.");
+			throw new Error("Agent is busy");
 		}
 
 		const lastMessage = this._state.messages[this._state.messages.length - 1];
 		if (!lastMessage || this._state.messages.every((message) => message.role === "system")) {
-			throw new Error("No messages to continue from");
+			throw new Error("No messages");
 		}
 
 		if (lastMessage.role === "assistant") {
 			const queuedSteering = this.steeringQueue.drain();
 			if (queuedSteering.length > 0) {
-				await this.runPromptMessages(queuedSteering, { skipInitialSteeringPoll: true });
+				await this.runPromptMessages(
+					this.coalesceQueuedMessages ? coalesceQueued(queuedSteering) : queuedSteering,
+					{ skipInitialSteeringPoll: true },
+				);
 				return;
 			}
 
 			const queuedFollowUps = this.followUpQueue.drain();
 			if (queuedFollowUps.length > 0) {
-				await this.runPromptMessages(queuedFollowUps);
+				await this.runPromptMessages(
+					this.coalesceQueuedMessages ? coalesceQueued(queuedFollowUps) : queuedFollowUps,
+				);
 				return;
 			}
 
-			throw new Error("Cannot continue from message role: assistant");
+			throw new Error("Invalid message role");
 		}
 
 		await this.runContinuation();
@@ -483,15 +566,19 @@ export class Agent {
 					skipInitialSteeringPoll = false;
 					return [];
 				}
-				return this.steeringQueue.drain();
+				const steering = this.steeringQueue.drain();
+				return this.coalesceQueuedMessages ? coalesceQueued(steering) : steering;
 			},
-			getFollowUpMessages: async () => this.followUpQueue.drain(),
+			getFollowUpMessages: async () => {
+				const followUp = this.followUpQueue.drain();
+				return this.coalesceQueuedMessages ? coalesceQueued(followUp) : followUp;
+			},
 		};
 	}
 
 	private async runWithLifecycle(executor: (signal: AbortSignal) => Promise<void>): Promise<void> {
 		if (this.activeRun) {
-			throw new Error("Agent is already processing.");
+			throw new Error("Agent is busy");
 		}
 
 		const abortController = new AbortController();
@@ -504,32 +591,98 @@ export class Agent {
 		this._state.isStreaming = true;
 		this._state.streamingMessage = undefined;
 		this._state.errorMessage = undefined;
+		const startIndex = this._state.messages.length;
 
 		try {
 			await executor(abortController.signal);
 		} catch (error) {
-			await this.handleRunFailure(error, abortController.signal.aborted);
+			await this.handleRunFailure(error, abortController.signal.aborted, startIndex);
 		} finally {
 			this.finishRun();
 		}
 	}
 
-	private async handleRunFailure(error: unknown, aborted: boolean): Promise<void> {
-		const failureMessage = {
+	private async handleRunFailure(
+		error: unknown,
+		aborted: boolean,
+		startIndex: number,
+	): Promise<void> {
+		const errorText = error instanceof Error ? error.message : String(error);
+
+		// Close calls.
+		const toolResults = await this.failOrphanedToolCalls(startIndex, aborted);
+
+		const failureMessage: AssistantMessage = {
 			role: "assistant",
-			content: [{ type: "text", text: "" }],
+			content: [],
 			api: this._state.model.api,
 			provider: this._state.model.provider,
 			model: this._state.model.id,
 			usage: EMPTY_USAGE,
 			stopReason: aborted ? "aborted" : "error",
-			errorMessage: error instanceof Error ? error.message : String(error),
+			errorMessage: aborted ? undefined : errorText,
 			timestamp: Date.now(),
-		} satisfies AgentMessage;
+		};
+
 		await this.processEvents({ type: "message_start", message: failureMessage });
 		await this.processEvents({ type: "message_end", message: failureMessage });
-		await this.processEvents({ type: "turn_end", message: failureMessage, toolResults: [] });
-		await this.processEvents({ type: "agent_end", messages: [failureMessage] });
+		const newMessages = this._state.messages.slice(startIndex);
+		try {
+			await this.finishTurn?.(
+				{
+					message: failureMessage,
+					toolResults,
+					context: this.createContextSnapshot(),
+					newMessages,
+				},
+				this.activeRun?.abortController.signal,
+			);
+		} catch (hookError) {
+			// Hook error
+			console.warn("finishTurn hook failed:", hookError);
+		}
+		await this.processEvents({ type: "turn_end", message: failureMessage, toolResults });
+		await this.processEvents({ type: "agent_end", messages: newMessages });
+	}
+
+	private async failOrphanedToolCalls(
+		startIndex: number,
+		aborted: boolean,
+	): Promise<ToolResultMessage[]> {
+		const stopped = aborted ? "was aborted" : "failed";
+		const results: ToolResultMessage[] = [];
+
+		for (const toolCall of orphanedToolCalls(this._state.messages.slice(startIndex))) {
+			const reason = `The run ${stopped} before ${toolCall.name} finished`;
+			const result = {
+				content: [{ type: "text" as const, text: reason }],
+				details: {},
+			};
+
+			await this.processEvents({
+				type: "tool_execution_end",
+				toolCallId: toolCall.id,
+				toolName: toolCall.name,
+				result,
+				isError: true,
+			});
+
+			const message: ToolResultMessage = {
+				role: "toolResult",
+				toolCallId: toolCall.id,
+				toolName: toolCall.name,
+				content: result.content,
+				details: result.details,
+				isError: true,
+				timestamp: Date.now(),
+			};
+
+			await this.processEvents({ type: "message_start", message });
+			await this.processEvents({ type: "message_end", message });
+			results.push(message);
+		}
+
+		return results;
 	}
 
 	private finishRun(): void {
@@ -582,10 +735,15 @@ export class Agent {
 
 		const signal = this.activeRun?.abortController.signal;
 		if (!signal) {
-			throw new Error("Agent listener invoked outside active run");
+			throw new Error("No active run");
 		}
 		for (const listener of this.listeners) {
-			await listener(event, signal);
+			try {
+				await listener(event, signal);
+			} catch (error) {
+				// Listener error
+				console.warn("Agent listener failed:", error);
+			}
 		}
 	}
 }
