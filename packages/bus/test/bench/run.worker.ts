@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { performance } from "node:perf_hooks";
 import { setImmediate } from "node:timers/promises";
-import type { Draft } from "../../src/delta/draft.ts";
-import { applyImmutable, type Op, track } from "../../src/delta/index.ts";
+import type { Draft } from "../../src/patch/draft.ts";
+import { applyImmutable, type Op, track } from "../../src/patch/index.ts";
 
 type Mode = "tracker";
 type Scenario =

@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { performance } from "node:perf_hooks";
 import { setImmediate } from "node:timers/promises";
-import type { Draft } from "../../src/delta/draft.ts";
+import type { Draft } from "../../src/patch/draft.ts";
 import {
 	applyImmutable,
 	type JsonValue,
@@ -10,7 +10,7 @@ import {
 	type Op,
 	type Path,
 	track,
-} from "../../src/delta/index.ts";
+} from "../../src/patch/index.ts";
 
 const PROVISIONAL_SCHEMA = "pico5.conversation-view.provisional.v0";
 const MiB = 1024 * 1024;
@@ -514,6 +514,7 @@ for (let index = 0; index < headlineEntries; index++) {
 	records.set(entry.id, entry);
 	head = entry.id;
 }
+
 const documentTrackers = {} as Record<DocumentKey, TrackerLike<JsonObject>>;
 for (const [key, value] of Object.entries(initialDocuments()) as Array<[DocumentKey, JsonObject]>) {
 	documentTrackers[key] = createTracker(value);

@@ -8,7 +8,7 @@ import {
 	type JsonValue,
 	type Op,
 	track,
-} from "../../src/delta/index.ts";
+} from "../../src/patch/index.ts";
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value)) as T;
 
@@ -162,8 +162,8 @@ describe("delta tracker transactional overlay lifecycle", () => {
 		tracker.adopt(firstPrepared);
 		expect(tracker.value.value).toBe(1);
 		expect(held.value).toBe(2);
-		expect(() => tracker.adopt(secondPrepared)).toThrow(/stale/);
-		expect(() => tracker.adopt(firstPrepared)).toThrow(/already been used/);
+		expect(() => tracker.adopt(secondPrepared)).toThrow(/Stale change/);
+		expect(() => tracker.adopt(firstPrepared)).toThrow(/Change used/);
 	});
 
 	it("invalidates competing open overlays without changing their base revision", () => {
@@ -279,7 +279,7 @@ describe("delta tracker transactional overlay lifecycle", () => {
 		const first = track({ value: 0 });
 		const second = track({ value: 0 });
 		const prepared = first.prepareReplace({ value: 1 });
-		expect(() => second.adopt(prepared)).toThrow(/different tracker/);
+		expect(() => second.adopt(prepared)).toThrow(/Wrong tracker/);
 		prepared.abort();
 		prepared.abort();
 		expect(() => first.adopt(prepared)).toThrow(/aborted/);

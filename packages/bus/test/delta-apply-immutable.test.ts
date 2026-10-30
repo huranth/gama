@@ -8,7 +8,7 @@ import {
 	PathError,
 	track,
 	UnsafePathError,
-} from "../src/delta/index.ts";
+} from "../src/patch/index.ts";
 
 function freezeDeep<T>(value: T): T {
 	if (value === null || typeof value !== "object" || Object.isFrozen(value)) return value;

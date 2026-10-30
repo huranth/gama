@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { setImmediate } from "node:timers/promises";
-import { type Tracker, track } from "../../src/delta/index.ts";
+import { type Tracker, track } from "../../src/patch/index.ts";
 
 const retainedSettledObjects: object[] = [];
 const retainedLargePrepared: object[] = [];
@@ -339,4 +339,5 @@ if (scenario === "settled-lifecycle") {
 	await collect(reference);
 	assert.deepEqual(tracker.value, { payload: null });
 }
+
 console.log(JSON.stringify({ scenario, passed: true }));

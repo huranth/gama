@@ -95,7 +95,7 @@ const trials = quick ? 1 : 3;
 const watchCount = quick ? 4 : 8;
 const watchUpdates = quick ? 20 : 100;
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const worker = fileURLToPath(new URL("./benchmark.worker.ts", import.meta.url));
+const worker = fileURLToPath(new URL("./run.worker.ts", import.meta.url));
 const results: Result[] = [];
 const failures: Failure[] = [];
 

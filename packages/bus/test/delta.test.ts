@@ -13,7 +13,7 @@ import {
 	track,
 	UnsafePathError,
 	type WireOp,
-} from "../src/delta/index.ts";
+} from "../src/patch/index.ts";
 
 describe("immutable tracker lifecycle", () => {
 	it("keeps a draft alive across await and adopts only a prepared change", async () => {
@@ -114,16 +114,16 @@ describe("immutable tracker lifecycle", () => {
 		competing.state.value = 2;
 		const prepared = change.prepare();
 		const competingPrepared = competing.prepare();
-		expect(() => second.adopt(prepared)).toThrow(/different tracker/);
+		expect(() => second.adopt(prepared)).toThrow(/Wrong tracker/);
 		first.adopt(prepared);
-		expect(() => first.adopt(prepared)).toThrow(/already been used/);
-		expect(() => first.adopt(competingPrepared)).toThrow(/stale/);
+		expect(() => first.adopt(prepared)).toThrow(/Change used/);
+		expect(() => first.adopt(competingPrepared)).toThrow(/Stale change/);
 
 		const stale = first.prepareReplace({ value: 2 });
 		const winner = first.prepareReplace({ value: 3 });
 		first.adopt(winner);
-		expect(() => first.adopt(stale)).toThrow(/stale/);
-		expect(() => first.adopt(stale)).toThrow(/stale/);
+		expect(() => first.adopt(stale)).toThrow(/Stale change/);
+		expect(() => first.adopt(stale)).toThrow(/Stale change/);
 	});
 
 	it("invalidates a prepared result when its change is aborted", () => {
@@ -143,8 +143,8 @@ describe("immutable tracker lifecycle", () => {
 		expect(first.value).toBe(first.base);
 		expect(competing.value).toBe(competing.base);
 		tracker.adopt(first);
-		expect(() => tracker.adopt(first)).toThrow(/already been used/);
-		expect(() => tracker.adopt(competing)).toThrow(/stale/);
+		expect(() => tracker.adopt(first)).toThrow(/Change used/);
+		expect(() => tracker.adopt(competing)).toThrow(/Stale change/);
 	});
 
 	it("emits an owned root replacement without traversing large replacement input", () => {

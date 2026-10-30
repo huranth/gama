@@ -5,12 +5,14 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
 import { setImmediate } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
-import { track } from "../src/delta/index.ts";
+import { track } from "../src/patch/index.ts";
 
 type Point = { x: number; y: number; pressure: number };
 type Drawing = { strokes: { id: number; color: string; width: number; points: Point[] }[] };
 type Mode = "raw" | "proxy" | "delta";
+
 const MiB = 1024 * 1024;
+
 async function gc(): Promise<void> {
 	if (!global.gc) throw new Error("run with --expose-gc");
 	for (let i = 0; i < 4; i++) {
@@ -34,6 +36,7 @@ function fixture(strokes: number, points: number): Drawing {
 		})),
 	};
 }
+
 function membrane<T extends object>(input: T): T {
 	const cache = new WeakMap<object, object>();
 	const wrap = (value: object): object => {
@@ -50,6 +53,7 @@ function membrane<T extends object>(input: T): T {
 	};
 	return wrap(input) as T;
 }
+
 function setup(mode: Mode, input: Drawing): { state: Drawing; finish(): void } {
 	if (mode === "delta") {
 		const tracker = track(input);
@@ -63,9 +67,11 @@ function setup(mode: Mode, input: Drawing): { state: Drawing; finish(): void } {
 	}
 	return { state: mode === "proxy" ? membrane(input) : input, finish() {} };
 }
+
 function prepare(mode: Mode, strokes: number, points: number) {
 	return setup(mode, fixture(strokes, points));
 }
+
 function traverse(state: Drawing): number {
 	let sum = 0;
 	const strokes = state.strokes;
@@ -78,6 +84,7 @@ function traverse(state: Drawing): number {
 	}
 	return sum;
 }
+
 function warm(mode: Mode): void {
 	const t = prepare(mode, 10, 10);
 	for (let i = 0; i < 10; i++) {
@@ -85,15 +92,16 @@ function warm(mode: Mode): void {
 	}
 	t.finish();
 }
+
 function sources() {
 	return Object.fromEntries(
 		[
-			"../src/delta/index.ts",
-			"../src/delta/tracker.ts",
-			"../src/delta/draft.ts",
-			"../src/delta/diff.ts",
-			"../src/delta/revision-validator.ts",
-			"../src/delta/apply-immutable-trusted.ts",
+			"../src/patch/index.ts",
+			"../src/patch/tracker.ts",
+			"../src/patch/draft.ts",
+			"../src/patch/diff.ts",
+			"../src/patch/revision-validator.ts",
+			"../src/patch/apply-immutable-trusted.ts",
 			"./delta-traversal.bench.ts",
 		].map((path) => [
 			path,
@@ -103,6 +111,7 @@ function sources() {
 		]),
 	);
 }
+
 async function measure(mode: Mode, strokes: number, points: number, trial: number) {
 	warm(mode);
 	await gc();

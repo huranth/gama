@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { apply, track } from "../src/delta/index.ts";
+import { apply, track } from "../src/patch/index.ts";
 
 describe("tracker ownership", () => {
 	it("takes immutable ownership of the imported revision in O(1)", () => {

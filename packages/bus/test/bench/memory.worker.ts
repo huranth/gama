@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { PerformanceObserver, performance } from "node:perf_hooks";
 import { setImmediate } from "node:timers/promises";
-import type { Draft } from "../../src/delta/draft.ts";
-import { type Op, track } from "../../src/delta/index.ts";
+import type { Draft } from "../../src/patch/draft.ts";
+import { type Op, track } from "../../src/patch/index.ts";
 
 const MiB = 1024 * 1024;
 
@@ -133,6 +133,7 @@ if (scenario === "idle-control") {
 		samplePeak();
 	}
 }
+
 const workMs = performance.now() - workStart;
 for (let attempt = 0; attempt < 3; attempt++) {
 	await setImmediate();

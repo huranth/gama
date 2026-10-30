@@ -9,7 +9,7 @@ import {
 	createFacetBundleLoader,
 	readFacetBundleArtifact,
 	readFacetBundleManifest,
-} from "../src/node.ts";
+} from "../src/host.ts";
 
 interface GenerationValue {
 	read(): string;
@@ -56,13 +56,13 @@ describe("facet bundles", () => {
 			const firstEntry = firstBuild.manifest.entries.worker!;
 			expect(firstEntry.file).toMatch(/^facet-[a-f0-9]{12}-[A-Z0-9]+\.cjs$/u);
 			expect(firstEntry.sourceMap).toBe(`${firstEntry.file}.map`);
-			expect(firstEntry.externalImports).toEqual(["@huranth/chord"]);
+			expect(firstEntry.externalImports).toEqual(["@huranth/gama-bus"]);
 			expect(firstBuild.manifest.entries.presentation!.file).not.toBe(firstEntry.file);
 			expect(
 				(await readdir(outputDirectory)).filter((path) => path.endsWith(".cjs")),
 			).toHaveLength(2);
 			const firstSource = await readFile(join(outputDirectory, firstEntry.file), "utf8");
-			expect(firstSource).toContain('require("@huranth/chord")');
+			expect(firstSource).toContain('require("@huranth/gama-bus")');
 			expect(firstSource).toContain("module.exports");
 			expect((await readFile(firstBuild.manifestPath, "utf8")).endsWith("\n")).toBe(true);
 
@@ -249,7 +249,82 @@ describe("facet bundles", () => {
 		);
 		await expect(
 			bundleFacetPackage({ packagePath: directory, outdir: join(directory, "build") }),
-		).rejects.toThrow("escapes the package directory");
+		).rejects.toThrow("Escaping entry");
+	});
+
+	test("rejects output directories that contain the source directory", async () => {
+		const directory = await mkdtemp(join(packageDirectory, ".bundle-output-test-"));
+		temporaryDirectories.push(directory);
+		const entryPath = join(directory, "entry.ts");
+		await writeFile(entryPath, "export default { id: 'entry', setup() {} };\n");
+
+		await expect(
+			bundleFacets({
+				plugin: { id: "output-guard" },
+				entries: { entry: entryPath },
+				outdir: ".",
+				workingDirectory: directory,
+			}),
+		).rejects.toThrow("Source in output");
+		expect(await readdir(directory)).toContain("entry.ts");
+	});
+
+	test("rejects reserved entry names", async () => {
+		const directory = await mkdtemp(join(packageDirectory, ".bundle-reserved-test-"));
+		temporaryDirectories.push(directory);
+		await writeFile(join(directory, "entry.ts"), "export default { id: 'reserved', setup() {} };\n");
+		await writeFile(
+			join(directory, "package.json"),
+			JSON.stringify({ name: "reserved-package", version: "1.0.0" }),
+		);
+
+		await expect(
+			bundleFacets({
+				plugin: { id: "reserved-bundle" },
+				entries: { ["__proto__"]: join(directory, "entry.ts") },
+				outdir: join(directory, "bundle"),
+			}),
+		).rejects.toThrow("is reserved");
+
+		await expect(
+			bundleFacetPackage({
+				packagePath: directory,
+				outdir: join(directory, "package-bundle"),
+				defaultFacets: { ["__proto__"]: "entry.ts" },
+			}),
+		).rejects.toThrow("Reserved entry");
+
+		await writeFile(
+			join(directory, "package.json"),
+			JSON.stringify({
+				name: "reserved-package",
+				version: "1.0.0",
+				chord: { facets: { ["__proto__"]: "entry.ts" } },
+			}),
+		);
+		await expect(
+			bundleFacetPackage({ packagePath: directory, outdir: join(directory, "package-bundle") }),
+		).rejects.toThrow("Invalid facet entry");
+	});
+
+	test("rejects reserved manifest entry names", async () => {
+		const directory = await mkdtemp(join(packageDirectory, ".bundle-manifest-test-"));
+		temporaryDirectories.push(directory);
+		const manifestPath = join(directory, "chord-facets.json");
+		const entries = JSON.parse(
+			'{"__proto__":{"file":"entry.cjs","integrity":"sha256-AAAA","externalImports":[]}}',
+		);
+		await writeFile(
+			manifestPath,
+			JSON.stringify({
+				format: "chord.facet-bundle",
+				formatVersion: 2,
+				plugin: { id: "reserved-manifest" },
+				entries,
+			}),
+		);
+
+		await expect(readFacetBundleManifest(manifestPath)).rejects.toThrow("Invalid entry");
 	});
 
 	test("rejects corrupt entries and invalid module exports", async () => {
@@ -267,21 +342,21 @@ describe("facet bundles", () => {
 			manifestPath: result.manifestPath,
 			entry: "invalid",
 		});
-		await expect(loader.load()).rejects.toThrow("has no setup function");
+		await expect(loader.load()).rejects.toThrow("Bundle failed");
 
 		const manifest = await readFacetBundleManifest(result.manifestPath);
 		await writeFile(
 			join(outputDirectory, manifest.entries.invalid!.file),
 			"export default {};\n",
 		);
-		await expect(loader.load()).rejects.toThrow("integrity check failed");
+		await expect(loader.load()).rejects.toThrow("Bundle failed");
 	});
 });
 
 async function writeGeneration(path: string, generation: string): Promise<void> {
 	await writeFile(
 		path,
-		`import "@huranth/chord";\n` +
+		`import "@huranth/gama-bus";\n` +
 			`import { decorate } from "./helper.ts";\n` +
 			`const Value = { id: "test.bundle.generation", local: true };\n` +
 			`export default { id: "bundle-provider", setup(env) {\n` +

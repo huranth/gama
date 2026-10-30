@@ -79,7 +79,7 @@ const updates = quick ? 20 : 100;
 const watchCount = quick ? 4 : 8;
 const trials = quick ? 1 : 3;
 const root = fileURLToPath(new URL("../../../..", import.meta.url));
-const worker = fileURLToPath(new URL("./memory-benchmark.worker.ts", import.meta.url));
+const worker = fileURLToPath(new URL("./memory.worker.ts", import.meta.url));
 const results: Result[] = [];
 const failures: Failure[] = [];
 
