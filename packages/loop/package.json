@@ -2,7 +2,7 @@
 	"name": "@huranth/gama-agent-core",
 	"version": "1.0.3",
 	"private": true,
-	"description": "General-purpose agent with transport abstraction, state management, and attachment support",
+	"description": "Execution loop for tool-using agents",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -39,7 +39,7 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/huranth/gama.git",
-		"directory": "packages/agent"
+		"directory": "packages/loop"
 	},
 	"engines": {
 		"node": ">=22.19.0"
