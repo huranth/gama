@@ -10,6 +10,12 @@ import {
 	type TranscriptContext,
 } from "@huranth/gama-ai";
 
+const dataPrefix = "data:";
+
+function isTerminalEvent(event: AssistantMessageEvent): boolean {
+	return event.type === "done" || event.type === "error";
+}
+
 export type ProxyAssistantMessageEvent =
 	| { type: "start" }
 	| { type: "text_start"; contentIndex: number }
@@ -26,14 +32,14 @@ export type ProxyAssistantMessageEvent =
 			reason: Extract<StopReason, "stop" | "length" | "toolUse">;
 			usage: AssistantMessage["usage"];
 			providerThinkingLevel?: string;
-	  }
+		}
 	| {
 			type: "error";
 			reason: Extract<StopReason, "aborted" | "error">;
 			errorMessage?: string;
 			usage: AssistantMessage["usage"];
 			providerThinkingLevel?: string;
-	  };
+		};
 
 type ProxySerializableStreamOptions = Pick<
 	SimpleStreamOptions,
@@ -103,7 +109,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received text_delta for non-text content");
+			throw new Error("Invalid text delta");
 		}
 
 		case "text_end": {
@@ -117,7 +123,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received text_end for non-text content");
+			throw new Error("Invalid text end");
 		}
 
 		case "thinking_start":
@@ -135,7 +141,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received thinking_delta for non-thinking content");
+			throw new Error("Invalid thinking delta");
 		}
 
 		case "thinking_end": {
@@ -149,7 +155,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received thinking_end for non-thinking content");
+			throw new Error("Invalid thinking end");
 		}
 
 		case "toolcall_start":
@@ -175,7 +181,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received toolcall_delta for non-toolCall content");
+			throw new Error("Invalid toolcall delta");
 		}
 
 		case "toolcall_end": {
@@ -190,7 +196,7 @@ function processProxyEvent(
 					partial,
 				};
 			}
-			throw new Error("Received toolcall_end for non-toolCall content");
+			throw new Error("Invalid toolcall end");
 		}
 
 		case "done":
@@ -215,6 +221,7 @@ function processProxyEvent(
 
 		default: {
 			const _exhaustiveCheck: never = proxyEvent;
+			void _exhaustiveCheck;
 			console.warn(`Unhandled proxy event type: ${(proxyEvent as { type: string }).type}`);
 			return undefined;
 		}
@@ -300,7 +307,7 @@ export function streamProxy(
 				const proxyEvent = JSON.parse(data) as ProxyAssistantMessageEvent;
 				const event = processProxyEvent(proxyEvent, partial);
 				if (event) {
-					if (event.type === "done" || event.type === "error") sawTerminalEvent = true;
+					if (isTerminalEvent(event)) sawTerminalEvent = true;
 					stream.push(event);
 				}
 			};
@@ -312,7 +319,6 @@ export function streamProxy(
 					return;
 				}
 				// Flexible prefix
-				const dataPrefix = "data:";
 				if (!content.startsWith(dataPrefix)) return;
 				eventData.push(content.slice(dataPrefix.length).replace(/^ /, ""));
 				if (eventData.length === 1) {
@@ -330,7 +336,7 @@ export function streamProxy(
 				if (done) break;
 
 				if (options.signal?.aborted) {
-					throw new Error("Request aborted by user");
+					throw new Error("Request aborted");
 				}
 
 				buffer += decoder.decode(value, { stream: true });
@@ -340,10 +346,18 @@ export function streamProxy(
 				for (const line of lines) {
 					processLine(line);
 				}
+
+				// Terminal seen
+				if (sawTerminalEvent) break;
+			}
+
+			if (sawTerminalEvent) {
+				stream.end();
+				return;
 			}
 
 			if (options.signal?.aborted) {
-				throw new Error("Request aborted by user");
+				throw new Error("Request aborted");
 			}
 
 			buffer += decoder.decode();
@@ -355,8 +369,7 @@ export function streamProxy(
 			if (!sawTerminalEvent) {
 				clearPartialJson(partial);
 				partial.stopReason = "error";
-				partial.errorMessage =
-					"Connection closed by proxy server before the response completed";
+				partial.errorMessage = "Connection closed by proxy server before the response completed";
 				stream.push({
 					type: "error",
 					reason: "error",
@@ -381,6 +394,10 @@ export function streamProxy(
 			if (options.signal) {
 				options.signal.removeEventListener("abort", abortHandler);
 			}
+
+			// Release reader
+			reader?.cancel().catch(() => {});
+			reader = undefined;
 		}
 	})();
 
@@ -390,7 +407,7 @@ export function streamProxy(
 class ProxyMessageEventStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
 	constructor() {
 		super(
-			(event) => event.type === "done" || event.type === "error",
+			(event) => isTerminalEvent(event),
 			(event) => {
 				if (event.type === "done") return event.message;
 				if (event.type === "error") return event.error;

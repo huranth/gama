@@ -2,7 +2,7 @@ import type {
 	Api,
 	AssistantMessage,
 	AssistantMessageEvent,
-	AssistantMessageEventStream,
+	ReplyStream,
 	ImageContent,
 	JsonValue,
 	Message,
@@ -20,7 +20,7 @@ export type StreamFn = (
 	model: Model<Api>,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-) => AssistantMessageEventStream | Promise<AssistantMessageEventStream>;
+) => ReplyStream | Promise<ReplyStream>;
 
 export type ToolExecutionMode = "sequential" | "parallel";
 
