@@ -1,6 +1,6 @@
-# @huranth/chord
+# @huranth/gama-bus
 
-Composition runtime for services, replicated state, RPC and plugins.
+Application composition runtime for services, replicated state, RPC and plugins.
 
 Define a service or a facet, load it, and let the runtime do the wiring.
 

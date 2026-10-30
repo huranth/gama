@@ -1,8 +1,8 @@
 {
-	"name": "@huranth/chord",
+	"name": "@huranth/gama-bus",
 	"version": "1.0.3",
 	"private": true,
-	"description": "Application composition runtime for services, replicated state, RPC, and plugins",
+	"description": "Service composition and replicated state",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -13,14 +13,14 @@
 			"import": "./dist/index.js"
 		},
 		"./context": {
-			"source": "./src/context/index.ts",
-			"types": "./dist/context/index.d.ts",
-			"import": "./dist/context/index.js"
+			"source": "./src/scope/index.ts",
+			"types": "./dist/scope/index.d.ts",
+			"import": "./dist/scope/index.js"
 		},
 		"./delta": {
-			"source": "./src/delta/index.ts",
-			"types": "./dist/delta/index.d.ts",
-			"import": "./dist/delta/index.js"
+			"source": "./src/patch/index.ts",
+			"types": "./dist/patch/index.d.ts",
+			"import": "./dist/patch/index.js"
 		},
 		"./bundler": {
 			"source": "./src/bundler.ts",
@@ -28,9 +28,9 @@
 			"import": "./dist/bundler.js"
 		},
 		"./node": {
-			"source": "./src/node.ts",
-			"types": "./dist/node.d.ts",
-			"import": "./dist/node.js"
+			"source": "./src/host.ts",
+			"types": "./dist/host.d.ts",
+			"import": "./dist/host.js"
 		},
 		"./package.json": "./package.json"
 	},
@@ -57,7 +57,7 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/huranth/gama.git",
-		"directory": "packages/chord"
+		"directory": "packages/bus"
 	},
 	"engines": {
 		"node": ">=22.19.0"
