@@ -1,4 +1,4 @@
-import type { Context, Draft } from "@huranth/chord";
+import type { Context, Draft } from "@huranth/gama-bus";
 import type {
 	AssistantMessage,
 	Message,
@@ -7,7 +7,7 @@ import type {
 } from "@huranth/gama-ai";
 import { calculateContextTokens, estimateMessageTokens } from "@huranth/gama-ai/utils/estimate";
 import { isRetryableAssistantError, retryDelayMs } from "@huranth/gama-ai/utils/retry";
-import { CompactionEntry } from "../entries.ts";
+import { CompactionEntry } from "../messages.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
@@ -69,44 +69,43 @@ const TOOL_RESULT_MAX_CHARS = 2000;
 const SUMMARY_PREFIX =
 	"The conversation history before this point was compacted into the following summary:\n\n" +
 	"<summary>\n";
+
 const SUMMARY_SUFFIX = "\n</summary>";
 
 const SUMMARIZATION_PROMPT =
 	`The messages above are a conversation to summarize. ` +
-	`Create a structured context checkpoint summary that ` +
-	`another LLM will use to continue the work. If the ` +
-	`conversation starts with an earlier summary, preserve ` +
-	`its information and fold the newer messages into it.\n\n` +
-	`Use this EXACT format:
+	`Write a handoff checkpoint that another agent will read ` +
+	`instead of this history when it resumes the work. If the ` +
+	`conversation starts with an earlier checkpoint, rewrite it ` +
+	`as one current state.\n\n` +
+	`Use this exact format. Leave out any section that has nothing to say:
 
 ## Goal
-[What is the user trying to accomplish? Multiple tasks allowed.]
+[What the user wants]
 
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
+## Now
+- Done: [finished work]
+- Active: [work in progress]
+- Next: [the next concrete action]
 
-## Progress
-### Done
-- [x] [Completed tasks/changes]
+## Rules
+- [User constraints or preferences that still apply]
 
-### In Progress
-- [ ] [Current work]
+## Decisions
+- [What was decided and why]
 
-### Blocked
-- [Issues preventing progress, if any]
+## Open
+- [Unanswered questions, blockers, or unfinished requests]
 
-## Key Decisions
-- **[Decision]**: [Brief rationale]
+## Verified
+- [Command or check and its result]
 
-## Next Steps
-1. [Ordered list of what should happen next]
-
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Checkpoint rules:
+- One line per item, 20 words or less. No nested lists, no code blocks, no file contents.
+- Preserve exact paths, names, commands, numbers, and error text.
+- Write only what the next agent cannot recover by reading the files or running the code.
+- Do not describe the conversation or this checkpoint.
+- Newer information wins. Drop anything the work has moved past.`;
 
 const SUMMARIZATION_SYSTEM_PROMPT =
 	`You are a context summarization assistant. ` +
@@ -414,6 +413,7 @@ export const CompactionTask = defineTask<
 			if (model === undefined) return failNoModel(runtime, ref, context);
 			const view = await runtime.context(runtime.conversationId, context, tail);
 			const cut = view.entries.findIndex((entry) => entry.id === firstKept);
+			if (cut < 0) throw new Error("Missing entry");
 			const now = runtime.now();
 			const messages: Message[] = [
 				{ role: "system", content: SUMMARIZATION_SYSTEM_PROMPT, timestamp: now },

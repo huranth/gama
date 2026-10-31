@@ -1,9 +1,9 @@
-import { type Context, copyJson, type JsonValue } from "@huranth/chord";
-import { awaitWithContext } from "@huranth/chord/context";
-import { overlap } from "@huranth/chord/delta";
+import { type Context, copyJson, type JsonValue } from "@huranth/gama-bus";
+import { awaitWithContext } from "@huranth/gama-bus/context";
+import { overlap } from "@huranth/gama-bus/delta";
 import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@huranth/gama-ai";
 import { validateToolArguments } from "@huranth/gama-ai/utils/validation";
-import { AssistantEntry, ToolResultEntry } from "../entries.ts";
+import { AssistantEntry, ToolResultEntry } from "../messages.ts";
 import { defineTask } from "../tasks.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, utf8ByteLength } from "../truncate.ts";
 import type {
@@ -117,7 +117,7 @@ async function readCall(
 				)
 			: undefined;
 	if (call === undefined)
-		throw new Error(`Entry ${input.assistant} has no tool call ${input.callId}`);
+		throw new Error(`Missing call: ${input.callId}`);
 	return call;
 }
 
@@ -290,7 +290,7 @@ async function run(
 	const progress = publishProgress(runtime, reported, context);
 	let ended = false;
 	const assertLive = (): void => {
-		if (ended) throw new Error(`Tool call ${call.id} has settled`);
+		if (ended) throw new Error(`Tool settled: ${call.id}`);
 	};
 	const api: Omit<ToolExecutionApi, "env"> = {
 		taskId: runtime.taskId,
@@ -380,6 +380,53 @@ async function run(
 	}
 }
 
+function publishProgress(runtime: Runtime, reported: Reported, context: Context): Progress {
+	let written = { text: "", details: undefined as JsonValue | undefined, diagnostics: 0 };
+	return new Progress(
+		async () => {
+			const snapshot = reported.output.snapshot();
+			const current = {
+				text: snapshot.text,
+				details: reported.details,
+				diagnostics: reported.diagnostics.length,
+			};
+			const added = reported.diagnostics.slice(written.diagnostics, current.diagnostics);
+			const detailsChanged = current.details !== written.details;
+			let bytes = 0;
+			if (snapshot.text !== written.text) {
+				const shared = snapshot.text.startsWith(written.text)
+					? written.text.length
+					: overlap(written.text, snapshot.text, 65_536);
+				bytes += utf8ByteLength(snapshot.text.slice(shared));
+			}
+			if (detailsChanged) bytes += utf8ByteLength(JSON.stringify(current.details ?? null));
+			if (added.length > 0) bytes += utf8ByteLength(JSON.stringify(added));
+			await runtime.commit(async (tx) => {
+				const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
+				if (slot === undefined) return undefined;
+				if ((slot.output ?? "") !== snapshot.text) slot.output = snapshot.text;
+				if (snapshot.droppedBytes > 0) slot.droppedBytes = snapshot.droppedBytes;
+				if (snapshot.droppedLines > 0) slot.droppedLines = snapshot.droppedLines;
+				if (detailsChanged && current.details !== undefined) {
+					assignJson(slot as unknown as Record<string, JsonValue>, "details", current.details);
+				}
+				if (added.length > 0) {
+					if (slot.diagnostics === undefined) slot.diagnostics = [];
+					for (const diagnostic of added) {
+						slot.diagnostics.push(diagnostic);
+					}
+				}
+				return undefined;
+			}, context);
+			written = current;
+			return bytes;
+		},
+		(error) => {
+			if (!runtime.signal.aborted) runtime.report(error);
+		},
+	);
+}
+
 export const ToolTask = defineTask<ToolTaskInput, ToolTaskCheckpoint, ToolTaskResult, ToolHooks>({
 	name: "gama.tool",
 	version: 1,
@@ -464,49 +511,3 @@ export const ToolTask = defineTask<ToolTaskInput, ToolTaskCheckpoint, ToolTaskRe
 		);
 	},
 });
-function publishProgress(runtime: Runtime, reported: Reported, context: Context): Progress {
-	let written = { text: "", details: undefined as JsonValue | undefined, diagnostics: 0 };
-	return new Progress(
-		async () => {
-			const snapshot = reported.output.snapshot();
-			const current = {
-				text: snapshot.text,
-				details: reported.details,
-				diagnostics: reported.diagnostics.length,
-			};
-			const added = reported.diagnostics.slice(written.diagnostics, current.diagnostics);
-			const detailsChanged = current.details !== written.details;
-			let bytes = 0;
-			if (snapshot.text !== written.text) {
-				const shared = snapshot.text.startsWith(written.text)
-					? written.text.length
-					: overlap(written.text, snapshot.text, 65_536);
-				bytes += utf8ByteLength(snapshot.text.slice(shared));
-			}
-			if (detailsChanged) bytes += utf8ByteLength(JSON.stringify(current.details ?? null));
-			if (added.length > 0) bytes += utf8ByteLength(JSON.stringify(added));
-			await runtime.commit(async (tx) => {
-				const slot = toolSlot(await tx.doc(LiveDoc, runtime.conversationId), runtime.taskId);
-				if (slot === undefined) return undefined;
-				if ((slot.output ?? "") !== snapshot.text) slot.output = snapshot.text;
-				if (snapshot.droppedBytes > 0) slot.droppedBytes = snapshot.droppedBytes;
-				if (snapshot.droppedLines > 0) slot.droppedLines = snapshot.droppedLines;
-				if (detailsChanged && current.details !== undefined) {
-					assignJson(slot as unknown as Record<string, JsonValue>, "details", current.details);
-				}
-				if (added.length > 0) {
-					if (slot.diagnostics === undefined) slot.diagnostics = [];
-					for (const diagnostic of added) {
-						slot.diagnostics.push(diagnostic);
-					}
-				}
-				return undefined;
-			}, context);
-			written = current;
-			return bytes;
-		},
-		(error) => {
-			if (!runtime.signal.aborted) runtime.report(error);
-		},
-	);
-}

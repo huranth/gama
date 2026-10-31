@@ -1,9 +1,9 @@
-import type { AttachedReplicatedState, Context, JsonValue } from "@huranth/chord";
-import { withAbortSignal, withoutAbortSignal } from "@huranth/chord/context";
-import { ResetEntry } from "../entries.ts";
-import type { ExecutionEnv } from "../env/index.ts";
-import { SessionImpl } from "../session/session.ts";
-import type { Transaction } from "../session/transaction.ts";
+import type { AttachedReplicatedState, Context, JsonValue } from "@huranth/gama-bus";
+import { withAbortSignal, withoutAbortSignal } from "@huranth/gama-bus/context";
+import { ResetEntry } from "../messages.ts";
+import type { ExecutionEnv } from "../system/index.ts";
+import { SessionImpl } from "../records/session.ts";
+import type { Transaction } from "../records/transaction.ts";
 import type {
 	ConversationId,
 	ConversationOwnership,
@@ -123,7 +123,7 @@ export const Harness = {
 		);
 		if (missing.length > 0) {
 			const names = missing.map((task) => task.definition.name).join(", ");
-			throw new Error(`Registry lacks built-in tasks ${names}; create it with createRegistry()`);
+			throw new Error(`Missing tasks: ${names}`);
 		}
 		const harness = new HarnessImpl(storage, options, context);
 		try {
