@@ -1,5 +1,5 @@
-import type { Context, JsonValue } from "@huranth/chord";
-import { applyImmutableBatches, type Op } from "@huranth/chord/delta";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import { applyImmutableBatches, type Op } from "@huranth/gama-bus/delta";
 import { asStorageRejected, StorageRejected } from "../errors.ts";
 import { idFromNumber, seqFromNumber } from "../ids.ts";
 import type {
@@ -95,7 +95,7 @@ function* documentDeltaBatches(
 	for (let index = start; index < revisions.length; index++) {
 		const revision = revisions[index]!;
 		if (revision.kind !== "delta" || revision.version !== version) {
-			throw new Error(`Document ${id} crosses a stored version boundary without a base`);
+			throw new Error(`Missing base: ${id}`);
 		}
 		yield revision.ops;
 	}
@@ -114,8 +114,10 @@ const cursorId = <I extends Id<string>>(
 ): I | undefined => {
 	const after = cursor?.after;
 	if (after === undefined) return undefined;
-	if (typeof after !== "number" || !Number.isSafeInteger(after))
+	if (typeof after !== "number" || !Number.isSafeInteger(after)) {
 		throw new TypeError("Invalid storage cursor");
+	}
+
 	return idFromNumber<I>(after);
 };
 
@@ -147,8 +149,12 @@ const removeSorted = <I extends Id<string>>(ids: I[], id: I): void => {
 };
 
 const insertSorted = <I extends Id<string>>(ids: I[], id: I): void => {
-	if (ids.length === 0 || ids[ids.length - 1] < id) ids.push(id);
-	else ids.splice(lowerBound(ids, id), 0, id);
+	if (ids.length === 0 || ids[ids.length - 1] < id) {
+		ids.push(id);
+		return;
+	}
+
+	ids.splice(lowerBound(ids, id), 0, id);
 };
 
 const insertMapId = <K, I extends Id<string>>(index: Map<K, I[]>, key: K, id: I): void => {
@@ -264,12 +270,13 @@ export class MemoryStorage implements Storage {
 		let documentActions: Map<DocumentId, DocumentAction>;
 		try {
 			if (!Number.isSafeInteger(seq) || seq < this.nextSeq) {
-				throw new Error(`Commit sequence ${seq} does not strictly increase`);
+				throw new Error(`Invalid sequence: ${seq}`);
 			}
 			detachedWrites = freeze(this.resolveDocumentCopies(writes.map((write) => clone(write))));
 			this.checkGlobalIds(detachedWrites);
 			documentActions = this.prepareDocumentActions(detachedWrites);
 			this.checkDocumentActions(documentActions);
+			this.reserveNextId(detachedWrites);
 		} catch (error) {
 			throw asStorageRejected(error);
 		}
@@ -302,12 +309,12 @@ export class MemoryStorage implements Storage {
 			try {
 				if (changedDocumentIds.has(write.source.id)) {
 					throw new Error(
-						`Fork source document ${write.source.id} is changed in the copy batch`,
+						`Changed source: ${write.source.id}`,
 					);
 				}
 				const stored = this.materializeDocument(write.source.id, write.source.at);
 				if (stored === undefined)
-					throw new Error(`Fork source document ${write.source.id} cannot be read`);
+					throw new Error(`Unreadable source: ${write.source.id}`);
 				if (
 					stored.record.scope.kind !== "conversation" ||
 					write.record.scope.kind !== "conversation" ||
@@ -317,7 +324,7 @@ export class MemoryStorage implements Storage {
 					stored.record.fork !== write.record.fork
 				) {
 					throw new Error(
-						`Fork source document ${write.source.id} does not match the copied record`,
+						`Source mismatch: ${write.source.id}`,
 					);
 				}
 				return {
@@ -332,6 +339,26 @@ export class MemoryStorage implements Storage {
 				});
 			}
 		});
+	}
+
+	private reserveNextId(writes: readonly StorageWrite[]): void {
+		for (const write of writes) {
+			switch (write.type) {
+				case "conversation":
+				case "entry":
+				case "task":
+				case "submission":
+					this.nextId = Math.max(this.nextId, write.value.id + 1);
+					break;
+				case "document.create":
+				case "document.copy":
+					this.nextId = Math.max(this.nextId, write.record.id + 1);
+					break;
+				case "document.change":
+				case "document.retire":
+					this.nextId = Math.max(this.nextId, write.id + 1);
+			}
+		}
 	}
 
 	private applyPreparedCommit(
@@ -437,7 +464,7 @@ export class MemoryStorage implements Storage {
 					break;
 				}
 				case "document.copy":
-					throw new Error("Prepared document copy was not resolved");
+					throw new Error("Copy unresolved");
 				case "document.create":
 				case "document.change":
 				case "document.retire":
@@ -452,7 +479,7 @@ export class MemoryStorage implements Storage {
 
 	async mintId<I extends Id<string>>(): Promise<I> {
 		this.assertOpen();
-		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID space is exhausted");
+		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID exhausted");
 		return idFromNumber<I>(this.nextId++);
 	}
 
@@ -705,7 +732,7 @@ export class MemoryStorage implements Storage {
 		const stored = this.state.documents.get(id);
 		if (stored === undefined) return undefined;
 		if (at !== "current" && isCurrentOnly(stored.record)) {
-			throw new Error(`Document ${id} does not retain historical content`);
+			throw new Error(`No history: ${id}`);
 		}
 		if (!isAliveAt(stored.record, at)) return undefined;
 		const revisions =
@@ -717,7 +744,7 @@ export class MemoryStorage implements Storage {
 			baseIndex--;
 		}
 		const base = revisions[baseIndex];
-		if (base?.kind !== "base") throw new Error(`Document ${id} is missing a required base`);
+		if (base?.kind !== "base") throw new Error(`Missing base: ${id}`);
 		const value = applyImmutableBatches(
 			base.value,
 			documentDeltaBatches(id, base.version, revisions, baseIndex + 1),
@@ -765,14 +792,14 @@ export class MemoryStorage implements Storage {
 			const existing = tableContaining(this.state, id);
 			const earlier = claimed.get(id);
 			if (table === "conversation" || table === "entry" || table === "document") {
-				if (existing !== undefined) throw new Error(`ID ${id} already belongs to ${existing}`);
-				if (earlier !== undefined) throw new Error(`ID ${id} is written more than once`);
+				if (existing !== undefined) throw new Error(`Duplicate ID: ${id}`);
+				if (earlier !== undefined) throw new Error(`Duplicate ID: ${id}`);
 			} else {
 				if (existing !== undefined && existing !== table) {
-					throw new Error(`ID ${id} already belongs to ${existing}`);
+					throw new Error(`Duplicate ID: ${id}`);
 				}
 				if (earlier !== undefined && earlier !== table)
-					throw new Error(`ID ${id} is written as two record types`);
+					throw new Error(`Conflicting ID: ${id}`);
 			}
 			claimed.set(id, table);
 		}
@@ -799,18 +826,18 @@ export class MemoryStorage implements Storage {
 			switch (write.type) {
 				case "document.create":
 					if (action.create !== undefined || action.content !== undefined) {
-						throw new Error(`Document ${id} has more than one content command`);
+						throw new Error(`Duplicate content: ${id}`);
 					}
 					action.create = write.record;
 					action.content = write.content;
 					break;
 				case "document.change":
 					if (action.content !== undefined)
-						throw new Error(`Document ${id} has more than one content command`);
+						throw new Error(`Duplicate content: ${id}`);
 					action.content = write.content;
 					break;
 				case "document.retire":
-					if (action.retire) throw new Error(`Document ${id} is retired more than once`);
+					if (action.retire) throw new Error(`Duplicate retire: ${id}`);
 					action.retire = true;
 					break;
 			}
@@ -828,13 +855,13 @@ export class MemoryStorage implements Storage {
 			if (action.create === undefined && existing === undefined)
 				throw new Error(`Unknown document: ${id}`);
 			if (action.create !== undefined && existing !== undefined)
-				throw new Error(`Document ${id} already exists`);
-			if (existing?.record.retiredAt !== undefined) throw new Error(`Document ${id} is retired`);
+				throw new Error(`Duplicate document: ${id}`);
+			if (existing?.record.retiredAt !== undefined) throw new Error(`Retired document: ${id}`);
 			const previous = existing?.revisions.at(-1);
 			if (action.content?.kind === "delta") {
-				if (previous === undefined) throw new Error(`Document ${id} delta has no base`);
+				if (previous === undefined) throw new Error(`Missing base: ${id}`);
 				if (previous.version !== action.content.version) {
-					throw new Error(`Document ${id} version transition requires a base`);
+					throw new Error(`Missing base: ${id}`);
 				}
 			}
 
@@ -856,7 +883,7 @@ export class MemoryStorage implements Storage {
 
 		for (const counts of liveCounts.values()) {
 			if (counts.base + counts.created - counts.retired > 1) {
-				throw new Error("Document address already has a current incarnation");
+				throw new Error("Duplicate address");
 			}
 		}
 	}
@@ -908,6 +935,6 @@ export class MemoryStorage implements Storage {
 	}
 
 	private assertOpen(): void {
-		if (this.closed) throw new Error("MemoryStorage is closed");
+		if (this.closed) throw new Error("MemoryStorage closed");
 	}
 }
