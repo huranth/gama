@@ -15,6 +15,38 @@ const SECTION_KEY = /^[a-z][a-z0-9_-]*$/;
 
 export const BUILTIN_TASKS: readonly AnyTask[] = [GenerationTask, ToolTask, CompactionTask];
 
+export function createRegistry<Tool extends ToolRegistration = ToolRegistration>(): Registry<Tool> {
+	return new RegistryImpl<Tool>();
+}
+
+function validateExtension(extension: Extension): void {
+	const tools = new Set<string>();
+	for (const tool of extension.tools ?? []) {
+		if (tools.has(tool.name)) {
+			throw new Error(`Duplicate tool: ${tool.name}`);
+		}
+
+		tools.add(tool.name);
+	}
+
+	const sections = new Set<string>();
+	for (const { key } of extension.sections ?? []) {
+		if (!SECTION_KEY.test(key)) {
+			throw new TypeError(`Section key ${JSON.stringify(key)} must match ${SECTION_KEY}`);
+		}
+
+		if (key === INSTRUCTIONS_KEY) {
+			throw new Error(`Reserved key: ${key}`);
+		}
+
+		if (sections.has(key)) {
+			throw new Error(`Duplicate section: ${key}`);
+		}
+
+		sections.add(key);
+	}
+}
+
 class RegistryState<Tool extends ToolRegistration> implements RegistrySnapshot<Tool> {
 	readonly #extensions: readonly Extension<Tool>[];
 	readonly #byName: ReadonlyMap<string, Extension<Tool>>;
@@ -33,7 +65,7 @@ class RegistryState<Tool extends ToolRegistration> implements RegistrySnapshot<T
 			for (const task of extension.tasks ?? []) {
 				const name = task.definition.name;
 				if (tasks.has(name)) {
-					throw new Error(`Task ${name} of extension ${extension.name} is already installed`);
+					throw new Error(`Duplicate task: ${name}`);
 				}
 
 				tasks.set(name, task);
@@ -117,37 +149,5 @@ class RegistryImpl<Tool extends ToolRegistration> implements Registry<Tool> {
 		for (const listener of [...this.#listeners]) {
 			listener();
 		}
-	}
-}
-
-export function createRegistry<Tool extends ToolRegistration = ToolRegistration>(): Registry<Tool> {
-	return new RegistryImpl<Tool>();
-}
-
-function validateExtension(extension: Extension): void {
-	const tools = new Set<string>();
-	for (const tool of extension.tools ?? []) {
-		if (tools.has(tool.name)) {
-			throw new Error(`Extension ${extension.name} has two tools named ${tool.name}`);
-		}
-
-		tools.add(tool.name);
-	}
-
-	const sections = new Set<string>();
-	for (const { key } of extension.sections ?? []) {
-		if (!SECTION_KEY.test(key)) {
-			throw new TypeError(`Section key ${JSON.stringify(key)} must match ${SECTION_KEY}`);
-		}
-
-		if (key === INSTRUCTIONS_KEY) {
-			throw new Error(`Section key ${key} is reserved for the agent's instructions`);
-		}
-
-		if (sections.has(key)) {
-			throw new Error(`Extension ${extension.name} has two sections with key ${key}`);
-		}
-
-		sections.add(key);
 	}
 }

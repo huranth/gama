@@ -1,4 +1,4 @@
-import type { JsonValue } from "@huranth/chord";
+import type { JsonValue } from "@huranth/gama-bus";
 import type { TSchema } from "@huranth/gama-ai";
 import type {
 	AnyTask,

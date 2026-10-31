@@ -1,4 +1,4 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import type { Cursor, Page } from "../types.ts";
 
 export const SCAN_PAGE_SIZE = 256;
@@ -38,6 +38,7 @@ export class Waiters<K, T> {
 				waiter.reject(signal.reason);
 			};
 			signal.addEventListener("abort", onAbort, { once: true });
+			if (signal.aborted) onAbort();
 			const detach = (): void => signal.removeEventListener("abort", onAbort);
 			waiter.promise.then(detach, detach);
 		}

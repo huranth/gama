@@ -1,5 +1,5 @@
-import { copyJson, type Draft } from "@huranth/chord";
-import { defineDoc } from "../documents.ts";
+import { copyJson, type Draft } from "@huranth/gama-bus";
+import { defineDoc } from "../docs.ts";
 import type { ConversationId, ConversationRecord, Tx } from "../types.ts";
 import type {
 	Agent,
@@ -15,18 +15,30 @@ import type {
 	ToolRegistration,
 } from "./types.ts";
 
+const DEFAULT_MAX_RETRIES = 3;
+
+const DEFAULT_RETRY_BASE_DELAY_MS = 2000;
+
+const DEFAULT_MAX_AGENT_DELAY_MS = 60000;
+
+const DEFAULT_RESERVE_TOKENS = 16384;
+
+const DEFAULT_KEEP_RECENT_TOKENS = 20000;
+
+const DEFAULT_BACKGROUND_TOKENS = 32768;
+
 export const DEFAULT_RETRY_POLICY: ConversationRetryPolicy = {
 	enabled: true,
-	maxRetries: 3,
-	baseDelayMs: 2000,
-	maxAgentDelayMs: 60000,
+	maxRetries: DEFAULT_MAX_RETRIES,
+	baseDelayMs: DEFAULT_RETRY_BASE_DELAY_MS,
+	maxAgentDelayMs: DEFAULT_MAX_AGENT_DELAY_MS,
 };
 
 export const DEFAULT_COMPACTION_POLICY: CompactionPolicy = {
 	enabled: true,
-	reserveTokens: 16384,
-	keepRecentTokens: 20000,
-	backgroundTokens: 32768,
+	reserveTokens: DEFAULT_RESERVE_TOKENS,
+	keepRecentTokens: DEFAULT_KEEP_RECENT_TOKENS,
+	backgroundTokens: DEFAULT_BACKGROUND_TOKENS,
 };
 
 export const INSTRUCTIONS_KEY = "instructions";
@@ -120,6 +132,31 @@ export async function addTools(
 	}
 }
 
+function isList<T>(value: readonly T[] | object): value is readonly T[] {
+	return Array.isArray(value);
+}
+
+function names(items: readonly { readonly name: string }[]): string[] {
+	return items.map((item) => item.name);
+}
+
+function setField<K extends keyof AgentState>(
+	state: Draft<AgentState>,
+	key: K,
+	value: AgentState[K] | null | undefined,
+): void {
+	if (value === undefined) {
+		return;
+	}
+
+	if (value === null) {
+		delete state[key];
+		return;
+	}
+
+	state[key] = value as Draft<AgentState>[K];
+}
+
 export function resolveAgent<Tool extends ToolRegistration>(
 	state: Readonly<AgentState> | undefined,
 	snapshot: RegistrySnapshot<Tool>,
@@ -147,31 +184,6 @@ export function resolveAgent<Tool extends ToolRegistration>(
 	};
 
 	return agent;
-}
-
-function isList<T>(value: readonly T[] | object): value is readonly T[] {
-	return Array.isArray(value);
-}
-
-function names(items: readonly { readonly name: string }[]): string[] {
-	return items.map((item) => item.name);
-}
-
-function setField<K extends keyof AgentState>(
-	state: Draft<AgentState>,
-	key: K,
-	value: AgentState[K] | null | undefined,
-): void {
-	if (value === undefined) {
-		return;
-	}
-
-	if (value === null) {
-		delete state[key];
-		return;
-	}
-
-	state[key] = value as Draft<AgentState>[K];
 }
 
 function toExtensions(
@@ -238,7 +250,7 @@ function applyWrap<T>(
 		const wrapped = wrap(item);
 
 		if (nameOf(wrapped) !== target) {
-			throw new Error(`Wrapper renamed ${target} to ${nameOf(wrapped)}`);
+			throw new Error(`Wrapper renamed: ${target}`);
 		}
 
 		items.set(target, wrapped);

@@ -1,4 +1,4 @@
-import type { JsonValue } from "@huranth/chord";
+import type { JsonValue } from "@huranth/gama-bus";
 
 function isRecord(value: JsonValue | undefined): value is Record<string, JsonValue> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);

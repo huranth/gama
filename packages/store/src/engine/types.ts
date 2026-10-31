@@ -1,4 +1,4 @@
-import type { AttachedReplicatedState, Context, JsonValue } from "@huranth/chord";
+import type { AttachedReplicatedState, Context, JsonValue } from "@huranth/gama-bus";
 import type {
 	AssistantMessage,
 	CacheRetention,
@@ -14,7 +14,7 @@ import type {
 	Usage,
 	UserMessage,
 } from "@huranth/gama-ai";
-import type { ExecutionEnv } from "../env/index.ts";
+import type { ExecutionEnv } from "../system/index.ts";
 import type {
 	ConversationId,
 	ConversationOwnership,
