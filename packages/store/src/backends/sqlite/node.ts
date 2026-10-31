@@ -13,6 +13,7 @@ export type NodeSqliteStorageOptions = {
 type TransactionScope = { active: boolean };
 
 const DEFAULT_WAL_AUTO_CHECKPOINT_PAGES = 1_000;
+
 const DEFAULT_BUSY_TIMEOUT_MS = 5_000;
 
 const ignore = (): void => {};
@@ -22,6 +23,28 @@ export async function openNodeSqliteStorage(
 	options: NodeSqliteStorageOptions = {},
 ): Promise<SqliteStorage> {
 	return SqliteStorage.open(await openNodeSqliteDatabase(path, options));
+}
+
+export async function openNodeSqliteDatabase(
+	path: string,
+	options: NodeSqliteStorageOptions = {},
+): Promise<NodeSqliteDatabase> {
+	const checkpointPages = options.walAutoCheckpointPages ?? DEFAULT_WAL_AUTO_CHECKPOINT_PAGES;
+	const timeout = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
+	if (path !== ":memory:") await mkdir(dirname(path), { recursive: true });
+	const database = new DatabaseSync(path, { timeout });
+	const adapter = new NodeSqliteDatabase(database);
+	try {
+		await adapter.exec("PRAGMA journal_mode = WAL");
+		await adapter.exec("PRAGMA synchronous = NORMAL");
+		await adapter.exec(`PRAGMA wal_autocheckpoint = ${checkpointPages}`);
+		return adapter;
+	} catch (error) {
+		try {
+			await adapter.close();
+		} catch {}
+		throw error;
+	}
 }
 
 abstract class NodeSqliteExecutor implements SqliteExecutor {
@@ -78,7 +101,7 @@ class NodeSqliteTransaction extends NodeSqliteExecutor {
 	}
 
 	protected async runOperation<T>(operation: () => T): Promise<T> {
-		if (!this.scope.active) throw new Error("SQLite transaction handle is no longer active");
+		if (!this.scope.active) throw new Error("Transaction inactive");
 		return operation();
 	}
 }
@@ -176,27 +199,5 @@ export class NodeSqliteDatabase extends NodeSqliteExecutor implements SqliteData
 
 	protected runOperation<T>(operation: () => T): Promise<T> {
 		return this.access.run(operation);
-	}
-}
-
-export async function openNodeSqliteDatabase(
-	path: string,
-	options: NodeSqliteStorageOptions = {},
-): Promise<NodeSqliteDatabase> {
-	const checkpointPages = options.walAutoCheckpointPages ?? DEFAULT_WAL_AUTO_CHECKPOINT_PAGES;
-	const timeout = options.busyTimeoutMs ?? DEFAULT_BUSY_TIMEOUT_MS;
-	if (path !== ":memory:") await mkdir(dirname(path), { recursive: true });
-	const database = new DatabaseSync(path, { timeout });
-	const adapter = new NodeSqliteDatabase(database);
-	try {
-		await adapter.exec("PRAGMA journal_mode = WAL");
-		await adapter.exec("PRAGMA synchronous = NORMAL");
-		await adapter.exec(`PRAGMA wal_autocheckpoint = ${checkpointPages}`);
-		return adapter;
-	} catch (error) {
-		try {
-			await adapter.close();
-		} catch {}
-		throw error;
 	}
 }

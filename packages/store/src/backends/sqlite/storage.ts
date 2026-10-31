@@ -1,5 +1,5 @@
-import type { Context, JsonValue } from "@huranth/chord";
-import { apply, type Op } from "@huranth/chord/delta";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import { apply, type Op } from "@huranth/gama-bus/delta";
 import { asStorageRejected, StorageRejected } from "../../errors.ts";
 import { idFromNumber, seqFromNumber } from "../../ids.ts";
 import type {
@@ -67,8 +67,18 @@ type ScopeColumns = {
 	readonly ownerId: number;
 };
 
-const parseJson = <T>(value: string): T => JSON.parse(value) as T;
+const parseJson = <T>(value: string): T => {
+	try {
+		return JSON.parse(value) as T;
+	} catch (error) {
+		throw new StorageRejected(error instanceof Error ? error.message : String(error), {
+			cause: error,
+		});
+	}
+};
+
 const encodeJson = (value: unknown): string => JSON.stringify(value) as string;
+
 const cursorId = <I extends Id<string>>(cursor: Cursor | undefined): I | undefined => {
 	const after = cursor?.after;
 	if (after === undefined) return undefined;
@@ -165,7 +175,7 @@ export class SqliteStorage implements Storage {
 			const metadata = await db.get<MetadataRow>(
 				"SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1",
 			);
-			if (metadata === undefined) throw new Error("Durable SQLite metadata is missing");
+			if (metadata === undefined) throw new Error("Missing metadata");
 			return new SqliteStorage(db, Number(metadata.next_id));
 		} catch (error) {
 			try {
@@ -186,7 +196,7 @@ export class SqliteStorage implements Storage {
 				const metadata = await transaction.get<MetadataRow>(
 					"SELECT next_id, next_seq FROM durable_metadata WHERE singleton = 1",
 				);
-				if (metadata === undefined) throw new Error("Durable SQLite metadata is missing");
+				if (metadata === undefined) throw new Error("Missing metadata");
 				const committedSeq = seqFromNumber(metadata.next_seq);
 				await this.checkGlobalIds(transaction, writes);
 				await this.checkDocumentActions(transaction, documentActions);
@@ -203,13 +213,14 @@ export class SqliteStorage implements Storage {
 		} catch (error) {
 			throw asStorageRejected(error);
 		}
+
 		this.nextId = Math.max(this.nextId, candidateNextId);
 		return seq;
 	}
 
 	async mintId<I extends Id<string>>(): Promise<I> {
 		this.assertOpen();
-		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID space is exhausted");
+		if (!Number.isSafeInteger(this.nextId)) throw new Error("ID exhausted");
 		return idFromNumber<I>(this.nextId++);
 	}
 
@@ -217,9 +228,10 @@ export class SqliteStorage implements Storage {
 		id: ConversationId,
 		_context: Context,
 	): Promise<ConversationRecord | undefined> {
-		this.assertOpen();
-		const row = await this.db.get<JsonRow>("SELECT record FROM conversations WHERE id = ?", id);
-		return row === undefined ? undefined : parseJson<ConversationRecord>(row.record);
+		return this.admitRead(async () => {
+			const row = await this.db.get<JsonRow>("SELECT record FROM conversations WHERE id = ?", id);
+			return row === undefined ? undefined : parseJson<ConversationRecord>(row.record);
+		});
 	}
 
 	async scanConversations(
@@ -228,26 +240,27 @@ export class SqliteStorage implements Storage {
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<ConversationRecord, Cursor>> {
-		this.assertOpen();
-		const clauses = ["id > ?"];
-		const params: SqliteValue[] = [cursorId(cursor) ?? -1];
-		if (query.ownerConversationId !== undefined) {
-			clauses.push("owner_conversation_id = ?");
-			params.push(query.ownerConversationId);
-		}
-		if (query.ownerTaskId !== undefined) {
-			clauses.push("owner_task_id = ?");
-			params.push(query.ownerTaskId);
-		}
-		params.push(limit + 1);
-		const rows = await this.db.all<JsonRow>(
-			`SELECT record FROM conversations WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
-			...params,
-		);
-		return page(
-			rows.map((row) => parseJson<ConversationRecord>(row.record)),
-			limit,
-		);
+		return this.admitRead(async () => {
+			const clauses = ["id > ?"];
+			const params: SqliteValue[] = [cursorId(cursor) ?? -1];
+			if (query.ownerConversationId !== undefined) {
+				clauses.push("owner_conversation_id = ?");
+				params.push(query.ownerConversationId);
+			}
+			if (query.ownerTaskId !== undefined) {
+				clauses.push("owner_task_id = ?");
+				params.push(query.ownerTaskId);
+			}
+			params.push(limit + 1);
+			const rows = await this.db.all<JsonRow>(
+				`SELECT record FROM conversations WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
+				...params,
+			);
+			return page(
+				rows.map((row) => parseJson<ConversationRecord>(row.record)),
+				limit,
+			);
+		});
 	}
 
 	entry(
@@ -313,7 +326,7 @@ export class SqliteStorage implements Storage {
 			while (conversation.id !== entry.conversationId) {
 				if (conversation.parent === undefined) return undefined;
 				upperEntryId = Math.min(upperEntryId, conversation.parent.at);
-				conversation = (await this.readConversation(conversation.parent.conversationId))!;
+				conversation = await this.requireConversation(conversation.parent.conversationId);
 			}
 			if (entry.id > upperEntryId) return undefined;
 		}
@@ -346,7 +359,7 @@ export class SqliteStorage implements Storage {
 			if (conversation.parent === undefined) return undefined;
 			upper =
 				upper === undefined ? conversation.parent.at : Math.min(upper, conversation.parent.at);
-			conversation = (await this.readConversation(conversation.parent.conversationId))!;
+			conversation = await this.requireConversation(conversation.parent.conversationId);
 		}
 	}
 
@@ -383,15 +396,16 @@ export class SqliteStorage implements Storage {
 			upper =
 				upper === undefined ? conversation.parent.at : Math.min(upper, conversation.parent.at);
 			if (query.minEntryId !== undefined && upper < query.minEntryId) break;
-			conversation = (await this.readConversation(conversation.parent.conversationId))!;
+			conversation = await this.requireConversation(conversation.parent.conversationId);
 		}
 		return page(values, limit);
 	}
 
 	async task(id: TaskId, _context: Context): Promise<StoredTask | undefined> {
-		this.assertOpen();
-		const row = await this.db.get<JsonRow>("SELECT record FROM tasks WHERE id = ?", id);
-		return row === undefined ? undefined : parseJson<StoredTask>(row.record);
+		return this.admitRead(async () => {
+			const row = await this.db.get<JsonRow>("SELECT record FROM tasks WHERE id = ?", id);
+			return row === undefined ? undefined : parseJson<StoredTask>(row.record);
+		});
 	}
 
 	async scanTasks(
@@ -400,44 +414,46 @@ export class SqliteStorage implements Storage {
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<StoredTask, Cursor>> {
-		this.assertOpen();
-		const clauses = ["id > ?"];
-		const params: SqliteValue[] = [cursorId(cursor) ?? -1];
-		if (query.conversationId !== undefined) {
-			clauses.push("conversation_id = ?");
-			params.push(query.conversationId);
-		}
-		if (query.kind !== undefined) {
-			clauses.push("kind = ?");
-			params.push(encodeIndexedString(query.kind));
-		}
-		if (query.status !== undefined) {
-			clauses.push("status = ?");
-			params.push(query.status);
-		}
-		if (query.abortRequested !== undefined) {
-			clauses.push("abort_requested = ?");
-			params.push(query.abortRequested ? 1 : 0);
-		}
-		if (query.background !== undefined) {
-			clauses.push("background = ?");
-			params.push(query.background ? 1 : 0);
-		}
-		params.push(limit + 1);
-		const rows = await this.db.all<JsonRow>(
-			`SELECT record FROM tasks WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
-			...params,
-		);
-		return page(
-			rows.map((row) => parseJson<StoredTask>(row.record)),
-			limit,
-		);
+		return this.admitRead(async () => {
+			const clauses = ["id > ?"];
+			const params: SqliteValue[] = [cursorId(cursor) ?? -1];
+			if (query.conversationId !== undefined) {
+				clauses.push("conversation_id = ?");
+				params.push(query.conversationId);
+			}
+			if (query.kind !== undefined) {
+				clauses.push("kind = ?");
+				params.push(encodeIndexedString(query.kind));
+			}
+			if (query.status !== undefined) {
+				clauses.push("status = ?");
+				params.push(query.status);
+			}
+			if (query.abortRequested !== undefined) {
+				clauses.push("abort_requested = ?");
+				params.push(query.abortRequested ? 1 : 0);
+			}
+			if (query.background !== undefined) {
+				clauses.push("background = ?");
+				params.push(query.background ? 1 : 0);
+			}
+			params.push(limit + 1);
+			const rows = await this.db.all<JsonRow>(
+				`SELECT record FROM tasks WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
+				...params,
+			);
+			return page(
+				rows.map((row) => parseJson<StoredTask>(row.record)),
+				limit,
+			);
+		});
 	}
 
 	async submission(id: SubmissionId, _context: Context): Promise<SubmissionRecord | undefined> {
-		this.assertOpen();
-		const row = await this.db.get<JsonRow>("SELECT record FROM submissions WHERE id = ?", id);
-		return row === undefined ? undefined : parseJson<SubmissionRecord>(row.record);
+		return this.admitRead(async () => {
+			const row = await this.db.get<JsonRow>("SELECT record FROM submissions WHERE id = ?", id);
+			return row === undefined ? undefined : parseJson<SubmissionRecord>(row.record);
+		});
 	}
 
 	async scanSubmissions(
@@ -446,26 +462,27 @@ export class SqliteStorage implements Storage {
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<SubmissionRecord, Cursor>> {
-		this.assertOpen();
-		const clauses = ["id > ?"];
-		const params: SqliteValue[] = [cursorId(cursor) ?? -1];
-		if (query.conversationId !== undefined) {
-			clauses.push("conversation_id = ?");
-			params.push(query.conversationId);
-		}
-		if (query.status !== undefined) {
-			clauses.push("status = ?");
-			params.push(query.status);
-		}
-		params.push(limit + 1);
-		const rows = await this.db.all<JsonRow>(
-			`SELECT record FROM submissions WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
-			...params,
-		);
-		return page(
-			rows.map((row) => parseJson<SubmissionRecord>(row.record)),
-			limit,
-		);
+		return this.admitRead(async () => {
+			const clauses = ["id > ?"];
+			const params: SqliteValue[] = [cursorId(cursor) ?? -1];
+			if (query.conversationId !== undefined) {
+				clauses.push("conversation_id = ?");
+				params.push(query.conversationId);
+			}
+			if (query.status !== undefined) {
+				clauses.push("status = ?");
+				params.push(query.status);
+			}
+			params.push(limit + 1);
+			const rows = await this.db.all<JsonRow>(
+				`SELECT record FROM submissions WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
+				...params,
+			);
+			return page(
+				rows.map((row) => parseJson<SubmissionRecord>(row.record)),
+				limit,
+			);
+		});
 	}
 
 	async submissionByRequest(
@@ -473,13 +490,14 @@ export class SqliteStorage implements Storage {
 		requestId: string,
 		_context: Context,
 	): Promise<SubmissionRecord | undefined> {
-		this.assertOpen();
-		const row = await this.db.get<JsonRow>(
-			"SELECT record FROM submissions WHERE conversation_id = ? AND request_id = ?",
-			conversationId,
-			encodeIndexedString(requestId),
-		);
-		return row === undefined ? undefined : parseJson<SubmissionRecord>(row.record);
+		return this.admitRead(async () => {
+			const row = await this.db.get<JsonRow>(
+				"SELECT record FROM submissions WHERE conversation_id = ? AND request_id = ?",
+				conversationId,
+				encodeIndexedString(requestId),
+			);
+			return row === undefined ? undefined : parseJson<SubmissionRecord>(row.record);
+		});
 	}
 
 	async findDocument(
@@ -487,27 +505,28 @@ export class SqliteStorage implements Storage {
 		at: DocumentPoint,
 		_context: Context,
 	): Promise<DocumentRecord | undefined> {
-		this.assertOpen();
-		const parts = addressParts(address);
-		const sql =
-			at === "current"
-				? `SELECT record FROM documents
-					WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ?
-					AND retired_at IS NULL ORDER BY created_at DESC LIMIT 1`
-				: `SELECT record FROM documents
-					WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ?
-					AND created_at <= ? AND (retired_at IS NULL OR retired_at > ?)
-					ORDER BY created_at DESC LIMIT 1`;
-		const params: SqliteValue[] = [
-			parts.kind,
-			parts.scopeKind,
-			parts.ownerId,
-			parts.family,
-			parts.keyValue,
-		];
-		if (at !== "current") params.push(at, at);
-		const row = await this.db.get<JsonRow>(sql, ...params);
-		return row === undefined ? undefined : parseJson<DocumentRecord>(row.record);
+		return this.admitRead(async () => {
+			const parts = addressParts(address);
+			const sql =
+				at === "current"
+					? `SELECT record FROM documents
+						WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ?
+						AND retired_at IS NULL ORDER BY created_at DESC LIMIT 1`
+					: `SELECT record FROM documents
+						WHERE kind = ? AND scope_kind = ? AND owner_id = ? AND family = ? AND key_value = ?
+						AND created_at <= ? AND (retired_at IS NULL OR retired_at > ?)
+						ORDER BY created_at DESC LIMIT 1`;
+			const params: SqliteValue[] = [
+				parts.kind,
+				parts.scopeKind,
+				parts.ownerId,
+				parts.family,
+				parts.keyValue,
+			];
+			if (at !== "current") params.push(at, at);
+			const row = await this.db.get<JsonRow>(sql, ...params);
+			return row === undefined ? undefined : parseJson<DocumentRecord>(row.record);
+		});
 	}
 
 	async document(
@@ -515,8 +534,9 @@ export class SqliteStorage implements Storage {
 		at: DocumentPoint,
 		_context: Context,
 	): Promise<StoredDocument | undefined> {
-		this.assertOpen();
-		return this.db.transaction((transaction) => this.materializeDocument(transaction, id, at));
+		return this.admitRead(() =>
+			this.db.transaction((transaction) => this.materializeDocument(transaction, id, at)),
+		);
 	}
 
 	async scanDocuments(
@@ -525,29 +545,30 @@ export class SqliteStorage implements Storage {
 		cursor: Cursor | undefined,
 		_context: Context,
 	): Promise<Page<DocumentRecord, Cursor>> {
-		this.assertOpen();
-		const scope = scopeColumns(query.scope);
-		const clauses = ["scope_kind = ?", "owner_id = ?", "id > ?"];
-		const params: SqliteValue[] = [scope.scopeKind, scope.ownerId, cursorId(cursor) ?? -1];
-		if (query.kind !== undefined) {
-			clauses.push("kind = ?");
-			params.push(encodeIndexedString(query.kind));
-		}
-		if (query.at === "current") {
-			clauses.push("retired_at IS NULL");
-		} else {
-			clauses.push("created_at <= ?", "(retired_at IS NULL OR retired_at > ?)");
-			params.push(query.at, query.at);
-		}
-		params.push(limit + 1);
-		const rows = await this.db.all<JsonRow>(
-			`SELECT record FROM documents WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
-			...params,
-		);
-		return page(
-			rows.map((row) => parseJson<DocumentRecord>(row.record)),
-			limit,
-		);
+		return this.admitRead(async () => {
+			const scope = scopeColumns(query.scope);
+			const clauses = ["scope_kind = ?", "owner_id = ?", "id > ?"];
+			const params: SqliteValue[] = [scope.scopeKind, scope.ownerId, cursorId(cursor) ?? -1];
+			if (query.kind !== undefined) {
+				clauses.push("kind = ?");
+				params.push(encodeIndexedString(query.kind));
+			}
+			if (query.at === "current") {
+				clauses.push("retired_at IS NULL");
+			} else {
+				clauses.push("created_at <= ?", "(retired_at IS NULL OR retired_at > ?)");
+				params.push(query.at, query.at);
+			}
+			params.push(limit + 1);
+			const rows = await this.db.all<JsonRow>(
+				`SELECT record FROM documents WHERE ${clauses.join(" AND ")} ORDER BY id LIMIT ?`,
+				...params,
+			);
+			return page(
+				rows.map((row) => parseJson<DocumentRecord>(row.record)),
+				limit,
+			);
+		});
 	}
 
 	close(_context: Context): Promise<void> {
@@ -582,6 +603,12 @@ export class SqliteStorage implements Storage {
 		return row === undefined ? undefined : parseJson<ConversationRecord>(row.record);
 	}
 
+	private async requireConversation(id: ConversationId): Promise<ConversationRecord> {
+		const conversation = await this.readConversation(id);
+		if (conversation === undefined) throw new Error(`Unknown conversation: ${id}`);
+		return conversation;
+	}
+
 	private async materializeDocument(
 		executor: SqliteExecutor,
 		id: DocumentId,
@@ -591,7 +618,7 @@ export class SqliteStorage implements Storage {
 		if (row === undefined) return undefined;
 		const record = parseJson<DocumentRecord>(row.record);
 		if (at !== "current" && isCurrentOnly(record)) {
-			throw new Error(`Document ${id} does not retain historical content`);
+			throw new Error(`No history: ${id}`);
 		}
 		if (!isAliveAt(record, at)) return undefined;
 		const upper = at === "current" ? Number.MAX_SAFE_INTEGER : at;
@@ -601,7 +628,7 @@ export class SqliteStorage implements Storage {
 			id,
 			upper,
 		);
-		if (base === undefined) throw new Error(`Document ${id} is missing a required base`);
+		if (base === undefined) throw new Error(`Missing base: ${id}`);
 		let value = parseJson<JsonObject>(base.content);
 		const tail = await executor.all<RevisionRow>(
 			`SELECT seq, kind, version, content FROM document_revisions
@@ -612,7 +639,7 @@ export class SqliteStorage implements Storage {
 		);
 		for (const revision of tail) {
 			if (revision.kind !== "delta" || revision.version !== base.version) {
-				throw new Error(`Document ${id} crosses a stored version boundary without a base`);
+				throw new Error(`Missing base: ${id}`);
 			}
 			value = apply(value, parseJson<readonly Op[]>(revision.content)) as JsonObject;
 		}
@@ -643,13 +670,13 @@ export class SqliteStorage implements Storage {
 			)?.record_type;
 			const earlier = claimed.get(id);
 			if (table === "conversation" || table === "entry" || table === "document") {
-				if (existing !== undefined) throw new Error(`ID ${id} already belongs to ${existing}`);
-				if (earlier !== undefined) throw new Error(`ID ${id} is written more than once`);
+				if (existing !== undefined) throw new Error(`Duplicate ID: ${id}`);
+				if (earlier !== undefined) throw new Error(`Duplicate ID: ${id}`);
 			} else {
 				if (existing !== undefined && existing !== table)
-					throw new Error(`ID ${id} already belongs to ${existing}`);
+					throw new Error(`Duplicate ID: ${id}`);
 				if (earlier !== undefined && earlier !== table)
-					throw new Error(`ID ${id} is written as two record types`);
+					throw new Error(`Conflicting ID: ${id}`);
 			}
 			claimed.set(id, table);
 		}
@@ -684,7 +711,7 @@ export class SqliteStorage implements Storage {
 						action.content !== undefined ||
 						action.copy !== undefined
 					) {
-						throw new Error(`Document ${id} has more than one content command`);
+						throw new Error(`Duplicate content: ${id}`);
 					}
 					action.create = write.record;
 					action.content = write.content;
@@ -695,19 +722,19 @@ export class SqliteStorage implements Storage {
 						action.content !== undefined ||
 						action.copy !== undefined
 					) {
-						throw new Error(`Document ${id} has more than one content command`);
+						throw new Error(`Duplicate content: ${id}`);
 					}
 					action.create = write.record;
 					action.copy = write.source;
 					break;
 				case "document.change":
 					if (action.content !== undefined || action.copy !== undefined) {
-						throw new Error(`Document ${id} has more than one content command`);
+						throw new Error(`Duplicate content: ${id}`);
 					}
 					action.content = write.content;
 					break;
 				case "document.retire":
-					if (action.retire) throw new Error(`Document ${id} is retired more than once`);
+					if (action.retire) throw new Error(`Duplicate retire: ${id}`);
 					action.retire = true;
 					break;
 			}
@@ -733,16 +760,16 @@ export class SqliteStorage implements Storage {
 			if (action.create === undefined && existing === undefined)
 				throw new Error(`Unknown document: ${id}`);
 			if (action.create !== undefined && existing !== undefined)
-				throw new Error(`Document ${id} already exists`);
-			if (existing?.retiredAt !== undefined) throw new Error(`Document ${id} is retired`);
+				throw new Error(`Duplicate document: ${id}`);
+			if (existing?.retiredAt !== undefined) throw new Error(`Retired document: ${id}`);
 			if (action.content?.kind === "delta") {
 				const previous = await executor.get<{ readonly version: number }>(
 					"SELECT version FROM document_revisions WHERE document_id = ? ORDER BY seq DESC LIMIT 1",
 					id,
 				);
-				if (previous === undefined) throw new Error(`Document ${id} delta has no base`);
+				if (previous === undefined) throw new Error(`Missing base: ${id}`);
 				if (previous.version !== action.content.version) {
-					throw new Error(`Document ${id} version transition requires a base`);
+					throw new Error(`Missing base: ${id}`);
 				}
 			}
 			const record = action.create ?? existing!;
@@ -760,7 +787,7 @@ export class SqliteStorage implements Storage {
 		}
 		for (const counts of liveCounts.values()) {
 			if (counts.base + counts.created - counts.retired > 1) {
-				throw new Error("Document address already has a current incarnation");
+				throw new Error("Duplicate address");
 			}
 		}
 	}
@@ -888,7 +915,7 @@ export class SqliteStorage implements Storage {
 						action.copy.at,
 					);
 					if (stored === undefined)
-						throw new Error(`Fork source document ${action.copy.id} cannot be read`);
+						throw new Error(`Unreadable source: ${action.copy.id}`);
 					const create = action.create!;
 					if (
 						stored.record.scope.kind !== "conversation" ||
@@ -899,7 +926,7 @@ export class SqliteStorage implements Storage {
 						stored.record.fork !== create.fork
 					) {
 						throw new Error(
-							`Fork source document ${action.copy.id} does not match the copied record`,
+							`Source mismatch: ${action.copy.id}`,
 						);
 					}
 					content = { kind: "base", version: stored.version, value: stored.value };
@@ -974,6 +1001,6 @@ export class SqliteStorage implements Storage {
 	}
 
 	private assertOpen(): void {
-		if (this.closed) throw new Error("SqliteStorage is closed");
+		if (this.closed) throw new Error("SqliteStorage closed");
 	}
 }

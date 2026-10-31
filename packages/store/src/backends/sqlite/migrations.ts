@@ -102,7 +102,7 @@ export async function applySqliteMigrations(
 ): Promise<void> {
 	for (let index = 0; index < migrations.length; index++) {
 		if (migrations[index]?.version !== index + 1) {
-			throw new Error("Durable SQLite migrations must have contiguous versions starting at 1");
+			throw new Error("Invalid migrations");
 		}
 	}
 
@@ -118,14 +118,11 @@ export async function applySqliteMigrations(
 		const row = await transaction.get<SchemaRow>(
 			"SELECT version FROM durable_schema WHERE singleton = 1",
 		);
-		if (row === undefined) throw new Error("Durable SQLite schema metadata is missing");
+		if (row === undefined) throw new Error("Missing metadata");
 
 		const currentVersion = migrations.at(-1)?.version ?? 0;
 		if (row.version > currentVersion) {
-			throw new Error(
-				`Durable SQLite schema version ${row.version} is newer than supported ` +
-					`version ${currentVersion}`,
-			);
+			throw new Error(`Newer schema: ${row.version}`);
 		}
 
 		for (const migration of migrations) {
