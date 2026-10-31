@@ -19,7 +19,7 @@ import {
 import { homedir, constants as osConstants, tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import {
 	type ExecutionEnv,
 	ExecutionError,
@@ -45,9 +45,14 @@ interface ShellConfig {
 }
 
 const MAX_TIMEOUT_MS = 2_147_483_647;
+
 const MAX_TIMEOUT_SECONDS = MAX_TIMEOUT_MS / 1000;
+
 const EXIT_STDIO_GRACE_MS = 100;
+
 const SPILL_HIGH_WATER_MARK = 1024 * 1024;
+
+const SHELL_LOOKUP_TIMEOUT_MS = 5000;
 
 function abortResult<TValue>(
 	signal: AbortSignal | undefined,
@@ -78,6 +83,17 @@ function getBashShellConfig(shell: string): ShellConfig {
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
 	return error instanceof Error && "code" in error;
+}
+
+function fileKindFromStats(stats: {
+	isFile(): boolean;
+	isDirectory(): boolean;
+	isSymbolicLink(): boolean;
+}): FileKind | undefined {
+	if (stats.isFile()) return "file";
+	if (stats.isDirectory()) return "directory";
+	if (stats.isSymbolicLink()) return "symlink";
+	return undefined;
 }
 
 function fileInfoFromStats(
@@ -142,18 +158,32 @@ function getShellEnv(
 	inheritEnv = true,
 ): NodeJS.ProcessEnv {
 	if (!inheritEnv) return { ...extraEnv };
-	return {
-		...process.env,
-		...baseEnv,
-		...extraEnv,
-	};
+	if (process.platform !== "win32") {
+		return {
+			...process.env,
+			...baseEnv,
+			...extraEnv,
+		};
+	}
+
+	// Windows env
+	const merged = new Map<string, [string, string]>();
+	for (const source of [process.env, baseEnv, extraEnv]) {
+		for (const [key, value] of Object.entries(source ?? {})) {
+			if (value !== undefined) merged.set(key.toLowerCase(), [key, value]);
+		}
+	}
+	return Object.fromEntries(merged.values());
 }
 
 function killProcessTree(pid: number): void {
 	if (process.platform === "win32") {
 		try {
+			const systemRoot = process.env.SystemRoot;
+			if (!systemRoot) return;
+
 			const child = spawn(
-				join(process.env.SystemRoot ?? "C:\\Windows", "System32", "taskkill.exe"),
+				join(systemRoot, "System32", "taskkill.exe"),
 				["/F", "/T", "/PID", String(pid)],
 				{
 					stdio: "ignore",
@@ -178,22 +208,11 @@ function killProcessTree(pid: number): void {
 async function findBashOnPath(): Promise<string | null> {
 	const result =
 		process.platform === "win32"
-			? await runCommand("where", ["bash.exe"], 5000)
-			: await runCommand("which", ["bash"], 5000);
+			? await runCommand("where", ["bash.exe"], SHELL_LOOKUP_TIMEOUT_MS)
+			: await runCommand("which", ["bash"], SHELL_LOOKUP_TIMEOUT_MS);
 	if (result.status !== 0 || !result.stdout) return null;
 	const firstMatch = result.stdout.trim().split(/\r?\n/)[0];
 	return firstMatch && (await pathExists(firstMatch)) ? firstMatch : null;
-}
-
-function fileKindFromStats(stats: {
-	isFile(): boolean;
-	isDirectory(): boolean;
-	isSymbolicLink(): boolean;
-}): FileKind | undefined {
-	if (stats.isFile()) return "file";
-	if (stats.isDirectory()) return "directory";
-	if (stats.isSymbolicLink()) return "symlink";
-	return undefined;
 }
 
 function toFileError(error: unknown, fallbackPath?: string): FileError {
@@ -226,7 +245,7 @@ function resolveTimeoutMs(timeout: number | undefined): Result<number | undefine
 	if (timeout === undefined) return ok(undefined);
 	if (!Number.isFinite(timeout) || timeout <= 0) {
 		return err(
-			new ExecutionError("timeout", "Invalid timeout: must be a finite number of seconds"),
+			new ExecutionError("timeout", "Invalid timeout"),
 		);
 	}
 
@@ -235,7 +254,7 @@ function resolveTimeoutMs(timeout: number | undefined): Result<number | undefine
 		return err(
 			new ExecutionError(
 				"timeout",
-				`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`,
+				`Timeout maximum: ${MAX_TIMEOUT_SECONDS}`,
 			),
 		);
 	}
@@ -340,6 +359,56 @@ function waitForChildProcess(
 	});
 }
 
+async function getShellConfig(
+	customShellPath?: string,
+): Promise<Result<ShellConfig, ExecutionError>> {
+	if (customShellPath) {
+		if (await pathExists(customShellPath)) {
+			return ok(getBashShellConfig(customShellPath));
+		}
+		return err(
+			new ExecutionError("shell_unavailable", `Custom shell path not found: ${customShellPath}`),
+		);
+	}
+	if (process.platform === "win32") {
+		const candidates: string[] = [];
+		const programFiles = process.env.ProgramFiles;
+		if (programFiles) candidates.push(`${programFiles}\\Git\\bin\\bash.exe`);
+		const programFilesX86 = process.env["ProgramFiles(x86)"];
+		if (programFilesX86) candidates.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
+		const localAppData = process.env.LOCALAPPDATA;
+		if (localAppData) candidates.push(`${localAppData}\\Programs\\Git\\bin\\bash.exe`);
+		for (const candidate of candidates) {
+			if (await pathExists(candidate)) {
+				return ok(getBashShellConfig(candidate));
+			}
+		}
+		const bashOnPath = await findBashOnPath();
+		if (bashOnPath) {
+			return ok(getBashShellConfig(bashOnPath));
+		}
+		return err(
+			new ExecutionError(
+				"shell_unavailable",
+				`No bash shell found. Options:\n` +
+					`  1. Install Git for Windows: https://git-scm.com/download/win\n` +
+					`  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n` +
+					"  3. Configure an explicit shellPath\n\n" +
+					`Searched Git Bash in:\n${candidates.map((path) => `  ${path}`).join("\n")}`,
+			),
+		);
+	}
+
+	if (await pathExists("/bin/bash")) {
+		return ok(getBashShellConfig("/bin/bash"));
+	}
+	const bashOnPath = await findBashOnPath();
+	if (bashOnPath) {
+		return ok(getBashShellConfig(bashOnPath));
+	}
+	return ok({ shell: "sh", args: ["-c"] });
+}
+
 class NodeTextLineReader implements TextLineReader {
 	private readonly file: Awaited<ReturnType<typeof openFile>>;
 	private readonly path: string;
@@ -410,54 +479,6 @@ class NodeTextLineReader implements TextLineReader {
 			await this.file.close();
 		} catch {}
 	}
-}
-
-async function getShellConfig(
-	customShellPath?: string,
-): Promise<Result<ShellConfig, ExecutionError>> {
-	if (customShellPath) {
-		if (await pathExists(customShellPath)) {
-			return ok(getBashShellConfig(customShellPath));
-		}
-		return err(
-			new ExecutionError("shell_unavailable", `Custom shell path not found: ${customShellPath}`),
-		);
-	}
-	if (process.platform === "win32") {
-		const candidates: string[] = [];
-		const programFiles = process.env.ProgramFiles;
-		if (programFiles) candidates.push(`${programFiles}\\Git\\bin\\bash.exe`);
-		const programFilesX86 = process.env["ProgramFiles(x86)"];
-		if (programFilesX86) candidates.push(`${programFilesX86}\\Git\\bin\\bash.exe`);
-		for (const candidate of candidates) {
-			if (await pathExists(candidate)) {
-				return ok(getBashShellConfig(candidate));
-			}
-		}
-		const bashOnPath = await findBashOnPath();
-		if (bashOnPath) {
-			return ok(getBashShellConfig(bashOnPath));
-		}
-		return err(
-			new ExecutionError(
-				"shell_unavailable",
-				`No bash shell found. Options:\n` +
-					`  1. Install Git for Windows: https://git-scm.com/download/win\n` +
-					`  2. Add your bash to PATH (Cygwin, MSYS2, etc.)\n` +
-					"  3. Configure an explicit shellPath\n\n" +
-					`Searched Git Bash in:\n${candidates.map((path) => `  ${path}`).join("\n")}`,
-			),
-		);
-	}
-
-	if (await pathExists("/bin/bash")) {
-		return ok(getBashShellConfig("/bin/bash"));
-	}
-	const bashOnPath = await findBashOnPath();
-	if (bashOnPath) {
-		return ok(getBashShellConfig(bashOnPath));
-	}
-	return ok({ shell: "sh", args: ["-c"] });
 }
 
 export class NodeExecutionEnv implements ExecutionEnv {
@@ -723,11 +744,27 @@ export class NodeExecutionEnv implements ExecutionEnv {
 						settle(err(spillError));
 						return;
 					}
-					const exitCode =
-						code ?? (exitSignal ? 128 + (osConstants.signals[exitSignal] ?? 0) : 1);
+					const signalCode = exitSignal ? 128 + (osConstants.signals[exitSignal] ?? 0) : 1;
+					const exitCode = code ?? signalCode;
 					settle(ok({ exitCode, ...(spillPath === undefined ? {} : { spillPath }) }));
 				},
-				(error: Error) => settle(err(new ExecutionError("spawn_error", error.message, error))),
+				async (error: Error) => {
+					try {
+						await finishSpill();
+					} catch (spillFinishError) {
+						settle(
+							err(
+								new ExecutionError(
+									"spawn_error",
+									toError(spillFinishError).message,
+									toError(spillFinishError),
+								),
+							),
+						);
+						return;
+					}
+					settle(err(new ExecutionError("spawn_error", error.message, error)));
+				},
 			);
 		});
 	}
@@ -832,8 +869,7 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			const afterMkdirAbort = abortResult<void>(signal, resolved);
 			if (afterMkdirAbort) return afterMkdirAbort;
 			await appendFile(resolved, content);
-			const afterAppendAbort = abortResult<void>(signal, resolved);
-			return afterAppendAbort ?? ok(undefined);
+			return ok(undefined);
 		} catch (error) {
 			return err(toFileError(error, resolved));
 		}
@@ -934,6 +970,7 @@ export class NodeExecutionEnv implements ExecutionEnv {
 					const info = fileInfoFromStats(entryPath, await lstat(entryPath));
 					if (info.ok) infos.push(info.value);
 				} catch (error) {
+					if ((error as NodeJS.ErrnoException).code === "ENOENT") continue;
 					return err(toFileError(error, entryPath));
 				}
 			}
@@ -1024,6 +1061,7 @@ export class NodeExecutionEnv implements ExecutionEnv {
 			await writeFile(filePath, "");
 			return ok(filePath);
 		} catch (error) {
+			await rm(dir.value, { recursive: true, force: true }).catch(() => undefined);
 			return err(toFileError(error, filePath));
 		}
 	}
