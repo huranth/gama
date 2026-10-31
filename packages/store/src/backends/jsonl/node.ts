@@ -1,5 +1,5 @@
-import type { Context } from "@huranth/chord";
-import { NodeExecutionEnv } from "../../env/node.ts";
+import type { Context } from "@huranth/gama-bus";
+import { NodeExecutionEnv } from "../../system/node.ts";
 import { JsonlStorage, type JsonlStorageOptions } from "./storage.ts";
 
 export { JsonlStorage, type JsonlStorageOptions } from "./storage.ts";

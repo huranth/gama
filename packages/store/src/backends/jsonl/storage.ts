@@ -1,5 +1,5 @@
-import type { Context, JsonValue } from "@huranth/chord";
-import type { FileError, FileSystem } from "../../env/index.ts";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import type { FileError, FileSystem } from "../../system/index.ts";
 import { asStorageRejected } from "../../errors.ts";
 import { idFromNumber, seqFromNumber } from "../../ids.ts";
 import type {
@@ -77,6 +77,7 @@ export type JsonlStorageOptions = {
 };
 
 const RECLAIM_SUFFIX = ".reclaim";
+
 const textDecoder = new TextDecoder("utf-8", { fatal: true });
 
 const sidecarFileName = (kind: "doc" | "task", id: DocumentId | TaskId): string =>
@@ -94,10 +95,12 @@ const sidecarKey = (file: string, seq: Seq, ordinal: number): string =>
 const jsonLine = (value: MainMarker | SidecarRecord): string => `${JSON.stringify(value)}\n`;
 
 const errorFromFile = (action: string, error: FileError): Error =>
-	new Error(`JSONL ${action} failed: ${error.message}`, { cause: error });
+	new Error(`JSONL failed: ${action}`, { cause: error });
 
 const MAIN_FILE = "main.jsonl";
+
 const FORMAT_VERSION = 1;
+
 const isSafeInteger = (value: unknown): value is number => Number.isSafeInteger(value);
 
 export class JsonlCorruptionError extends Error {
@@ -256,6 +259,9 @@ export class JsonlStorage implements Storage {
 	private readonly memory = new MemoryStorage();
 	private readonly currentOnlyDocuments = new Set<DocumentId>();
 	private readonly liveTaskSidecars = new Set<TaskId>();
+	private commitQueue: Promise<void> = Promise.resolve();
+	private closePromise: Promise<void> | undefined;
+	private closing = false;
 	private closed = false;
 	private poisonError: JsonlStoragePoisonedError | undefined;
 
@@ -289,6 +295,21 @@ export class JsonlStorage implements Storage {
 	}
 
 	async commit(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
+		if (this.closing) throw new Error("JsonlStorage closed");
+		const previous = this.commitQueue;
+		let release!: () => void;
+		this.commitQueue = new Promise((resolve) => {
+			release = resolve;
+		});
+		await previous;
+		try {
+			return await this.commitLocked(writes, context);
+		} finally {
+			release();
+		}
+	}
+
+	private async commitLocked(writes: readonly StorageWrite[], context: Context): Promise<Seq> {
 		this.assertUsable();
 		let prepared: PreparedMemoryCommit;
 		let encoded: EncodedCommit;
@@ -324,6 +345,11 @@ export class JsonlStorage implements Storage {
 		}
 		const marker = await this.fs.appendFile(this.mainPath, encoded.marker, context);
 		if (!marker.ok) throw this.poison(errorFromFile(`append to ${MAIN_FILE}`, marker.error));
+		if (this.fsync && reclamations.size === 0) {
+			const flushed = await this.fs.flushFile(this.mainPath, context);
+			if (!flushed.ok)
+				throw this.poison(errorFromFile(`flush of ${MAIN_FILE}`, flushed.error));
+		}
 		const seq = prepared.apply();
 		this.adoptSidecarState(prepared.writes);
 		await this.reclaimSidecars(reclamations, context);
@@ -430,8 +456,14 @@ export class JsonlStorage implements Storage {
 
 	async close(context: Context): Promise<void> {
 		if (this.closed) return;
-		this.closed = true;
-		await this.memory.close(context);
+		if (this.closePromise) return this.closePromise;
+		this.closing = true;
+		this.closePromise = (async () => {
+			await this.commitQueue;
+			this.closed = true;
+			await this.memory.close(context);
+		})();
+		return this.closePromise;
 	}
 
 	private encodeCommit(seq: Seq, writes: readonly StorageWrite[]): EncodedCommit {
@@ -594,6 +626,10 @@ export class JsonlStorage implements Storage {
 			if (!flushed.ok) return;
 		}
 		await this.fs.renameFile(temporaryPath.value, path.value, context);
+		if (this.fsync) {
+			const flushed = await this.fs.flushFile(path.value, context);
+			if (!flushed.ok) return;
+		}
 	}
 
 	private async recover(context: Context): Promise<void> {
@@ -893,10 +929,10 @@ export class JsonlStorage implements Storage {
 		}
 		const bytes = read.value;
 		let completeSize = bytes.length;
+		let tailStart: number | undefined;
 		if (completeSize > 0 && bytes[completeSize - 1] !== 0x0a) {
-			completeSize = bytes.lastIndexOf(0x0a) + 1;
-			const truncated = await fs.truncateFile(path, completeSize, context);
-			if (!truncated.ok) throw errorFromFile(`torn-line truncation of ${name}`, truncated.error);
+			tailStart = bytes.lastIndexOf(0x0a) + 1;
+			completeSize = tailStart;
 		}
 		const lines: ParsedLine<T>[] = [];
 		let start = 0;
@@ -915,6 +951,25 @@ export class JsonlStorage implements Storage {
 			lines.push({ value: parse(text, lineNumber), start });
 			start = end + 1;
 			lineNumber++;
+		}
+		if (tailStart !== undefined) {
+			// Tail guard
+			let valid = false;
+			try {
+				const text = textDecoder.decode(bytes.subarray(tailStart));
+				lines.push({ value: parse(text, lineNumber), start: tailStart });
+				valid = true;
+			} catch {}
+
+			if (valid) {
+				const repaired = await fs.appendFile(path, "\n", context);
+				if (!repaired.ok)
+					throw errorFromFile(`newline repair of ${name}`, repaired.error);
+			} else {
+				const truncated = await fs.truncateFile(path, completeSize, context);
+				if (!truncated.ok)
+					throw errorFromFile(`torn-line truncation of ${name}`, truncated.error);
+			}
 		}
 		return { path, lines };
 	}
@@ -936,7 +991,7 @@ export class JsonlStorage implements Storage {
 	}
 
 	private assertUsable(): void {
-		if (this.closed) throw new Error("JsonlStorage is closed");
+		if (this.closed) throw new Error("JsonlStorage closed");
 		if (this.poisonError !== undefined) throw this.poisonError;
 	}
 }
