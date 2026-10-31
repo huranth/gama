@@ -1,6 +1,6 @@
-import type { JsonValue } from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
-import type { Op } from "@huranth/chord/delta";
+import type { JsonValue } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import type { Op } from "@huranth/gama-bus/delta";
 import { idFromNumber } from "../ids.ts";
 import {
 	type ConversationId,
@@ -113,7 +113,7 @@ export function createStorageConformance(
 					[{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }],
 					context,
 				),
-			).rejects.toThrow(`ID ${ROOT_CONVERSATION_ID} already belongs to conversation`);
+			).rejects.toThrow(`Duplicate ID: ${ROOT_CONVERSATION_ID}`);
 		}),
 
 		createCase(
@@ -172,7 +172,7 @@ export function createStorageConformance(
 						],
 						context,
 					),
-				).rejects.toThrow(`ID ${rootId} already belongs to conversation`);
+				).rejects.toThrow(`Duplicate ID: ${rootId}`);
 
 				expect(await storage.task(taskId, context)).toEqual(task);
 				expect(await storage.submission(submissionId, context)).toEqual(input);
@@ -1435,7 +1435,7 @@ export function createStorageConformance(
 					value: { count: 3 },
 				});
 				await expect(storage.document(id, migratedAt, context)).rejects.toThrow(
-					"does not retain historical content",
+					"No history",
 				);
 
 				await expect(
@@ -1449,7 +1449,7 @@ export function createStorageConformance(
 						],
 						context,
 					),
-				).rejects.toThrow("version transition requires a base");
+				).rejects.toThrow("Missing base");
 				expect((await storage.document(id, "current", context))?.value).toEqual({ count: 3 });
 				await storage.commit([{ type: "document.retire", id }], context);
 				expect(await storage.document(id, "current", context)).toBeUndefined();
@@ -1609,7 +1609,7 @@ export function createStorageConformance(
 					).items.map(({ id }) => id),
 				).toEqual([taskSingletonId, taskFamilyId]);
 				await expect(storage.document(taskSingletonId, createdAt, context)).rejects.toThrow(
-					"does not retain historical content",
+					"No history",
 				);
 			},
 		),
@@ -1652,7 +1652,7 @@ export function createStorageConformance(
 						],
 						context,
 					),
-				).rejects.toThrow("already has a current incarnation");
+				).rejects.toThrow("Duplicate address");
 				expect((await storage.document(firstId, "current", context))?.value).toEqual({
 					value: 1,
 				});
@@ -1752,7 +1752,7 @@ export function createStorageConformance(
 						],
 						context,
 					),
-				).rejects.toThrow("already has a current incarnation");
+				).rejects.toThrow("Duplicate address");
 
 				expect(await storage.task(taskId, context)).toEqual(task);
 				expect(
@@ -1949,7 +1949,7 @@ export function createStorageConformance(
 						],
 						context,
 					),
-				).rejects.toThrow(`ID ${explicitEntryId} already belongs to entry`);
+				).rejects.toThrow(`Duplicate ID: ${explicitEntryId}`);
 
 				await storage.commit(
 					[
@@ -1964,8 +1964,8 @@ export function createStorageConformance(
 					],
 					context,
 				);
-				await expect(storage.mintId<EntryId>()).rejects.toThrow("ID space is exhausted");
-				await expect(storage.mintId<EntryId>()).rejects.toThrow("ID space is exhausted");
+				await expect(storage.mintId<EntryId>()).rejects.toThrow("ID exhausted");
+				await expect(storage.mintId<EntryId>()).rejects.toThrow("ID exhausted");
 			},
 		),
 

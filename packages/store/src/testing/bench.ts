@@ -1,5 +1,5 @@
-import type { JsonValue } from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import type { JsonValue } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -61,7 +61,9 @@ export const TIMING_SCALE: StorageBenchmarkScale = {
 };
 
 const FORK_DEPTH = 8;
+
 const ENTRIES_PER_FORK = 32;
+
 const BATCH_SIZE = 100;
 
 const REPLAY_TAILS = [0, 16, 128, 1_024] as const;
@@ -86,6 +88,18 @@ function task(id: TaskId<JsonValue>, index: number): StoredTask {
 		return { ...common, state: { status, outcome: { status: "completed", result: { index } } } };
 	}
 	return { ...common, state: { status, checkpoint: { index, payload: "x".repeat(64) } } };
+}
+
+export function storageBenchmarkPrimaryRecordCount(scale: StorageBenchmarkScale): number {
+	return (
+		1 +
+		scale.entryCount +
+		scale.taskCount +
+		scale.documentCount +
+		REPLAY_TAILS.length +
+		1 +
+		FORK_DEPTH * (1 + ENTRIES_PER_FORK)
+	);
 }
 
 export const STORAGE_READ_BENCHMARKS: readonly StorageReadBenchmark[] = [
@@ -312,18 +326,6 @@ export const STORAGE_WRITE_BENCHMARKS: readonly StorageWriteBenchmark[] = [
 	},
 ];
 
-export function storageBenchmarkPrimaryRecordCount(scale: StorageBenchmarkScale): number {
-	return (
-		1 +
-		scale.entryCount +
-		scale.taskCount +
-		scale.documentCount +
-		REPLAY_TAILS.length +
-		1 +
-		FORK_DEPTH * (1 + ENTRIES_PER_FORK)
-	);
-}
-
 export async function seedStorageWriteBenchmark(storage: Storage): Promise<void> {
 	await storage.commit(
 		[{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }],
@@ -484,7 +486,7 @@ export async function seedStorageBenchmark(
 		],
 		BACKGROUND_CONTEXT,
 	);
-	if (ancientAt === undefined) throw new Error("Benchmark history seed produced no commits");
+	if (ancientAt === undefined) throw new Error("No commits");
 	let recentAt = ancientAt;
 	for (let count = HISTORY_SEGMENT_LENGTH + 1; count <= HISTORY_SEGMENT_LENGTH * 2; count++) {
 		recentAt = await storage.commit(
@@ -499,7 +501,7 @@ export async function seedStorageBenchmark(
 		);
 	}
 
-	if (firstEntryId === undefined) throw new Error("Benchmark scale must create entries");
+	if (firstEntryId === undefined) throw new Error("No entries");
 	let parentConversationId = ROOT_CONVERSATION_ID;
 	let parentAt = firstEntryId;
 	let deepestConversationId = ROOT_CONVERSATION_ID;
@@ -537,7 +539,7 @@ export async function seedStorageBenchmark(
 		deepestConversationId = conversationId;
 	}
 
-	if (exactDocumentId === undefined) throw new Error("Benchmark scale must create documents");
+	if (exactDocumentId === undefined) throw new Error("No documents");
 	return {
 		firstEntryId,
 		filteredTaskCount: Math.min(50, Math.ceil(scale.taskCount / 60)),
