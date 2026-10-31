@@ -3,11 +3,11 @@ import {
 	type Context,
 	type JsonValue,
 	replicatedState,
-} from "@huranth/chord";
-import { withoutAbortSignal } from "@huranth/chord/context";
-import { applyImmutable, type NonEmptyPath, type Op, type Path } from "@huranth/chord/delta";
-import { CommittedStateSource, CommittedWatch } from "../session/observation.ts";
-import type { SessionImpl } from "../session/session.ts";
+} from "@huranth/gama-bus";
+import { withoutAbortSignal } from "@huranth/gama-bus/context";
+import { applyImmutable, type NonEmptyPath, type Op, type Path } from "@huranth/gama-bus/delta";
+import { CommittedStateSource, CommittedWatch } from "../records/observation.ts";
+import type { SessionImpl } from "../records/session.ts";
 import type {
 	CommitPublication,
 	ConversationDocToken,
@@ -56,6 +56,7 @@ const MOUNTED = [
 	InboxDoc,
 	UsageDoc,
 ] as unknown as readonly ConversationDocToken<JsonObject>[];
+
 const MOUNTED_KINDS: ReadonlySet<string> = new Set(MOUNTED.map((token) => token.definition.kind));
 
 const VIEWS = new WeakMap<object, ConversationViews>();
@@ -142,6 +143,15 @@ function advance(
 	}
 }
 
+export function conversationViews(harness: object): ConversationViews {
+	const views = VIEWS.get(harness);
+	if (views === undefined) {
+		throw new Error("Not a Harness");
+	}
+
+	return views;
+}
+
 export class ConversationViews {
 	readonly #session: SessionImpl;
 	readonly #storage: Storage;
@@ -224,8 +234,9 @@ export class ConversationViews {
 	}
 
 	async #build(id: ConversationId, context: Context): Promise<Mount> {
+		if (this.#closed) throw closedError();
 		const conversation = await this.#storage.conversation(id, context);
-		if (conversation === undefined) throw new Error(`Conversation ${id} does not exist`);
+		if (conversation === undefined) throw new Error(`Unknown conversation: ${id}`);
 		const bounds = await captureContextBounds(this.#storage, id, context);
 		const entries = await activeEntries(this.#storage, id, bounds, context);
 		const docs: Record<string, JsonObject> = {};
@@ -238,13 +249,4 @@ export class ConversationViews {
 		}
 		return { value: { conversation, entries, docs }, docs: incarnations, observers: new Set() };
 	}
-}
-
-export function conversationViews(harness: object): ConversationViews {
-	const views = VIEWS.get(harness);
-	if (views === undefined) {
-		throw new Error("Not a Harness");
-	}
-
-	return views;
 }

@@ -1,7 +1,7 @@
-import type { Context, JsonValue } from "@huranth/chord";
-import type { Op, Path } from "@huranth/chord/delta";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import type { Op, Path } from "@huranth/gama-bus/delta";
 import type { AssistantMessage, Message, Usage } from "@huranth/gama-ai";
-import { CommittedWatch } from "../session/observation.ts";
+import { CommittedWatch } from "../records/observation.ts";
 import type {
 	CommitChange,
 	CommitPublication,
@@ -286,16 +286,25 @@ function translate(
 	const tasks = new Map<TaskId, TaskChange["value"]>();
 	const submissions: SubmissionRecord[] = [];
 	for (const change of publication.changes) {
-		if (change.type === "entry" && change.value.conversationId === conversationId)
+		if (change.type === "entry" && change.value.conversationId === conversationId) {
 			entries.push(change.value);
-		if (change.type === "task" && change.value.conversationId === conversationId)
+		}
+
+		if (change.type === "task" && change.value.conversationId === conversationId) {
 			tasks.set(change.value.id, change.value);
+		}
+
 		if (change.type === "submission" && change.value.conversationId === conversationId) {
 			submissions.push(change.value);
 		}
 	}
-	if (viewOps.length === 0 && entries.length === 0 && tasks.size === 0 && submissions.length === 0)
-		return [];
+
+	const idle =
+		viewOps.length === 0 &&
+		entries.length === 0 &&
+		tasks.size === 0 &&
+		submissions.length === 0;
+	if (idle) return [];
 	submissions.sort((a, b) => a.id - b.id);
 	const was = parts(before);
 	const now = parts(after);
@@ -305,8 +314,9 @@ function translate(
 	const slots = now.live.tools ?? [];
 	for (const slot of slots) {
 		if (slot.status !== "running" || slotsBefore.get(slot.callId)?.status === "running") continue;
-		const checkpoint =
-			slot.taskId === undefined ? undefined : tasks.get(slot.taskId)?.state.checkpoint;
+
+		const task = slot.taskId === undefined ? undefined : tasks.get(slot.taskId);
+		const checkpoint = task?.state.checkpoint;
 		const args = (checkpoint as { arguments?: JsonObject } | undefined)?.arguments ?? {};
 		events.push({
 			type: "tool_execution_start",
@@ -317,9 +327,9 @@ function translate(
 	}
 	const partialBefore = was.live.generation?.message as AssistantMessage | undefined;
 	const partial = now.live.generation?.message as AssistantMessage | undefined;
-	if (partial !== undefined && partialBefore === undefined)
+	if (partial !== undefined && partialBefore === undefined) {
 		events.push({ type: "message_start", message: partial });
-	else if (partial !== undefined && partial !== partialBefore) {
+	} else if (partial !== undefined && partial !== partialBefore) {
 		events.push({
 			type: "message_update",
 			usage: partial.usage,

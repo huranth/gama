@@ -1,7 +1,7 @@
-import type { Draft, JsonRepresentation, JsonValue } from "@huranth/chord";
+import type { Draft, JsonRepresentation, JsonValue } from "@huranth/gama-bus";
 import type { AssistantMessage } from "@huranth/gama-ai";
-import { defineDoc } from "../documents.ts";
-import type { Transaction } from "../session/transaction.ts";
+import { defineDoc } from "../docs.ts";
+import type { Transaction } from "../records/transaction.ts";
 import type {
 	EntryId,
 	SubmissionId,
@@ -60,7 +60,9 @@ export const LiveDoc = defineDoc<LiveState>({
 });
 
 const RUN_TASK_KINDS: ReadonlySet<string> = new Set(["gama.generation"]);
+
 const TOOL_TASK_KIND = "gama.tool";
+
 const COMPACTION_TASK_KIND = "gama.compaction";
 
 export function endRun(

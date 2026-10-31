@@ -1,6 +1,6 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@huranth/gama-ai";
-import type { SessionImpl } from "../session/session.ts";
+import type { SessionImpl } from "../records/session.ts";
 import type {
 	ContextEdit,
 	ConversationId,
@@ -104,7 +104,7 @@ export async function captureContextBounds(
 		if (tail === undefined) return undefined;
 	} else {
 		if ((await storage.entry(conversationId, at, context)) === undefined) {
-			throw new Error(`Entry ${at} is not visible from conversation ${conversationId}`);
+			throw new Error(`Hidden entry: ${at}`);
 		}
 		tail = at;
 	}

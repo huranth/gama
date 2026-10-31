@@ -1,4 +1,4 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/chord";
+import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/gama-bus";
 import type {
 	Api,
 	AssistantMessage,
@@ -12,8 +12,8 @@ import type {
 import { isContextOverflow } from "@huranth/gama-ai/utils/overflow";
 import { isRetryableAssistantError, retryDelayMs } from "@huranth/gama-ai/utils/retry";
 import { getCurrentTools } from "@huranth/gama-ai/utils/transcript";
-import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../entries.ts";
-import type { ExecutionEnv } from "../env/index.ts";
+import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../messages.ts";
+import type { ExecutionEnv } from "../system/index.ts";
 import { defineTask } from "../tasks.ts";
 import type {
 	ConversationId,
@@ -101,6 +101,7 @@ type Request = {
 };
 
 const PARTIAL_THROTTLE_MS = 100;
+
 const DEFAULT_POLL_AFTER_MS = 5000;
 
 export function handOver(live: Draft<LiveState>, from: TaskId, to: TaskId): void {
@@ -135,18 +136,7 @@ function createToolTask(
 }
 
 async function failModelError(runtime: Runtime, text: string, context: Context): Promise<void> {
-	await runtime.commit(async (tx) => {
-		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, {
-			status: "unanswered",
-			reason: "model_error",
-			detail: text,
-		});
-		return {
-			status: "terminal",
-			outcome: { status: "failed", error: { message: text, detail: { reason: "model_error" } } },
-		};
-	}, context);
+	await failRun(runtime, "model_error", text, context, text);
 }
 
 async function failNoModel(
@@ -158,12 +148,29 @@ async function failNoModel(
 		ref === undefined
 			? "No model is configured"
 			: `Model ${ref.provider}/${ref.modelId} is not available`;
+
+	await failRun(runtime, "no_model", message, context);
+}
+
+async function failRun(
+	runtime: Runtime,
+	reason: "model_error" | "no_model",
+	message: string,
+	context: Context,
+	detail?: string,
+): Promise<void> {
 	await runtime.commit(async (tx) => {
 		const live = await tx.doc(LiveDoc, runtime.conversationId);
-		endRun(tx, live, runtime.taskId, { status: "unanswered", reason: "no_model" });
+		const end =
+			detail === undefined
+				? { status: "unanswered" as const, reason }
+				: { status: "unanswered" as const, reason, detail };
+
+		endRun(tx, live, runtime.taskId, end);
+
 		return {
 			status: "terminal",
-			outcome: { status: "failed", error: { message, detail: { reason: "no_model" } } },
+			outcome: { status: "failed", error: { message, detail: { reason } } },
 		};
 	}, context);
 }
@@ -629,7 +636,7 @@ export const GenerationTask = defineTask<
 				for (const entry of entries)
 					cutoff = (await tx.appendEntry(SystemEntry, conversationId, entry)).id;
 				if (cutoff === undefined)
-					throw new Error(`Conversation ${conversationId} has no entries to send`);
+					throw new Error(`Empty conversation: ${conversationId}`);
 				if (
 					threshold === "background" &&
 					(await tx.doc(LiveDoc, conversationId)).compactions === undefined

@@ -1,6 +1,6 @@
-import { copyJson, type Draft, type JsonRepresentation } from "@huranth/chord";
+import { copyJson, type Draft, type JsonRepresentation } from "@huranth/gama-bus";
 import type { Usage } from "@huranth/gama-ai";
-import { defineDoc } from "../documents.ts";
+import { defineDoc } from "../docs.ts";
 import type { ConversationId, Tx } from "../types.ts";
 
 export type UsageState = {
@@ -17,6 +17,10 @@ export const UsageDoc = defineDoc<UsageState>({
 	initial: () => ({ models: {}, tools: {} }),
 	checkpointWhen: () => true,
 });
+
+const COUNTER_KEYS = ["input", "output", "cacheRead", "cacheWrite", "totalTokens"] as const;
+
+const COST_KEYS = ["input", "output", "cacheRead", "cacheWrite", "total"] as const;
 
 export async function recordUsage(
 	tx: Tx,
@@ -36,37 +40,38 @@ export async function recordUsage(
 }
 
 export function addUsage(total: Draft<Usage> | Usage, usage: Usage): void {
-	total.input += usage.input;
-	total.output += usage.output;
-	total.cacheRead += usage.cacheRead;
-	total.cacheWrite += usage.cacheWrite;
-	total.totalTokens += usage.totalTokens;
+	for (const key of COUNTER_KEYS) {
+		total[key] += usage[key];
+	}
+
+	for (const key of COST_KEYS) {
+		total.cost[key] += usage.cost[key];
+	}
+
 	if (usage.cacheWrite1h !== undefined) {
 		total.cacheWrite1h = (total.cacheWrite1h ?? 0) + usage.cacheWrite1h;
 	}
+
 	if (usage.reasoning !== undefined) {
 		total.reasoning = (total.reasoning ?? 0) + usage.reasoning;
 	}
-	total.cost.input += usage.cost.input;
-	total.cost.output += usage.cost.output;
-	total.cost.cacheRead += usage.cost.cacheRead;
-	total.cost.cacheWrite += usage.cost.cacheWrite;
-	total.cost.total += usage.cost.total;
 }
 
 export function addUsageState(sum: UsageState, state: Readonly<UsageState>): void {
 	for (const bucket of ["models", "tools"] as const) {
 		for (const [key, usage] of Object.entries(state[bucket])) {
-			const total = Object.hasOwn(sum[bucket], key) ? sum[bucket][key] : undefined;
-			if (total !== undefined) {
-				addUsage(total, usage);
-			} else {
-				Object.defineProperty(sum[bucket], key, {
-					value: structuredClone(usage),
-					enumerable: true,
-					writable: true,
-				});
+			const existing = Object.hasOwn(sum[bucket], key) ? sum[bucket][key] : undefined;
+
+			if (existing !== undefined) {
+				addUsage(existing, usage);
+				continue;
 			}
+
+			Object.defineProperty(sum[bucket], key, {
+				value: structuredClone(usage),
+				enumerable: true,
+				writable: true,
+			});
 		}
 	}
 }
