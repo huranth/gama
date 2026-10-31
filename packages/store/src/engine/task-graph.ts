@@ -3,11 +3,11 @@ import {
 	type Context,
 	type JsonValue,
 	replicatedState,
-} from "@huranth/chord";
-import { withoutAbortSignal } from "@huranth/chord/context";
-import { applyImmutable, type Op } from "@huranth/chord/delta";
-import { CommittedStateSource, CommittedWatch } from "../session/observation.ts";
-import type { SessionImpl } from "../session/session.ts";
+} from "@huranth/gama-bus";
+import { withoutAbortSignal } from "@huranth/gama-bus/context";
+import { applyImmutable, type Op } from "@huranth/gama-bus/delta";
+import { CommittedStateSource, CommittedWatch } from "../records/observation.ts";
+import type { SessionImpl } from "../records/session.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -54,6 +54,7 @@ type Observer = CommittedStateSource<TaskGraph> | CommittedWatch<TaskGraph>;
 type Mount = { value: TaskGraph; readonly observers: Set<Observer> };
 
 const LIVE_STATUSES = ["pending", "running", "waiting", "completing"] as const;
+
 function nodeOf(record: AnyTaskRecord, conversations: readonly ConversationId[]): TaskGraphNode {
 	return {
 		id: record.id,
@@ -87,6 +88,59 @@ function stateOf(record: AnyTaskRecord): TaskGraphState {
 		case "completing":
 		case "terminal":
 			return { status: "completing", outcome: state.outcome.status };
+	}
+}
+
+function advance(mount: Mount, publication: CommitPublication, context: Context): void {
+	const ops: Op[] = [];
+	const changed = new Map<string, TaskGraphNode | undefined>();
+	const node = (key: string): TaskGraphNode | undefined =>
+		changed.has(key) ? changed.get(key) : mount.value.tasks[key];
+	for (const change of publication.changes) {
+		if (change.type !== "task") continue;
+
+		const record = change.value;
+		const key = String(record.id);
+		const previous = node(key);
+
+		if (record.state.status === "terminal") {
+			if (previous === undefined) continue;
+
+			ops.push(["d", ["tasks", key]]);
+			changed.set(key, undefined);
+			continue;
+		}
+
+		const next = nodeOf(record, previous?.conversations ?? []);
+		const unchanged = previous !== undefined && JSON.stringify(next) === JSON.stringify(previous);
+		if (unchanged) continue;
+
+		ops.push(["s", ["tasks", key], next as unknown as JsonValue]);
+		changed.set(key, next);
+	}
+	const created = new Map<string, ConversationId[]>();
+
+	for (const change of publication.changes) {
+		if (change.type !== "conversation" || change.value.owner === undefined) continue;
+
+		const key = String(change.value.owner.taskId);
+		if (node(key) !== undefined) {
+			const ids = created.get(key) ?? [];
+			created.set(key, [...ids, change.value.id]);
+		}
+	}
+
+	for (const [key, ids] of created) {
+		const conversations = [...node(key)!.conversations, ...ids].sort((a, b) => a - b);
+		ops.push(["s", ["tasks", key, "conversations"], conversations]);
+	}
+	if (ops.length === 0) return;
+
+	mount.value = applyImmutable(mount.value, ops);
+
+	const frameContext = withoutAbortSignal(context);
+	for (const observer of [...mount.observers]) {
+		observer.advance(mount.value, ops, frameContext);
 	}
 }
 
@@ -188,58 +242,5 @@ export class TaskGraphView {
 		}
 
 		return { tasks };
-	}
-}
-
-function advance(mount: Mount, publication: CommitPublication, context: Context): void {
-	const ops: Op[] = [];
-	const changed = new Map<string, TaskGraphNode | undefined>();
-	const node = (key: string): TaskGraphNode | undefined =>
-		changed.has(key) ? changed.get(key) : mount.value.tasks[key];
-	for (const change of publication.changes) {
-		if (change.type !== "task") continue;
-
-		const record = change.value;
-		const key = String(record.id);
-		const previous = node(key);
-
-		if (record.state.status === "terminal") {
-			if (previous === undefined) continue;
-
-			ops.push(["d", ["tasks", key]]);
-			changed.set(key, undefined);
-			continue;
-		}
-
-		const next = nodeOf(record, previous?.conversations ?? []);
-		const unchanged = previous !== undefined && JSON.stringify(next) === JSON.stringify(previous);
-		if (unchanged) continue;
-
-		ops.push(["s", ["tasks", key], next as unknown as JsonValue]);
-		changed.set(key, next);
-	}
-	const created = new Map<string, ConversationId[]>();
-
-	for (const change of publication.changes) {
-		if (change.type !== "conversation" || change.value.owner === undefined) continue;
-
-		const key = String(change.value.owner.taskId);
-		if (node(key) !== undefined) {
-			const ids = created.get(key) ?? [];
-			created.set(key, [...ids, change.value.id]);
-		}
-	}
-
-	for (const [key, ids] of created) {
-		const conversations = [...node(key)!.conversations, ...ids].sort((a, b) => a - b);
-		ops.push(["s", ["tasks", key, "conversations"], conversations]);
-	}
-	if (ops.length === 0) return;
-
-	mount.value = applyImmutable(mount.value, ops);
-
-	const frameContext = withoutAbortSignal(context);
-	for (const observer of [...mount.observers]) {
-		observer.advance(mount.value, ops, frameContext);
 	}
 }

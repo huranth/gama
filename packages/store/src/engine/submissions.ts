@@ -1,7 +1,7 @@
-import { type Context, copyJson, type JsonRepresentation } from "@huranth/chord";
-import { UserEntry } from "../entries.ts";
+import { type Context, copyJson, type JsonRepresentation } from "@huranth/gama-bus";
+import { UserEntry } from "../messages.ts";
 import { ConversationBusy } from "../errors.ts";
-import type { SessionImpl } from "../session/session.ts";
+import type { SessionImpl } from "../records/session.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -42,7 +42,7 @@ export async function admitSubmission(
 		if (existing !== undefined) {
 			if (existing.type !== draft.type) {
 				throw new Error(
-					`Request ${draft.requestId} already identifies a submission of type ${existing.type}`,
+					`Duplicate request: ${draft.requestId}`,
 				);
 			}
 			return existing.id;
@@ -136,7 +136,7 @@ class SubmissionHandle implements Submission {
 
 	async abort(context: Context): Promise<AbortResult> {
 		const result = await this.#submissions.abort(this.id, context);
-		if (result === "not_found") throw new Error(`Submission ${this.id} does not exist`);
+		if (result === "not_found") throw new Error(`Unknown submission: ${this.id}`);
 		return result;
 	}
 }
@@ -189,7 +189,7 @@ export class Submissions {
 
 	async status(id: SubmissionId, context: Context): Promise<SubmissionRecord> {
 		const record = await this.#session.readOnLine(() => this.#storage.submission(id, context));
-		if (record === undefined) throw new Error(`Submission ${id} does not exist`);
+		if (record === undefined) throw new Error(`Unknown submission: ${id}`);
 		return record;
 	}
 
@@ -198,7 +198,7 @@ export class Submissions {
 
 		const found = await this.#session.readOnLine(async () => {
 			const record = await this.#storage.submission(id, context);
-			if (record === undefined) throw new Error(`Submission ${id} does not exist`);
+			if (record === undefined) throw new Error(`Unknown submission: ${id}`);
 			if (isSettled(record)) return { promise: Promise.resolve(record) };
 			if (this.#closed) throw closedError();
 			return { promise: this.#waiters.add(id, context) };

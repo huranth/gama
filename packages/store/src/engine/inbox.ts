@@ -1,6 +1,6 @@
-import type { Draft, JsonRepresentation } from "@huranth/chord";
-import { defineDoc } from "../documents.ts";
-import { UserEntry } from "../entries.ts";
+import type { Draft, JsonRepresentation } from "@huranth/gama-bus";
+import { defineDoc } from "../docs.ts";
+import { UserEntry } from "../messages.ts";
 import type {
 	ConversationId,
 	EntryDraft,

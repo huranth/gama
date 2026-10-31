@@ -1,9 +1,9 @@
-import { type Context, copyJson, type JsonValue } from "@huranth/chord";
-import { awaitWithContext, withAbortSignal } from "@huranth/chord/context";
+import { type Context, copyJson, type JsonValue } from "@huranth/gama-bus";
+import { awaitWithContext, withAbortSignal } from "@huranth/gama-bus/context";
 import type { Models } from "@huranth/gama-ai";
-import type { ExecutionEnv } from "../env/index.ts";
-import type { SessionImpl } from "../session/session.ts";
-import type { Transaction } from "../session/transaction.ts";
+import type { ExecutionEnv } from "../system/index.ts";
+import type { SessionImpl } from "../records/session.ts";
+import type { Transaction } from "../records/transaction.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -148,7 +148,9 @@ export type TaskSchedulerOptions = {
 	) => Promise<ConversationHandle | undefined>;
 	readonly context: Context;
 };
+
 const MAX_TIMER_DELAY = 2_147_483_647;
+
 const LIVE_STATUSES = ["pending", "running", "waiting", "completing"] as const;
 
 function cancellationIntent(record: AnyTaskRecord): boolean {
@@ -195,9 +197,9 @@ function sessionMethod(
 	return (session[name] as (...args: readonly unknown[]) => Promise<unknown>).bind(session);
 }
 
-function missingMigration(record: AnyTaskRecord, definition: ErasedDefinition): Error {
+function missingMigration(record: AnyTaskRecord): Error {
 	return new Error(
-		`Task ${record.kind} version ${definition.version} has no migration from ${record.version}`,
+		`Missing migration: ${record.kind}`,
 	);
 }
 
@@ -206,7 +208,7 @@ function erased(task: AnyTask): ErasedDefinition {
 }
 
 function endedError(invocation: Invocation): Error {
-	return new Error(`Task ${invocation.taskId} invocation has ended`);
+	return new Error(`Task ended: ${invocation.taskId}`);
 }
 
 function withState(record: AnyTaskRecord, state: TaskState<JsonValue, JsonValue>): AnyTaskRecord {
@@ -258,6 +260,8 @@ export class TaskScheduler {
 	readonly #storage: Storage;
 	readonly #registry: RegistryReader;
 	readonly #models: Models;
+	readonly #context: Context;
+
 	readonly #agent: TaskSchedulerOptions["agent"];
 	readonly #settings: TaskSchedulerOptions["settings"];
 	readonly #env: TaskSchedulerOptions["env"];
@@ -266,21 +270,25 @@ export class TaskScheduler {
 	readonly #settleOutcome: TaskSchedulerOptions["settleOutcome"];
 	readonly #withdrawInputs: TaskSchedulerOptions["withdrawInputs"];
 	readonly #conversation: TaskSchedulerOptions["conversation"];
-	readonly #context: Context;
+
 	readonly #live = new Map<TaskId, AnyTaskRecord>();
 	readonly #invocations = new Map<TaskId, Invocation>();
-	readonly #taskWaiters = new Waiters<TaskId, SettledTask<JsonValue>>();
-	readonly #idleWaiters = new Waiters<ConversationId | undefined, void>();
-	readonly #failedMigrations = new Map<
-		TaskId,
-		{ readonly task: AnyTask; readonly error: unknown }
-	>();
 	readonly #edges = new Map<ConversationId, TaskId | null>();
 	readonly #conversationOwners = new Set<TaskId>();
 	readonly #settled = new Map<TaskId, TaskNode>();
 	readonly #failFastChecks = new Set<TaskId>();
+	readonly #failedMigrations = new Map<
+		TaskId,
+		{ readonly task: AnyTask; readonly error: unknown }
+	>();
+
+	readonly #taskWaiters = new Waiters<TaskId, SettledTask<JsonValue>>();
+	readonly #idleWaiters = new Waiters<ConversationId | undefined, void>();
+
 	#reconcileScheduled = false;
 	#cascadePending = false;
+	#unsubscribeCommits: () => void = () => {};
+	#unsubscribeClose: () => void = () => {};
 	#unsubscribeRegistry: () => void = () => {};
 	#enabled = false;
 	#closing = false;
@@ -304,28 +312,43 @@ export class TaskScheduler {
 	}
 
 	async open(context: Context): Promise<void> {
-		this.#session.subscribeCommits((publication) => this.#observe(publication));
-		this.#session.subscribeClose(() => this.#seal());
+		this.#unsubscribeCommits = this.#session.subscribeCommits((publication) =>
+			this.#observe(publication),
+		);
+		this.#unsubscribeClose = this.#session.subscribeClose(() => this.#seal());
 		this.#unsubscribeRegistry = this.#registry.subscribe(() => this.#kick());
-		await this.#session.commitWith(async (tx) => {
-			const scans = [];
-			for (const status of LIVE_STATUSES) {
-				scans.push(await scanAll((cursor) => tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor)));
-			}
-			for (const records of scans) {
-				for (const record of records) {
-					this.#live.set(record.id, record);
-					if (record.state.status === "running") {
-						tx.setTask(
-							withState(record, { status: "pending", checkpoint: record.state.checkpoint }),
-						);
-					}
-					if (record.state.status === "waiting" && record.state.policy === "failFast") {
-						this.#failFastChecks.add(record.id);
+		try {
+			await this.#session.commitWith(async (tx) => {
+				const scans = [];
+				for (const status of LIVE_STATUSES) {
+					scans.push(
+						await scanAll((cursor) => tx.scanTasks({ status }, SCAN_PAGE_SIZE, cursor)),
+					);
+				}
+				for (const records of scans) {
+					for (const record of records) {
+						this.#live.set(record.id, record);
+						if (record.state.status === "running") {
+							tx.setTask(
+								withState(record, {
+									status: "pending",
+									checkpoint: record.state.checkpoint,
+								}),
+							);
+						}
+						if (
+							record.state.status === "waiting" &&
+							record.state.policy === "failFast"
+						) {
+							this.#failFastChecks.add(record.id);
+						}
 					}
 				}
-			}
-		}, context);
+			}, context);
+		} catch (error) {
+			this.#detach();
+			throw error;
+		}
 		this.#cascadePending = true;
 		this.#scheduleReconcile();
 	}
@@ -344,7 +367,7 @@ export class TaskScheduler {
 	async abort(id: TaskId, context: Context): Promise<"marked" | "terminal"> {
 		const marked = await this.#session.commitWith(async (tx) => {
 			const current = await tx.task(id);
-			if (current === undefined) throw new Error(`Task ${id} does not exist`);
+			if (current === undefined) throw new Error(`Unknown task: ${id}`);
 			if (current.state.status === "terminal") return { result: "terminal" as const };
 			const invocation = this.#invocations.get(id);
 			if (invocation === undefined && current.state.status !== "completing") {
@@ -378,7 +401,7 @@ export class TaskScheduler {
 			if (this.#closing) throw closedError();
 			if (this.#live.has(id)) return { promise: this.#taskWaiters.add(id, context) };
 			const record = await this.#storage.task(id, context);
-			if (record === undefined) throw new Error(`Task ${id} does not exist`);
+			if (record === undefined) throw new Error(`Unknown task: ${id}`);
 			return { promise: Promise.resolve(record as SettledTask<JsonValue>) };
 		});
 		return found.promise;
@@ -716,9 +739,21 @@ export class TaskScheduler {
 		return false;
 	}
 
+	#detach(): void {
+		const commits = this.#unsubscribeCommits;
+		const close = this.#unsubscribeClose;
+		const registry = this.#unsubscribeRegistry;
+		this.#unsubscribeCommits = () => {};
+		this.#unsubscribeClose = () => {};
+		this.#unsubscribeRegistry = () => {};
+		commits();
+		close();
+		registry();
+	}
+
 	#seal(): void {
 		this.#closing = true;
-		this.#unsubscribeRegistry();
+		this.#detach();
 		const error = closedError();
 		this.#taskWaiters.rejectAll(error);
 		this.#idleWaiters.rejectAll(error);
@@ -812,7 +847,7 @@ export class TaskScheduler {
 		if (!fit.migrates) return { kind: "ready", task: fit.task, record };
 		const definition = erased(fit.task);
 		try {
-			if (definition.migrate === undefined) throw missingMigration(record, definition);
+			if (definition.migrate === undefined) throw missingMigration(record);
 			const migrated = definition.migrate(record.input, record.state.checkpoint, record.version);
 			const state = { ...record.state, checkpoint: copyJson(migrated.checkpoint) };
 			const migratedRecord = {
@@ -867,7 +902,7 @@ export class TaskScheduler {
 			return {
 				kind: "blocked",
 				reason: "migration_failed",
-				error: missingMigration(record, erased(fit.task)),
+				error: missingMigration(record),
 			};
 		}
 		return { kind: "ready", migrates: fit.migrates };
@@ -969,7 +1004,7 @@ export class TaskScheduler {
 				const cause = next === undefined ? "missing_task" : "incompatible_task";
 				this.#report(
 					new Error(
-						`Task ${current.id} keeps running under its old ${current.kind} definition`,
+						`Outdated task: ${current.id}`,
 						{ cause },
 					),
 				);
@@ -1068,7 +1103,7 @@ export class TaskScheduler {
 		policy: string,
 	): Promise<void> {
 		if (invocation.mode === "abort")
-			throw new Error(`Abort handler of task ${current.id} cannot wait`);
+			throw new Error(`Abort blocked: ${current.id}`);
 		const overlay = overlayOf(tx);
 		await this.#loadChain(parentOf(current));
 		const owners = new Set<TaskId>();
@@ -1077,16 +1112,16 @@ export class TaskScheduler {
 		}
 		for (const id of on) {
 			if (id === current.id || owners.has(id)) {
-				throw new Error(`Task ${current.id} cannot wait on itself or its owner ${id}`);
+				throw new Error(`Invalid wait: ${current.id}`);
 			}
 			const member =
 				overlay.tasks.get(id) ??
 				this.#live.get(id) ??
 				(await this.#storage.task(id, this.#context));
-			if (member === undefined) throw new Error(`Task ${id} does not exist`);
+			if (member === undefined) throw new Error(`Unknown task: ${id}`);
 			if (policy === "failFast" && member.owner !== current.id) {
 				throw new Error(
-					`Task ${current.id} can wait failFast only on tasks it owns; ${id} is not one`,
+					`Invalid failFast: ${id}`,
 				);
 			}
 		}
@@ -1214,7 +1249,7 @@ export class TaskScheduler {
 						for (const id of ids) {
 							const state = (await this.#storage.task(id, context))?.state;
 							if (state?.status !== "terminal")
-								throw new Error(`Task ${id} is not terminal`);
+								throw new Error(`Task running: ${id}`);
 							outcomes.push(state.outcome);
 						}
 						return outcomes;
@@ -1277,12 +1312,12 @@ export class TaskScheduler {
 				if (invocation.ended) throw endedError(invocation);
 				if (this.#closing) throw closedError();
 				const found = this.#live.get(invocation.taskId);
-				if (found === undefined) throw new Error(`Task ${invocation.taskId} is terminal`);
+				if (found === undefined) throw new Error(`Task closed: ${invocation.taskId}`);
 				if (found.state.status !== "running")
-					throw new Error(`Task ${invocation.taskId} is ${found.state.status}`);
+					throw new Error(`Task status: ${found.state.status}`);
 				const current = found as ErasedRunningTask;
 				if (invocation.mode === "run" && current.abortRequested) {
-					throw new Error(`Task ${invocation.taskId} has a durable abort mark`);
+					throw new Error(`Task aborted: ${invocation.taskId}`);
 				}
 				return change(tx, current);
 			},
