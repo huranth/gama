@@ -1,11 +1,11 @@
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { describe, expect, it } from "vitest";
 import { StorageRejected } from "../src/errors.ts";
 import { idFromNumber } from "../src/ids.ts";
-import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "../src/storage/sqlite/index.ts";
-import { SqliteStorage } from "../src/storage/sqlite/index.ts";
-import { NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/storage/sqlite/node.ts";
+import type { SqliteDatabase, SqliteExecutor, SqliteValue } from "../src/backends/sqlite/index.ts";
+import { SqliteStorage } from "../src/backends/sqlite/index.ts";
+import { NodeSqliteDatabase, openNodeSqliteDatabase } from "../src/backends/sqlite/node.ts";
 import { type DocumentId, type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 type SettlementMode = "immediate" | "delay" | "reject";
@@ -122,7 +122,7 @@ describe("portable SQLite facade settlement", () => {
 				[{ type: "conversation", value: { id: ROOT_CONVERSATION_ID } }],
 				BACKGROUND_CONTEXT,
 			),
-		).rejects.toThrow("ID 1 already belongs to conversation");
+		).rejects.toThrow("Duplicate ID: 1");
 		expect((await storage.entry(idFromNumber<EntryId>(2), BACKGROUND_CONTEXT))?.entry.kind).toBe(
 			"cached",
 		);
@@ -294,7 +294,7 @@ describe("portable SQLite facade settlement", () => {
 				undefined,
 				BACKGROUND_CONTEXT,
 			),
-		).rejects.toThrow("SqliteStorage is closed");
+		).rejects.toThrow("SqliteStorage closed");
 	});
 
 	it("rejects a transaction handle used after its transaction settles", async () => {
@@ -305,7 +305,7 @@ describe("portable SQLite facade settlement", () => {
 			handle = transaction;
 			await transaction.run("INSERT INTO stale_probe (value) VALUES (?)", 1);
 		});
-		const stale = "SQLite transaction handle is no longer active";
+		const stale = "Transaction inactive";
 		await expect(handle.exec("INSERT INTO stale_probe (value) VALUES (2)")).rejects.toThrow(
 			stale,
 		);

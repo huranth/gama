@@ -1,4 +1,4 @@
-import type { Context, Draft } from "@huranth/chord";
+import type { Context, Draft } from "@huranth/gama-bus";
 import { type AssistantMessage, type Models, type ToolCall, Type } from "@huranth/gama-ai";
 import {
 	type ConversationId,
@@ -27,8 +27,8 @@ import {
 	wrapTool,
 } from "@huranth/gama-durable";
 import { expect, expectTypeOf, it } from "vitest";
-import type { ExecutionEnv } from "../src/env/index.ts";
-import { CodingTools, createBashTool, createEditTool, createReadTool } from "../src/tools/index.ts";
+import type { ExecutionEnv } from "../src/system/index.ts";
+import { CodingTools, createBashTool, createEditTool, createReadTool } from "../src/ops/index.ts";
 
 declare const context: Context;
 declare const storage: Storage;
@@ -65,12 +65,13 @@ declare const payments: {
 };
 declare function newKey(): string;
 declare function receiptEntry(receipt: { id: string }): { kind: string; data: { id: string } };
-interface SettingsManager {
+interface SettingsStore {
 	get(key: "timeoutMs"): number;
 	get(key: "autoCompact"): boolean;
 	set(key: "autoCompact", value: boolean): void;
 }
-declare const manager: SettingsManager;
+
+declare const manager: SettingsStore;
 declare const Anchor: ReturnType<typeof defineTask<null, { phase: "hold" }, null>>;
 declare const Reporter: ReturnType<typeof defineTask<null, { phase: "report" }, null>>;
 declare const subagentTool: ReturnType<typeof createReadTool>;
@@ -131,7 +132,7 @@ function examples() {
 	});
 	const Venv = defineExtension({
 		name: "venv",
-		tools: [createBashTool({ commandPrefix: "source .venv/bin/activate" })],
+		tools: [createBashTool({ commandPrefix: "source .vsystem/bin/activate" })],
 	});
 
 	const PlanModeDoc = defineDoc<{ enabled: boolean }>({
@@ -254,8 +255,8 @@ function examples() {
 
 		liveSettings: () => {
 			class UserSettings implements HarnessSettings {
-				readonly manager: SettingsManager;
-				constructor(manager: SettingsManager) {
+				readonly manager: SettingsStore;
+				constructor(manager: SettingsStore) {
 					this.manager = manager;
 				}
 				get stream() {

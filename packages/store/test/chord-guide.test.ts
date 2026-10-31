@@ -8,9 +8,9 @@ import {
 	type FacetHost,
 	type RemoteServiceTransport,
 	type ReplicatedState,
-} from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
-import type { Op } from "@huranth/chord/delta";
+} from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import type { Op } from "@huranth/gama-bus/delta";
 import {
 	type ConversationId,
 	type DocumentObserver,
@@ -45,6 +45,7 @@ interface CanvasService {
 	readonly state: ReplicatedState<CanvasState | null>;
 	addStroke(stroke: Stroke, context: Context): Promise<void>;
 }
+
 const Canvas = defineService<CanvasService>("app.canvas");
 
 async function createCanvasFacet(session: Session, context: Context): Promise<Facet> {
@@ -152,6 +153,7 @@ interface DiffReviewService {
 	identity(context: Context): Promise<{ conversationId: ConversationId; key: string }>;
 	addComment(comment: ReviewComment, context: Context): Promise<void>;
 }
+
 const DiffReviews = defineService<DiffReviewService>("app.diff-reviews");
 
 function reviewFacet(
@@ -205,6 +207,7 @@ const rendered: string[] = [];
 async function sendCommittedFrame(value: JobOutput | null, ops: readonly Op[]): Promise<void> {
 	sent.push({ value, ops });
 }
+
 async function render(text: string): Promise<void> {
 	rendered.push(text);
 }
@@ -229,6 +232,7 @@ async function appendJobOutput(
 		draft.chunks += 1;
 	}, context);
 }
+
 async function observeJob(
 	api: DocumentObserver,
 	producerTaskId: TaskId,

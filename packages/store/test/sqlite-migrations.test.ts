@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { afterEach, describe, expect, it } from "vitest";
 import { idFromNumber } from "../src/ids.ts";
 import {
@@ -9,8 +9,8 @@ import {
 	CURRENT_SQLITE_SCHEMA_VERSION,
 	SQLITE_MIGRATIONS,
 	type SqliteMigration,
-} from "../src/storage/sqlite/index.ts";
-import { openNodeSqliteDatabase, openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+} from "../src/backends/sqlite/index.ts";
+import { openNodeSqliteDatabase, openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 const directories = new Set<string>();
@@ -62,7 +62,7 @@ describe("durable SQLite migrations", () => {
 		);
 		await database.close();
 
-		await expect(openNodeSqliteStorage(path)).rejects.toThrow("is newer than supported version");
+		await expect(openNodeSqliteStorage(path)).rejects.toThrow("Newer schema");
 	});
 
 	it("rolls initial bootstrap and every pending migration back together", async () => {

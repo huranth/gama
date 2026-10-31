@@ -4,16 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { BACKGROUND_CONTEXT as context } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT as context } from "@huranth/gama-bus/context";
 import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
-} from "@huranth/gama-ai/providers/faux";
+} from "@huranth/gama-ai/catalog/faux";
 import { Type } from "typebox";
-import { NodeExecutionEnv } from "../src/env/node.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 import {
 	createRegistry,
 	defineTool,
@@ -22,9 +22,9 @@ import {
 	MemoryStorage,
 	type Storage,
 } from "../src/index.ts";
-import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
-import { createBashTool } from "../src/tools/index.ts";
+import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
+import { createBashTool } from "../src/ops/index.ts";
 import { addTool } from "./harness-support.ts";
 
 type Backend = "memory" | "sqlite" | "jsonl";
@@ -63,14 +63,16 @@ async function main(): Promise<void> {
 	for (const backend of ["memory", "sqlite", "jsonl"] as const) {
 		for (const rate of ["low", "normal", "high"] as const) {
 			for (const retain of ["head", "tail"] as const) {
-				for (const tools of [1, 4])
+				for (const tools of [1, 4]) {
 					scenarios.push({ kind: "rate", backend, rate, retain, tools });
+				}
 			}
 		}
-		for (const retain of ["head", "tail"] as const)
+		for (const retain of ["head", "tail"] as const) {
 			scenarios.push({ kind: "firehose", backend, retain });
+		}
 		scenarios.push({ kind: "firehose", backend, retain: "tail", repetitive: true });
-		if (backend !== "memory")
+		if (backend !== "memory") {
 			scenarios.push({
 				kind: "rate",
 				backend,
@@ -79,9 +81,11 @@ async function main(): Promise<void> {
 				tools: 1,
 				seconds: 30,
 			});
+		}
 		scenarios.push({ kind: "cat", backend });
 	}
 	await ensureBigFile();
+
 	const rows: Record<string, unknown>[] = [];
 	for (const scenario of scenarios) {
 		const { stdout } = await promisify(execFile)(

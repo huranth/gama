@@ -2,16 +2,16 @@ import { mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { Context, JsonValue } from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { registerStorageConformance } from "@huranth/gama-durable/testing";
 import { afterEach, describe, expect, it } from "vitest";
 import { idFromNumber } from "../src/ids.ts";
-import type { SqliteStorage } from "../src/storage/sqlite/index.ts";
+import type { SqliteStorage } from "../src/backends/sqlite/index.ts";
 import {
 	type NodeSqliteStorageOptions,
 	openNodeSqliteStorage,
-} from "../src/storage/sqlite/node.ts";
+} from "../src/backends/sqlite/node.ts";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -231,7 +231,7 @@ describe("Pico SqliteStorage", () => {
 			database.close();
 		}
 		await expect(openNodeSqliteStorage(path)).rejects.toThrow(
-			"Durable SQLite metadata is missing",
+			"Missing metadata",
 		);
 	});
 
@@ -256,7 +256,7 @@ describe("Pico SqliteStorage", () => {
 			database.close();
 		}
 		await expect(storage.document(id, "current", context)).rejects.toThrow(
-			`Document ${id} is missing a required base`,
+			`Missing base: ${id}`,
 		);
 	});
 

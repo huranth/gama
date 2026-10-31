@@ -1,4 +1,4 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import { expect, expectTypeOf, it } from "vitest";
 import { idFromNumber, seqFromNumber } from "../src/ids.ts";
 import type {

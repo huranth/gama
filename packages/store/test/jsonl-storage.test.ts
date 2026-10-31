@@ -1,15 +1,15 @@
 import { mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { Context, JsonValue } from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { registerStorageConformance } from "@huranth/gama-durable/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { err, FileError, type FileSystem, type Result } from "../src/env/index.ts";
-import { NodeExecutionEnv } from "../src/env/node.ts";
+import { err, FileError, type FileSystem, type Result } from "../src/system/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 import { idFromNumber } from "../src/ids.ts";
-import { JsonlStorage } from "../src/storage/jsonl/index.ts";
-import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
+import { JsonlStorage } from "../src/backends/jsonl/index.ts";
+import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -606,6 +606,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				`append:doc-${firstId}.jsonl`,
 				...(fsync ? [`flush:doc-${secondId}.jsonl`, `flush:doc-${firstId}.jsonl`] : []),
 				"append:main.jsonl",
+				...(fsync ? ["flush:main.jsonl"] : []),
 			];
 			expect(env.operations).toEqual(expected);
 
@@ -628,6 +629,7 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				`write:doc-${firstId}.jsonl.reclaim`,
 				...(fsync ? [`flush:doc-${firstId}.jsonl.reclaim`] : []),
 				`rename:doc-${firstId}.jsonl.reclaim->doc-${firstId}.jsonl`,
+				...(fsync ? [`flush:doc-${firstId}.jsonl`] : []),
 			]);
 
 			env.clear();
@@ -644,7 +646,10 @@ describe("Pico JsonlStorage publication and recovery", () => {
 				],
 				context,
 			);
-			expect(env.operations).toEqual(["append:main.jsonl"]);
+			expect(env.operations).toEqual([
+				"append:main.jsonl",
+				...(fsync ? ["flush:main.jsonl"] : []),
+			]);
 
 			const taskId = await storage.mintId<TaskId<JsonValue>>();
 			await storage.commit([{ type: "task", value: pendingTask(taskId) }], context);
@@ -1211,6 +1216,69 @@ describe("Pico JsonlStorage publication and recovery", () => {
 		await expect(
 			JsonlStorage.open(directory, new NodeExecutionEnv({ cwd: directory }), context),
 		).rejects.toThrow("Invalid document content");
+	});
+
+	it("waits for an admitted commit before closing", async () => {
+		const directory = await tempDirectory();
+		const storage = await openStorage(directory);
+		await createRoot(storage);
+		const id = await storage.mintId<DocumentId>();
+		const pending = storage.commit(
+			[
+				{
+					type: "document.create",
+					record: sessionDocument(id),
+					content: { kind: "base", version: 1, value: { count: 0 } },
+				},
+			],
+			context,
+		);
+
+		await storage.close(context);
+		await expect(pending).resolves.toBe(2);
+
+		const reopened = await openStorage(directory);
+		expect((await reopened.document(id, "current", context))?.value).toEqual({ count: 0 });
+	});
+
+	it("keeps a complete main marker without a trailing newline", async () => {
+		const directory = await tempDirectory();
+		const storage = await openStorage(directory);
+		await createRoot(storage);
+		await storage.close(context);
+		const path = join(directory, "main.jsonl");
+		await writeFile(path, (await readFile(path, "utf8")).trimEnd());
+
+		const reopened = await openStorage(directory);
+		expect(await reopened.conversation(ROOT_CONVERSATION_ID, context)).toEqual({
+			id: ROOT_CONVERSATION_ID,
+		});
+		expect(await reopened.commit([], context)).toBe(2);
+	});
+
+	it("keeps a confirmed sidecar record without a trailing newline", async () => {
+		const directory = await tempDirectory();
+		const storage = await openStorage(directory);
+		await createRoot(storage);
+		const documentId = await storage.mintId<DocumentId>();
+		await storage.commit(
+			[
+				{
+					type: "document.create",
+					record: sessionDocument(documentId),
+					content: { kind: "base", version: 1, value: { count: 0 } },
+				},
+			],
+			context,
+		);
+		await storage.close(context);
+		const path = join(directory, `doc-${documentId}.jsonl`);
+		await writeFile(path, (await readFile(path, "utf8")).trimEnd());
+
+		const reopened = await openStorage(directory);
+		expect((await reopened.document(documentId, "current", context))?.value).toEqual({
+			count: 0,
+		});
 	});
 
 	it("rejects malformed complete main and sidecar lines", async () => {

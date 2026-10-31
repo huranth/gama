@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	STORAGE_MEMORY_SCALES,
 	STORAGE_READ_BENCHMARKS,
@@ -13,9 +13,9 @@ import {
 	seedStorageBenchmark,
 	storageBenchmarkPrimaryRecordCount,
 } from "@huranth/gama-durable/testing";
-import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
-import { MemoryStorage } from "../src/storage/memory.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
+import { MemoryStorage } from "../src/backends/memory.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import type { Storage } from "../src/types.ts";
 
 const STORAGE_BENCHMARK_BACKENDS = ["memory", "sqlite", "jsonl"] as const;
@@ -58,8 +58,10 @@ type StorageMemoryResult = {
 const execFileAsync = promisify(execFile);
 
 function collectGarbage(): void {
-	if (globalThis.gc === undefined)
+	if (globalThis.gc === undefined) {
 		throw new Error("Storage memory measurement requires Node.js --expose-gc");
+	}
+
 	for (let index = 0; index < 3; index++) {
 		globalThis.gc();
 	}

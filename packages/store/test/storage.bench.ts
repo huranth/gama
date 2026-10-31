@@ -2,7 +2,7 @@ import { strictEqual } from "node:assert/strict";
 import { copyFile, cp, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	STORAGE_READ_BENCHMARKS,
 	STORAGE_WRITE_BENCHMARKS,
@@ -10,9 +10,9 @@ import {
 	seedStorageWriteBenchmark,
 } from "@huranth/gama-durable/testing";
 import { afterAll, bench, describe } from "vitest";
-import { openNodeJsonlStorage } from "../src/storage/jsonl/node.ts";
-import { MemoryStorage } from "../src/storage/memory.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
+import { MemoryStorage } from "../src/backends/memory.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import type { EntryId, Storage } from "../src/types.ts";
 
 const STORAGE_BENCHMARK_BACKENDS = ["memory", "sqlite", "jsonl"] as const;
