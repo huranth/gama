@@ -1,5 +1,5 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/chord";
-import { type Change, type Op, type Prepared, type Tracker, track } from "@huranth/chord/delta";
+import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/gama-bus";
+import { type Change, type Op, type Prepared, type Tracker, track } from "@huranth/gama-bus/delta";
 import {
 	type AnyDocDefinition,
 	type AnyDocToken,
@@ -10,9 +10,9 @@ import {
 	materializeDocumentValue,
 	type ResolvedAddress,
 	resolveAddress,
-} from "../documents.ts";
+} from "../docs.ts";
 import { ReadAfterWrite } from "../errors.ts";
-import { SCAN_PAGE_SIZE } from "../harness/util.ts";
+import { SCAN_PAGE_SIZE } from "../engine/util.ts";
 import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
@@ -218,14 +218,14 @@ function applySubmissionChange(
 	if (current.status === "done" || current.status === "unanswered") return current;
 
 	if (change.status === "placed") {
-		if (current.status !== "queued") throw new Error(`Submission ${current.id} is not queued`);
+		if (current.status !== "queued") throw new Error(`Not queued: ${current.id}`);
 		const status = current.type === "input" ? "placed" : "done";
 
 		return { ...current, status, entry: change.entry } as SubmissionRecord;
 	}
 
 	if (change.status === "done" && current.status !== "placed") {
-		throw new Error(`Submission ${current.id} is not a placed input`);
+		throw new Error(`Not placed: ${current.id}`);
 	}
 	return { ...current, ...change } as SubmissionRecord;
 }
@@ -351,7 +351,7 @@ export class Transaction implements Tx {
 			const task = await this.#currentTask(ownerTaskId);
 			this.#assertOpen();
 			if (task === undefined)
-				throw new Error(`Conversation owner task ${ownerTaskId} does not exist`);
+				throw new Error(`Unknown owner: ${ownerTaskId}`);
 			owner = { conversationId: task.conversationId, taskId: ownerTaskId };
 		}
 		const record: ConversationRecord = {
@@ -441,7 +441,7 @@ export class Transaction implements Tx {
 				owner = await this.#currentTask(ownership.taskId);
 				this.#assertOpen();
 				if (owner === undefined)
-					throw new Error(`Task owner ${ownership.taskId} does not exist`);
+					throw new Error(`Unknown owner: ${ownership.taskId}`);
 				if (options.background === true)
 					throw new TypeError("A child task cannot be background");
 				if (
@@ -449,7 +449,7 @@ export class Transaction implements Tx {
 					options.conversationId !== owner.conversationId
 				) {
 					throw new Error(
-						`A child task lives in its owner's conversation ${owner.conversationId}`,
+						`Child conversation: ${owner.conversationId}`,
 					);
 				}
 			}
@@ -515,10 +515,10 @@ export class Transaction implements Tx {
 		const task = this.#taskEntry(value.id);
 		const candidate = task.write?.record;
 		if (candidate?.state.status === "terminal") {
-			throw new Error(`Task ${value.id} already has a terminal candidate`);
+			throw new Error(`Duplicate terminal: ${value.id}`);
 		}
 		if (candidate !== undefined && candidate.conversationId !== value.conversationId) {
-			throw new Error(`Task ${value.id} cannot change conversations`);
+			throw new Error(`Fixed conversation: ${value.id}`);
 		}
 		task.write = {
 			kind: task.write?.kind === "create" ? "create" : "replace",
@@ -670,8 +670,8 @@ export class Transaction implements Tx {
 		if (scope.kind === "conversation") await this.#requireConversation(scope.conversationId);
 		if (scope.kind === "task") {
 			const task = await this.#currentTask(scope.taskId);
-			if (task === undefined) throw new Error(`Task ${scope.taskId} does not exist`);
-			if (task.state.status === "terminal") throw new Error(`Task ${scope.taskId} is terminal`);
+			if (task === undefined) throw new Error(`Unknown task: ${scope.taskId}`);
+			if (task.state.status === "terminal") throw new Error(`Task closed: ${scope.taskId}`);
 		}
 		this.#assertOpen();
 		const value = copyJson(
@@ -702,7 +702,7 @@ export class Transaction implements Tx {
 		);
 		this.#assertOpen();
 		if (stored === undefined) {
-			throw new Error(`Fork source document ${target.source.id} cannot be read`);
+			throw new Error(`Unreadable source: ${target.source.id}`);
 		}
 		if (
 			stored.record.scope.kind !== "conversation" ||
@@ -712,7 +712,7 @@ export class Transaction implements Tx {
 			stored.record.fork !== target.record.fork
 		) {
 			throw new Error(
-				`Fork source document ${target.source.id} does not match the copied record`,
+				`Source mismatch: ${target.source.id}`,
 			);
 		}
 		const value = materializeDocumentValue(
@@ -754,7 +754,7 @@ export class Transaction implements Tx {
 		if (this.#pendingOperations.size > 0) {
 			this.#abortChanges();
 			await Promise.allSettled(this.#pendingOperations);
-			throw new Error("Session commit callback settled before its pending Tx operations");
+			throw new Error("Commit pending");
 		}
 		try {
 			for (const document of this.#documents) {
@@ -841,11 +841,11 @@ export class Transaction implements Tx {
 		for (const [id, task] of this.#tasksById) {
 			if (task.write?.kind !== "replace") continue;
 			const committed = await this.#committedTask(id);
-			if (committed === undefined) throw new Error(`Task ${id} does not exist`);
+			if (committed === undefined) throw new Error(`Unknown task: ${id}`);
 			if (committed.state.status === "terminal")
-				throw new Error(`Task ${id} is already terminal`);
+				throw new Error(`Task closed: ${id}`);
 			if (committed.conversationId !== task.write.record.conversationId) {
-				throw new Error(`Task ${id} cannot change conversations`);
+				throw new Error(`Fixed conversation: ${id}`);
 			}
 		}
 
@@ -897,7 +897,7 @@ export class Transaction implements Tx {
 
 		for (const { id, change } of this.#submissionChanges) {
 			const current = this.#submissions.get(id) ?? (await storage.submission(id, this.#context));
-			if (current === undefined) throw new Error(`Submission ${id} does not exist`);
+			if (current === undefined) throw new Error(`Unknown submission: ${id}`);
 			const next = applySubmissionChange(current, change);
 			if (next !== current) this.#submissions.set(id, next);
 		}
@@ -943,11 +943,19 @@ export class Transaction implements Tx {
 		}
 		for (const { what, taskId } of owners) {
 			const task = await this.#currentTask(taskId);
-			if (task === undefined) throw new Error(`${what} ${taskId} does not exist`);
+			if (task === undefined) throw new Error(`Unknown ${what}: ${taskId}`);
 			if (task.state.status === "terminal" || task.state.status === "completing") {
-				throw new Error(`${what} ${taskId} is ${task.state.status}`);
+				throw new Error(`${what} status: ${task.state.status}`);
 			}
-			if (task.abortRequested) throw new Error(`${what} ${taskId} is abort-marked`);
+			if (task.abortRequested) throw new Error(`${what} aborted: ${taskId}`);
+		}
+		for (const task of this.#tasksById.values()) {
+			const record = task.write?.kind === "create" ? task.write.record : undefined;
+			if (record?.owner === undefined) continue;
+			const owner = await this.#currentTask(record.owner);
+			if (owner !== undefined && owner.conversationId !== record.conversationId) {
+				throw new Error(`Foreign owner: ${record.owner}`);
+			}
 		}
 	}
 
@@ -957,7 +965,7 @@ export class Transaction implements Tx {
 			const record = plan.record;
 			if (this.#forkSourceDocumentIds.has(record.id)) {
 				throw new Error(
-					`Cannot change fork source document ${record.id} in the fork transaction`,
+					`Fixed source: ${record.id}`,
 				);
 			}
 			const scope = plan.record.scope;
@@ -968,7 +976,7 @@ export class Transaction implements Tx {
 				record.fork === "current"
 			) {
 				throw new Error(
-					`Cannot fork conversation ${scope.conversationId} while changing its current-policy documents`,
+					`Fork conflict: ${scope.conversationId}`,
 				);
 			}
 		}
@@ -990,7 +998,7 @@ export class Transaction implements Tx {
 			scope.kind === "task" &&
 			this.#tasksById.get(scope.taskId)?.write?.record.state.status === "terminal"
 		) {
-			throw new Error(`Task ${scope.taskId} is terminal`);
+			throw new Error(`Task closed: ${scope.taskId}`);
 		}
 	}
 
@@ -1026,7 +1034,7 @@ export class Transaction implements Tx {
 	async #requireConversation(id: ConversationId): Promise<void> {
 		if (this.#createdConversationIds.has(id)) return;
 		if ((await this.#host.storage.conversation(id, this.#context)) === undefined) {
-			throw new Error(`Conversation ${id} does not exist`);
+			throw new Error(`Unknown conversation: ${id}`);
 		}
 	}
 

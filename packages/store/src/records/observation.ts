@@ -4,9 +4,9 @@ import type {
 	ReplicatedStateSource,
 	ReplicatedStateSourceAttachment,
 	ReplicatedStateSourceFrame,
-} from "@huranth/chord";
-import { withoutAbortSignal } from "@huranth/chord/context";
-import type { Op } from "@huranth/chord/delta";
+} from "@huranth/gama-bus";
+import { withoutAbortSignal } from "@huranth/gama-bus/context";
+import type { Op } from "@huranth/gama-bus/delta";
 import type { JsonObject, WatchEnd, WatchHandle } from "../types.ts";
 
 export type ObservedDocumentValue = Readonly<JsonObject> | null;
@@ -39,7 +39,8 @@ export class CommittedStateSource<T = ObservedDocumentValue> implements Replicat
 	}
 
 	attach(): ReplicatedStateSourceAttachment<T> {
-		if (this.#closed) throw new Error("State source is closed");
+		if (this.#closed) throw new Error("State closed");
+		if (this.#retired) throw new Error("State retired");
 		const attachment = new SessionSourceAttachment(
 			{ value: this.#value as T, cursor: this.#cursor },
 			() => {
@@ -101,8 +102,8 @@ class SessionSourceAttachment<T> implements ReplicatedStateSourceAttachment<T> {
 	}
 
 	activate(listener: (frame: ReplicatedStateSourceFrame<T>) => void): void {
-		if (this.#activated) throw new Error("State attachment is already active");
-		if (this.#disposed) throw new Error("State attachment is disposed");
+		if (this.#activated) throw new Error("Attachment active");
+		if (this.#disposed) throw new Error("Attachment disposed");
 		this.#activated = true;
 		this.#listener = listener;
 		this.#drain();
@@ -186,8 +187,8 @@ export class CommittedWatch<T = ObservedDocumentValue> implements WatchHandle<T>
 	}
 
 	start(listener: (value: T, ops: readonly Op[], context: Context) => Promise<void>): void {
-		if (this.#started) throw new Error("Watch is already started");
-		if (this.#end !== undefined) throw new Error("Watch is stopped");
+		if (this.#started) throw new Error("Watch started");
+		if (this.#end !== undefined) throw new Error("Watch stopped");
 		this.#started = true;
 		this.#listener = listener;
 		if (this.#pending.length > 0) this.#schedule();
@@ -200,7 +201,7 @@ export class CommittedWatch<T = ObservedDocumentValue> implements WatchHandle<T>
 
 	observeCancellation(signal: AbortSignal): void {
 		if (this.#cancellationSignal !== undefined)
-			throw new Error("Watch cancellation is already installed");
+			throw new Error("Watch cancelled");
 		if (this.#end !== undefined) return;
 		this.#cancellationSignal = signal;
 		this.#cancellationListener = () => this.cancel();

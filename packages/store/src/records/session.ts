@@ -1,13 +1,13 @@
-import { type Context, type JsonValue, replicatedState } from "@huranth/chord";
-import { awaitWithContext, withoutAbortSignal } from "@huranth/chord/context";
-import { type Op, track } from "@huranth/chord/delta";
+import { type Context, type JsonValue, replicatedState } from "@huranth/gama-bus";
+import { awaitWithContext, withoutAbortSignal } from "@huranth/gama-bus/context";
+import { type Op, track } from "@huranth/gama-bus/delta";
 import {
 	type AnyDocToken,
 	checkRecordScope,
 	checkRecordVersion,
 	materializeDocument,
 	resolveAddress,
-} from "../documents.ts";
+} from "../docs.ts";
 import { StorageRejected } from "../errors.ts";
 import { idFromNumber } from "../ids.ts";
 import type {
@@ -136,6 +136,7 @@ export class SessionImpl implements Session {
 		| { readonly record: DocumentRecord; readonly version: number; readonly value: JsonObject }
 		| undefined
 	> {
+		this.#assertUsable();
 		const definition = token.definition;
 		const resolved = resolveAddress(definition, [conversationId, context]);
 		const loaded = await this.#loadDocument(definition, resolved.id, resolved.address, context);
@@ -247,6 +248,8 @@ export class SessionImpl implements Session {
 					context,
 				);
 				if (loaded === undefined) return undefined;
+				// Close guard
+				this.#assertUsable();
 				const { observer: source, detach } = this.#attachDocument(
 					definition,
 					loaded,
@@ -321,6 +324,8 @@ export class SessionImpl implements Session {
 				);
 				if (cancelled) throw cancellationError(signal!);
 				if (loaded === undefined) return undefined;
+				// Close guard
+				this.#assertUsable();
 				return this.#attachDocument(
 					definition,
 					loaded,
@@ -373,7 +378,7 @@ export class SessionImpl implements Session {
 			this.#assertHealthy();
 			const storedEntry = await this.#storage.entry(conversationId, at, context);
 			if (storedEntry === undefined) {
-				throw new Error(`Entry ${at} is not visible from conversation ${conversationId}`);
+				throw new Error(`Hidden entry: ${at}`);
 			}
 			const address: DocumentAddress = {
 				...resolved.address,
@@ -383,7 +388,7 @@ export class SessionImpl implements Session {
 			if (record === undefined) return undefined;
 			const stored = await this.#storage.document(record.id, storedEntry.commitSeq, context);
 			if (stored === undefined) {
-				throw new Error(`Historical document ${record.id} (${record.kind}) cannot be read`);
+				throw new Error(`Unreadable document: ${record.id}`);
 			}
 			return materializeDocument(definition, stored);
 		});
@@ -392,19 +397,31 @@ export class SessionImpl implements Session {
 	close(context: Context): Promise<void> {
 		if (this.#closing === undefined) {
 			const cleanup = withoutAbortSignal(context);
-			this.#closing = Promise.resolve()
-				.then(() => this.beforeClose())
-				.then(() =>
-					this.#enqueue(async () => {
+			this.#closing = (async () => {
+				let failure: unknown;
+				try {
+					await this.beforeClose();
+				} catch (error) {
+					failure = error;
+				}
+				try {
+					await this.#enqueue(async () => {
 						this.#commitListeners.clear();
 						this.#documents.clear();
 						await this.#storage.close(cleanup);
-					}),
-				);
+					});
+				} catch (error) {
+					failure ??= error;
+				}
+				if (failure !== undefined) throw failure;
+			})();
 			const listeners = [...this.#closeListeners];
 			this.#closeListeners.clear();
 			for (const listener of listeners) {
-				listener();
+				// Isolate failures
+				try {
+					listener();
+				} catch {}
 			}
 		}
 		return awaitWithContext(this.#closing, context);
@@ -549,7 +566,7 @@ export class SessionImpl implements Session {
 		if (record === undefined) return undefined;
 		const stored = await this.#storage.document(record.id, "current", context);
 		if (stored === undefined)
-			throw new Error(`Current document ${record.id} (${record.kind}) cannot be read`);
+			throw new Error(`Unreadable document: ${record.id}`);
 		const value = materializeDocument(definition, stored);
 		const loaded: LoadedDocument = {
 			addressId,
@@ -573,14 +590,14 @@ export class SessionImpl implements Session {
 	}
 
 	#assertUsable(): void {
-		if (this.#closing !== undefined) throw new Error("Session is closed");
+		if (this.#closing !== undefined) throw new Error("Session closed");
 		this.#assertHealthy();
 	}
 
 	#assertHealthy(): void {
 		if (this.#poison !== undefined) {
 			throw new Error(
-				"Session is poisoned by a failed commit after storage admission; reopen it",
+				"Session poisoned",
 				{
 					cause: this.#poison.error,
 				},

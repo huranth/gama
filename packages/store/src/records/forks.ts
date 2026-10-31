@@ -1,6 +1,6 @@
-import type { Context } from "@huranth/chord";
-import { addressId } from "../documents.ts";
-import { SCAN_PAGE_SIZE } from "../harness/util.ts";
+import type { Context } from "@huranth/gama-bus";
+import { addressId } from "../docs.ts";
+import { SCAN_PAGE_SIZE } from "../engine/util.ts";
 import type {
 	ConversationId,
 	Cursor,
@@ -29,7 +29,7 @@ export async function prepareForkDocumentCopies(
 ): Promise<readonly ForkDocumentCopy[]> {
 	const entry = await storage.entry(parentConversationId, at, context);
 	if (entry === undefined) {
-		throw new Error(`Entry ${at} is not visible from conversation ${parentConversationId}`);
+		throw new Error(`Hidden entry: ${at}`);
 	}
 
 	const copies: ForkDocumentCopy[] = [];
@@ -86,7 +86,7 @@ async function collectCopies(
 			const copyAddress = addressId(record);
 			if (copiedAddresses.has(copyAddress)) {
 				const member = record.key === undefined ? record.kind : `${record.kind}/${record.key}`;
-				throw new Error(`Fork selects multiple source documents for ${member}`);
+				throw new Error(`Multiple documents: ${member}`);
 			}
 			copiedAddresses.add(copyAddress);
 			copies.push({ record, source: { id: source.id, at } });
