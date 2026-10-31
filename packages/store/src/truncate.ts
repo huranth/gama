@@ -22,10 +22,25 @@ interface RuntimeBuffer {
 }
 
 export const DEFAULT_MAX_LINES = 2000;
+
 export const DEFAULT_MAX_BYTES = 50 * 1024;
 
 const runtimeBuffer = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
+
 const nonAsciiPattern = /[^\x00-\x7f]/;
+
+function splitLinesForCounting(content: string): string[] {
+	if (content.length === 0) return [];
+	const lines = content.split("\n");
+	if (content.endsWith("\n")) lines.pop();
+	return lines;
+}
+
+export function formatSize(bytes: number): string {
+	if (bytes < 1024) return `${bytes}B`;
+	if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
+	return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
+}
 
 export function utf8ByteLength(content: string): number {
 	if (runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
@@ -55,23 +70,6 @@ export function utf8ByteLength(content: string): number {
 	return bytes;
 }
 
-function splitLinesForCounting(content: string): string[] {
-	if (content.length === 0) return [];
-	const lines = content.split("\n");
-	if (content.endsWith("\n")) lines.pop();
-	return lines;
-}
-
-export function formatSize(bytes: number): string {
-	if (bytes < 1024) {
-		return `${bytes}B`;
-	} else if (bytes < 1024 * 1024) {
-		return `${(bytes / 1024).toFixed(1)}KB`;
-	} else {
-		return `${(bytes / (1024 * 1024)).toFixed(1)}MB`;
-	}
-}
-
 export function truncateHead(content: string, options: TruncationOptions = {}): TruncationResult {
 	const maxLines = options.maxLines ?? DEFAULT_MAX_LINES;
 	const maxBytes = options.maxBytes ?? DEFAULT_MAX_BYTES;
@@ -95,7 +93,6 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			maxBytes,
 		};
 	}
-
 	const firstLineBytes = utf8ByteLength(lines[0]);
 	if (firstLineBytes > maxBytes) {
 		return {
@@ -112,8 +109,7 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			maxBytes,
 		};
 	}
-
-	const outputLinesArr: string[] = [];
+	const keptLines: string[] = [];
 	let outputBytesCount = 0;
 	let truncatedBy: "lines" | "bytes" = "lines";
 
@@ -126,15 +122,15 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 			break;
 		}
 
-		outputLinesArr.push(line);
+		keptLines.push(line);
 		outputBytesCount += lineBytes;
 	}
 
 	if (truncatedBy !== "bytes") {
-		truncatedBy = outputLinesArr.length < totalLines ? "lines" : "bytes";
+		truncatedBy = keptLines.length < totalLines ? "lines" : "bytes";
 	}
 
-	const outputContent = outputLinesArr.join("\n");
+	const outputContent = keptLines.join("\n");
 	const finalOutputBytes = utf8ByteLength(outputContent);
 
 	return {
@@ -143,7 +139,7 @@ export function truncateHead(content: string, options: TruncationOptions = {}): 
 		truncatedBy,
 		totalLines,
 		totalBytes,
-		outputLines: outputLinesArr.length,
+		outputLines: keptLines.length,
 		outputBytes: finalOutputBytes,
 		lastLinePartial: false,
 		firstLineExceedsLimit: false,

@@ -1,5 +1,5 @@
-import { copyJson, type JsonValue } from "@huranth/chord";
-import type { Op } from "@huranth/chord/delta";
+import { copyJson, type JsonValue } from "@huranth/gama-bus";
+import type { Op } from "@huranth/gama-bus/delta";
 import { idFromNumber } from "./ids.ts";
 import type {
 	CheckpointInfo,
@@ -55,6 +55,12 @@ export type ResolvedAddress = {
 	readonly nextArgument: number;
 };
 
+function validateDefinition(definition: AnyDocDefinition): void {
+	if (!Number.isSafeInteger(definition.version) || definition.version < 1) {
+		throw new TypeError(`Document ${definition.kind} version must be a positive integer`);
+	}
+}
+
 export function defineDoc<T extends JsonObject>(
 	definition: CommonDocDefinition<T> & { readonly scope: "session" },
 ): SessionDocToken<T>;
@@ -101,10 +107,11 @@ export function defineDocFamily<T extends JsonObject, I extends JsonValue>(
 	return { definition };
 }
 
-function validateDefinition(definition: AnyDocDefinition): void {
-	if (!Number.isSafeInteger(definition.version) || definition.version < 1) {
-		throw new TypeError(`Document ${definition.kind} version must be a positive integer`);
+function ownerId<I extends Id<string>>(value: unknown, definition: AnyDocDefinition): I {
+	if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+		throw new TypeError(`Document ${definition.kind} requires a ${definition.scope} ID`);
 	}
+	return idFromNumber<I>(value);
 }
 
 export function resolveAddress(
@@ -132,13 +139,6 @@ export function resolveAddress(
 		key === undefined ? { kind: definition.kind, scope } : { kind: definition.kind, scope, key };
 
 	return { address, id: addressId(address), nextArgument: index };
-}
-
-function ownerId<I extends Id<string>>(value: unknown, definition: AnyDocDefinition): I {
-	if (typeof value !== "number" || !Number.isSafeInteger(value)) {
-		throw new TypeError(`Document ${definition.kind} requires a ${definition.scope} ID`);
-	}
-	return idFromNumber<I>(value);
 }
 
 export function addressId(address: DocumentAddress): string {
@@ -197,12 +197,12 @@ export function checkRecordVersion(
 ): void {
 	if (version > definition.version) {
 		throw new Error(
-			`Document ${record.id} (${record.kind}) has newer version ${version} than ${definition.version}`,
+			`Newer document: ${record.id}`,
 		);
 	}
 	if (version < definition.version && definition.migrate === undefined) {
 		throw new Error(
-			`Document ${record.id} (${record.kind}) requires migration from version ${version}`,
+			`Migration needed: ${record.id}`,
 		);
 	}
 }
