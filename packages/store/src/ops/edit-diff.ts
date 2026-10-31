@@ -108,53 +108,20 @@ function applyReplacements(content: string, replacements: TextReplacement[], off
 	return result;
 }
 
-function getNotFoundError(path: string, editIndex: number, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Could not find the exact text in ${path}. The old text must match exactly ` +
-				"including all whitespace and newlines.",
-		);
-	}
-	return new Error(
-		`Could not find edits[${editIndex}] in ${path}. The oldText must match exactly ` +
-			"including all whitespace and newlines.",
-	);
+function getNotFoundError(path: string): Error {
+	return new Error(`Edit missing: ${path}`);
 }
 
-function getDuplicateError(
-	path: string,
-	editIndex: number,
-	totalEdits: number,
-	occurrences: number,
-): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`Found ${occurrences} occurrences of the text in ${path}. The text must be ` +
-				"unique. Please provide more context to make it unique.",
-		);
-	}
-	return new Error(
-		`Found ${occurrences} occurrences of edits[${editIndex}] in ${path}. Each ` +
-			"oldText must be unique. Please provide more context to make it unique.",
-	);
+function getDuplicateError(path: string): Error {
+	return new Error(`Ambiguous edit: ${path}`);
 }
 
-function getEmptyOldTextError(path: string, editIndex: number, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(`oldText must not be empty in ${path}.`);
-	}
-	return new Error(`edits[${editIndex}].oldText must not be empty in ${path}.`);
+function getEmptyOldTextError(path: string): Error {
+	return new Error(`Empty oldText: ${path}`);
 }
 
-function getNoChangeError(path: string, totalEdits: number): Error {
-	if (totalEdits === 1) {
-		return new Error(
-			`No changes made to ${path}. The replacement produced identical content. This ` +
-				"might indicate an issue with special characters or the text not existing as " +
-				"expected.",
-		);
-	}
-	return new Error(`No changes made to ${path}. The replacements produced identical content.`);
+function getNoChangeError(path: string): Error {
+	return new Error(`No changes: ${path}`);
 }
 
 export function detectLineEnding(content: string): "\r\n" | "\n" {
@@ -209,7 +176,7 @@ export function applyReplacementsPreservingUnchangedLines(
 	const baseLines = getLineSpans(baseContent);
 	if (originalLines.length !== baseLines.length) {
 		throw new Error(
-			"Cannot preserve unchanged lines because the base content has a different line count.",
+			"Line count differs",
 		);
 	}
 
@@ -258,7 +225,7 @@ function getReplacementLineRange(lines: LineSpan[], replacement: TextReplacement
 		}
 	}
 	if (startLine === -1) {
-		throw new Error("Replacement range is outside the base content.");
+		throw new Error("Invalid range");
 	}
 
 	let endLine = startLine;
@@ -266,7 +233,7 @@ function getReplacementLineRange(lines: LineSpan[], replacement: TextReplacement
 		endLine++;
 	}
 	if (endLine >= lines.length) {
-		throw new Error("Replacement range is outside the base content.");
+		throw new Error("Invalid range");
 	}
 
 	return { startLine, endLine: endLine + 1 };
@@ -284,7 +251,7 @@ export function applyEditsToNormalizedContent(
 
 	for (let i = 0; i < normalizedEdits.length; i++) {
 		if (normalizedEdits[i].oldText.length === 0) {
-			throw getEmptyOldTextError(path, i, normalizedEdits.length);
+			throw getEmptyOldTextError(path);
 		}
 	}
 
@@ -301,7 +268,7 @@ export function applyEditsToNormalizedContent(
 		const edit = normalizedEdits[i];
 		const matchResult = fuzzyFindText(replacementBaseContent, edit.oldText);
 		if (!matchResult.found) {
-			throw getNotFoundError(path, i, normalizedEdits.length);
+			throw getNotFoundError(path);
 		}
 
 		// Exact count
@@ -309,7 +276,7 @@ export function applyEditsToNormalizedContent(
 			? countOccurrences(replacementBaseContent, edit.oldText)
 			: replacementBaseContent.split(edit.oldText).length - 1;
 		if (occurrences > 1) {
-			throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
+			throw getDuplicateError(path);
 		}
 
 		matchedEdits.push({
@@ -325,10 +292,7 @@ export function applyEditsToNormalizedContent(
 		const previous = matchedEdits[i - 1];
 		const current = matchedEdits[i];
 		if (previous.matchIndex + previous.matchLength > current.matchIndex) {
-			throw new Error(
-				`Change ${previous.editIndex + 1} and change ${current.editIndex + 1} overlap ` +
-					`in ${path}, merge them into one edit or target separate regions`,
-			);
+			throw new Error("Overlapping edits");
 		}
 	}
 
@@ -342,7 +306,7 @@ export function applyEditsToNormalizedContent(
 		: applyReplacements(replacementBaseContent, matchedEdits);
 
 	if (baseContent === newContent) {
-		throw getNoChangeError(path, normalizedEdits.length);
+		throw getNoChangeError(path);
 	}
 
 	return { baseContent, newContent };

@@ -1,8 +1,8 @@
 import { type Static, Type } from "typebox";
-import { getOrThrow } from "../env/index.ts";
-import { defineTool } from "../harness/define.ts";
-import { characterEnd } from "../harness/output.ts";
-import type { ToolDiagnostic, ToolRegistration } from "../harness/types.ts";
+import { getOrThrow } from "../system/index.ts";
+import { defineTool } from "../engine/define.ts";
+import { characterEnd } from "../engine/output.ts";
+import type { ToolDiagnostic, ToolRegistration } from "../engine/types.ts";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -38,6 +38,12 @@ export function createReadTool(): ToolRegistration<typeof readSchema, ReadToolDe
 		parameters: readSchema,
 		async execute(args, api, context) {
 			const { path, offset, limit } = args;
+			if (offset !== undefined && (!Number.isInteger(offset) || offset < 1)) {
+				throw new Error("Invalid offset");
+			}
+			if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
+				throw new Error("Invalid limit");
+			}
 			const env = requireEnv(api);
 			const absolutePath = await resolveReadToolPath(env, path, context);
 			const bytes = getOrThrow(await env.readBinaryFile(absolutePath, context));
@@ -58,12 +64,13 @@ export function createReadTool(): ToolRegistration<typeof readSchema, ReadToolDe
 
 			const textContent = new TextDecoder().decode(bytes);
 			const allLines = textContent.split("\n");
-			const totalFileLines = allLines.length;
+			const hasTrailingNewline = allLines.length > 1 && allLines.at(-1) === "";
+			const totalFileLines = allLines.length - (hasTrailingNewline ? 1 : 0);
 			const startLine = offset ? Math.max(0, offset - 1) : 0;
 			const startLineDisplay = startLine + 1;
-			if (startLine >= allLines.length) {
+			if (startLine >= totalFileLines) {
 				throw new Error(
-					`Offset ${offset} is beyond end of file (${allLines.length} lines total)`,
+					`Past end: ${offset}`,
 				);
 			}
 
@@ -112,9 +119,9 @@ export function createReadTool(): ToolRegistration<typeof readSchema, ReadToolDe
 				details = { truncation };
 			} else if (
 				userLimitedLines !== undefined &&
-				startLine + userLimitedLines < allLines.length
+				startLine + userLimitedLines < totalFileLines
 			) {
-				const remaining = allLines.length - (startLine + userLimitedLines);
+				const remaining = totalFileLines - (startLine + userLimitedLines);
 				const nextOffset = startLine + userLimitedLines + 1;
 				diagnostics.push({
 					severity: "info",

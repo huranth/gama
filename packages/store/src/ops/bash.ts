@@ -1,7 +1,7 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import { type Static, Type } from "typebox";
-import { defineTool } from "../harness/define.ts";
-import type { ToolExecutionApi, ToolRegistration } from "../harness/types.ts";
+import { defineTool } from "../engine/define.ts";
+import type { ToolExecutionApi, ToolRegistration } from "../engine/types.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES } from "../truncate.ts";
 import { requireEnv } from "./env.ts";
 
@@ -25,7 +25,10 @@ export interface BashToolOptions {
 	prepare?: BashPrepare;
 }
 
-const MAX_TIMEOUT_SECONDS = 2_147_483_647 / 1000;
+// Max timer
+const MAX_TIMER_MS = 2_147_483_647;
+
+const MAX_TIMEOUT_SECONDS = MAX_TIMER_MS / 1000;
 
 const bashSchema = Type.Object({
 	command: Type.String({ description: "Bash command to execute" }),
@@ -37,10 +40,10 @@ const bashSchema = Type.Object({
 function validateTimeout(timeout: number | undefined): void {
 	if (timeout === undefined) return;
 	if (!Number.isFinite(timeout) || timeout <= 0) {
-		throw new Error("Invalid timeout: must be a finite number of seconds");
+		throw new Error("Invalid timeout");
 	}
 	if (timeout > MAX_TIMEOUT_SECONDS) {
-		throw new Error(`Invalid timeout: maximum is ${MAX_TIMEOUT_SECONDS} seconds`);
+		throw new Error(`Timeout maximum: ${MAX_TIMEOUT_SECONDS}`);
 	}
 }
 
@@ -93,7 +96,7 @@ export function createBashTool(options?: BashToolOptions): ToolRegistration<type
 				if (result.error.code === "aborted" && context.abortSignal?.aborted) throw result.error;
 
 				if (result.error.code === "timeout") {
-					throw new Error(`Command timed out after ${timeout} seconds`);
+					throw new Error(`Command timeout: ${timeout}`);
 				}
 
 				if (result.error.code === "aborted") throw new Error("Command aborted");
@@ -101,7 +104,7 @@ export function createBashTool(options?: BashToolOptions): ToolRegistration<type
 			}
 
 			if (result.value.exitCode !== 0) {
-				throw new Error(`Command exited with code ${result.value.exitCode}`);
+				throw new Error(`Exit code: ${result.value.exitCode}`);
 			}
 			return {};
 		},

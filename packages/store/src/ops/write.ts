@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
-import { getOrThrow } from "../env/index.ts";
-import { defineTool } from "../harness/define.ts";
-import type { ToolRegistration } from "../harness/types.ts";
+import { getOrThrow } from "../system/index.ts";
+import { defineTool } from "../engine/define.ts";
+import type { ToolRegistration } from "../engine/types.ts";
 import { requireEnv } from "./env.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToolPath } from "./path-utils.ts";
@@ -34,10 +34,6 @@ export function createWriteTool(): ToolRegistration<typeof writeSchema> {
 					}
 
 					getOrThrow(await env.writeFile(absolutePath, content, context));
-
-					if (context.abortSignal?.aborted) {
-						throw new Error("Operation aborted");
-					}
 
 					return { content: [{ type: "text", text: `Successfully wrote to ${path}` }] };
 				},

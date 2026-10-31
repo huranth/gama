@@ -1,5 +1,7 @@
 const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
+const IHDR_LENGTH = 13;
+
 function readUint16LE(buffer: Uint8Array, offset: number): number {
 	return (buffer[offset] ?? 0) + ((buffer[offset + 1] ?? 0) << 8);
 }
@@ -34,8 +36,6 @@ function startsWithAscii(buffer: Uint8Array, offset: number, text: string): bool
 	}
 	return true;
 }
-
-const IHDR_LENGTH = 13;
 
 function isPng(buffer: Uint8Array): boolean {
 	return (

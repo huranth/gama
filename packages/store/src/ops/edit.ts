@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
-import type { FileError } from "../env/index.ts";
-import { defineTool } from "../harness/define.ts";
-import type { ToolRegistration } from "../harness/types.ts";
+import type { FileError } from "../system/index.ts";
+import { defineTool } from "../engine/define.ts";
+import type { ToolRegistration } from "../engine/types.ts";
 import {
 	applyEditsToNormalizedContent,
 	detectLineEnding,
@@ -48,12 +48,12 @@ const editSchema = Type.Object({
 });
 
 function editAccessError(path: string, error: FileError): Error {
-	return new Error(`Could not edit file: ${path}. Error code: ${error.code}.`, { cause: error });
+	return new Error(`Edit failed: ${path}`, { cause: error });
 }
 
 function validateEditInput(input: EditToolInput): { path: string; edits: Edit[] } {
 	if (!Array.isArray(input.edits) || input.edits.length === 0) {
-		throw new Error("Edit tool input is invalid. edits must contain at least one replacement.");
+		throw new Error("Invalid edits");
 	}
 	return { path: input.path, edits: input.edits };
 }
@@ -110,7 +110,7 @@ export function createEditTool(): ToolRegistration<typeof editSchema, EditToolDe
 					const info = await env.fileInfo(absolutePath, context);
 					if (!info.ok) throw editAccessError(path, info.error);
 					if (info.value.kind !== "file" && info.value.kind !== "symlink") {
-						throw new Error(`Could not edit file: ${path}. Path is not a file.`);
+						throw new Error(`Invalid file: ${path}`);
 					}
 
 					const readResult = await env.readTextFile(absolutePath, context);

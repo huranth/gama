@@ -1,7 +1,8 @@
-import type { Context } from "@huranth/chord";
-import { type ExecutionEnv, getOrThrow } from "../env/index.ts";
+import type { Context } from "@huranth/gama-bus";
+import { type ExecutionEnv, getOrThrow } from "../system/index.ts";
 
 const UNICODE_SPACES = /[\u00A0\u2000-\u200A\u202F\u205F\u3000]/g;
+
 const NARROW_NO_BREAK_SPACE = "\u202F";
 
 function normalizeToolPath(path: string): string {

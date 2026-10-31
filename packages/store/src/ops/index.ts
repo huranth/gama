@@ -1,4 +1,4 @@
-import { defineExtension } from "../harness/define.ts";
+import { defineExtension } from "../engine/define.ts";
 import { createBashTool } from "./bash.ts";
 import { createEditTool } from "./edit.ts";
 import { createReadTool } from "./read.ts";
@@ -11,8 +11,11 @@ export {
 	type BashToolOptions,
 	createBashTool,
 } from "./bash.ts";
+
 export { createEditTool, type EditToolDetails, type EditToolInput } from "./edit.ts";
+
 export { createReadTool, type ReadToolDetails, type ReadToolInput } from "./read.ts";
+
 export { createWriteTool, type WriteToolInput } from "./write.ts";
 
 export const CodingTools = defineExtension({
