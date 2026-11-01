@@ -1,8 +1,8 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { JsonValue } from "@huranth/chord";
-import { applyImmutable, type Op } from "@huranth/chord/delta";
+import type { JsonValue } from "@huranth/gama-bus";
+import { applyImmutable, type Op } from "@huranth/gama-bus/delta";
 import {
 	type ConversationId,
 	defineTask,
@@ -12,7 +12,7 @@ import {
 	type TaskId,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { ControlledStorage, context, flush } from "./session-support.ts";
 import { aborted, completed, deferred, eventually, openTasks } from "./task-support.ts";
 

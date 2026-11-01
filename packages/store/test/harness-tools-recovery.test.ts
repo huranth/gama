@@ -1,7 +1,5 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
-import type { JsonValue } from "@huranth/chord";
+import { dirname } from "node:path";
+import type { JsonValue } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -22,29 +20,21 @@ import {
 	ToolTask,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExecutionEnv } from "../src/env/index.ts";
-import { NodeExecutionEnv } from "../src/env/node.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
-import { createBashTool } from "../src/tools/index.ts";
+import type { ExecutionEnv } from "../src/system/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
+import { createBashTool } from "../src/ops/index.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, waitFor } from "./chat-support.ts";
 import { addHooks, addTool, type Installed } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { context } from "./session-support.ts";
 import { aborted, deferred } from "./task-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+const sqlitePath = () => temp.sqlitePath("tools");
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-tools-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+afterEach(() => temp.cleanup());
 
 async function open(path: string, setup: ChatSetup, env?: ExecutionEnv) {
 	const opened = await openChat(

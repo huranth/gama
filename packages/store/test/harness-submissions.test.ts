@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { fauxAssistantMessage } from "@huranth/gama-ai";
 import {
 	AssistantEntry,
@@ -15,26 +12,18 @@ import {
 	UserEntry,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SessionImpl } from "../src/session/session.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import type { SessionImpl } from "../src/records/session.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { allEntries, chatSetup, openChat, unanswered } from "./chat-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { ControlledStorage, context } from "./session-support.ts";
 import { deferred } from "./task-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+const sqlitePath = () => temp.sqlitePath("submissions");
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-submissions-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+afterEach(() => temp.cleanup());
 
 describe("submissions", () => {
 	it("appends an idle write and settles it done without a turn", async () => {
@@ -109,7 +98,7 @@ describe("submissions", () => {
 		expect(storage.commits.length).toBe(commits);
 		await expect(
 			root.submit({ type: "write", entry: { kind: "note" }, requestId: "r1" }, context),
-		).rejects.toThrow("Request r1 already identifies a submission of type input");
+		).rejects.toThrow("Duplicate request: r1");
 		expect(await first.status(context)).toMatchObject({ requestId: "r1", status: "placed" });
 
 		const other = await harness.createConversation({ ownership: { kind: "ownerless" } }, context);
@@ -259,17 +248,17 @@ describe("submissions", () => {
 		const answer = { status: "done", answer: entry } as const;
 		await expect(
 			root.commit((tx) => tx.settleSubmission(queued, answer), context),
-		).rejects.toThrow("is not a placed input");
+		).rejects.toThrow("Not placed");
 		await expect(
 			root.commit((tx) => tx.settleSubmission(write, answer), context),
-		).rejects.toThrow("is not a placed input");
+		).rejects.toThrow("Not placed");
 		await expect(
 			root.commit(
 				(tx) =>
 					tx.settleSubmission(999_999 as SubmissionId, { status: "unanswered", reason: "x" }),
 				context,
 			),
-		).rejects.toThrow("does not exist");
+		).rejects.toThrow("Unknown submission");
 
 		const placed = await session.commitWith(async (tx) => {
 			const { id } = await tx.createSubmission({

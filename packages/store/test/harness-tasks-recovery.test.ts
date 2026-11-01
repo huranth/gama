@@ -1,7 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { Context, JsonValue } from "@huranth/chord";
+import type { Context, JsonValue } from "@huranth/gama-bus";
 import { createModels, Type } from "@huranth/gama-ai";
 import {
 	createRegistry,
@@ -16,8 +13,9 @@ import {
 	type TaskRuntime,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { addTask, addTool } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { ControlledStorage, context, flush } from "./session-support.ts";
 import {
 	aborted,
@@ -29,20 +27,11 @@ import {
 	openTasks,
 } from "./task-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-tasks-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+const sqlitePath = () => temp.sqlitePath("tasks");
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+afterEach(() => temp.cleanup());
 
 type OpenHarness = Awaited<ReturnType<typeof openTasks>>["harness"];
 
@@ -503,7 +492,7 @@ describe("blocked tasks", () => {
 		opened = await openTasks(await openNodeSqliteStorage(path), [versioned(2, "v2")]);
 		opened.harness.resume();
 		await eventually(() => opened.reports.length === 1);
-		expect(String(opened.reports[0])).toContain("has no migration from 1");
+		expect(String(opened.reports[0])).toContain("Missing migration");
 		expect(await opened.harness.getTask(id, context)).toMatchObject({
 			version: 1,
 			state: { status: "pending" },
@@ -806,7 +795,7 @@ describe("definition handover", () => {
 		await flush();
 		const late = oldRuntime!.commit(() => completed(null), context);
 		held!.release();
-		await expect(late).rejects.toThrow("invocation has ended");
+		await expect(late).rejects.toThrow("Task ended");
 		await harness.waitForTask(id, context);
 		expect(log).toEqual(["new:b start", "new:b end", "new:c"]);
 		await harness.close(context);

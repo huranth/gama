@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { JsonValue } from "@huranth/chord";
+import type { JsonValue } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -32,8 +32,8 @@ import {
 	ToolTask,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { NodeExecutionEnv } from "../src/env/node.ts";
-import { createBashTool, createEditTool, createReadTool } from "../src/tools/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
+import { createBashTool, createEditTool, createReadTool } from "../src/ops/index.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf } from "./chat-support.ts";
 import { addHooks, addTask, addTool, type Installed } from "./harness-support.ts";
 import { context } from "./session-support.ts";
@@ -888,7 +888,7 @@ describe("coding tools", () => {
 			).toEqual(["full_output", "tool_error", "truncated"]);
 			expect(text).toContain("line-3000\n|<harness>\n[info] Full output: ");
 			expect(text).toContain(
-				"\n[error] Command exited with code 7\n[warn] Output truncated to its end: 1000 lines, ",
+				"\n[error] Exit code: 7\n[warn] Output truncated to its end: 1000 lines, ",
 			);
 			await harness.close(context);
 		} finally {
@@ -1147,7 +1147,7 @@ describe("tool progress and lifetime", () => {
 			}),
 		);
 		const { harness } = await run(setup, [calls(["detach", {}, "c1"]), DONE]);
-		await expect(wait).rejects.toThrow("invocation has ended");
+		await expect(wait).rejects.toThrow("Task ended");
 		await watchClosed;
 		await harness.close(context);
 	});

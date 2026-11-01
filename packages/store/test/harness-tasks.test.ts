@@ -1,5 +1,5 @@
-import type { Context } from "@huranth/chord";
-import { withCancel } from "@huranth/chord/context";
+import type { Context } from "@huranth/gama-bus";
+import { withCancel } from "@huranth/gama-bus/context";
 import { createModels, Type } from "@huranth/gama-ai";
 import {
 	type Conversation,
@@ -180,7 +180,7 @@ describe("task phases", () => {
 			result: "ok",
 		});
 		await eventually(() => lateCommit !== undefined);
-		expect(String(lateCommit)).toContain(`Task ${id} is terminal`);
+		expect(String(lateCommit)).toContain(`Task closed: ${id}`);
 		await harness.close(context);
 	});
 
@@ -561,14 +561,14 @@ describe("task runtime", () => {
 		await flush();
 		expect(delivered).toEqual([]);
 		const runtime = captured!;
-		await expect(runtime.commit(() => {}, context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.memo("x", context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.memo("x", 1, context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.sleep(0, context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.watchDoc(Notes, context)).rejects.toThrow("invocation has ended");
-		await expect(runtime.agent(handlerContext!)).rejects.toThrow("invocation has ended");
-		expect(() => runtime.now()).toThrow("invocation has ended");
-		expect(() => runtime.report(new Error("late"))).toThrow("invocation has ended");
+		await expect(runtime.commit(() => {}, context)).rejects.toThrow("Task ended");
+		await expect(runtime.memo("x", context)).rejects.toThrow("Task ended");
+		await expect(runtime.memo("x", 1, context)).rejects.toThrow("Task ended");
+		await expect(runtime.sleep(0, context)).rejects.toThrow("Task ended");
+		await expect(runtime.watchDoc(Notes, context)).rejects.toThrow("Task ended");
+		await expect(runtime.agent(handlerContext!)).rejects.toThrow("Task ended");
+		expect(() => runtime.now()).toThrow("Task ended");
+		expect(() => runtime.report(new Error("late"))).toThrow("Task ended");
 		await harness.close(context);
 	});
 
@@ -610,9 +610,9 @@ describe("task runtime", () => {
 		expect(reports).toEqual([new Error("reported")]);
 		await flush();
 		await expect(captured!.snapshot(Notes, root.id, context)).rejects.toThrow(
-			"invocation has ended",
+			"Task ended",
 		);
-		await expect(captured!.context(root.id, context)).rejects.toThrow("invocation has ended");
+		await expect(captured!.context(root.id, context)).rejects.toThrow("Task ended");
 		await harness.close(context);
 	});
 
@@ -645,7 +645,7 @@ describe("task runtime", () => {
 			status: "completed",
 			result: "before",
 		});
-		await expect(after).rejects.toThrow(/invocation has ended|is terminal/);
+		await expect(after).rejects.toThrow(/Task ended|is terminal/);
 		await harness.close(context);
 	});
 
@@ -680,7 +680,7 @@ describe("task runtime", () => {
 		await held!.entered;
 		await eventually(() => watching !== undefined);
 		held!.release();
-		expect(String(await watching)).toContain("invocation has ended");
+		expect(String(await watching)).toContain("Task ended");
 		expect((await harness.waitForTask(id, context)).state.outcome).toMatchObject({
 			status: "faulted",
 		});
@@ -856,8 +856,8 @@ describe("task scheduling", () => {
 		const { harness, root } = await openRoot([Done]);
 		const unknown = 999_999 as TaskId;
 		expect(await harness.getTask(unknown, context)).toBeUndefined();
-		await expect(harness.waitForTask(unknown, context)).rejects.toThrow("does not exist");
-		await expect(harness.abortTask(unknown, context)).rejects.toThrow("does not exist");
+		await expect(harness.waitForTask(unknown, context)).rejects.toThrow("Unknown task");
+		await expect(harness.abortTask(unknown, context)).rejects.toThrow("Unknown task");
 		const id = await start(root, Done);
 		harness.resume();
 		await harness.waitForTask(id, context);
@@ -954,8 +954,8 @@ describe("task abort", () => {
 		});
 		expect(memoRead).toBe(1);
 		expect(errors).toEqual([
-			`Task ${id} has a durable abort mark`,
-			`Task ${id} has a durable abort mark`,
+			`Task aborted: ${id}`,
+			`Task aborted: ${id}`,
 		]);
 		expect(abortRuntimes).toHaveLength(1);
 		expect(abortRuntimes[0]).not.toBe(runRuntime);
