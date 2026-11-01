@@ -1,4 +1,5 @@
-import type { Component } from "../tui.ts";
+import { styleTextWithAnsi } from "../colors.ts";
+import type { Component } from "../screen.ts";
 import { truncateToWidth } from "../utils.ts";
 
 interface FlashEntry {
@@ -27,10 +28,12 @@ export class AltScreenFlashContainer implements Component {
 	}
 
 	dispose(): void {
+		if (this.entries.length === 0) return;
 		for (const entry of this.entries) {
 			clearTimeout(entry.timer);
 		}
 		this.entries.length = 0;
+		this.requestRender();
 	}
 
 	invalidate(): void {}
@@ -45,7 +48,7 @@ export class AltScreenFlashContainer implements Component {
 	render(width: number): string[] {
 		return this.entries.map((entry) => {
 			const message = truncateToWidth(` ${entry.message} `, width, "");
-			return `\x1b[7m${message}\x1b[27m`;
+			return styleTextWithAnsi(message, undefined, undefined, { inverse: true });
 		});
 	}
 }

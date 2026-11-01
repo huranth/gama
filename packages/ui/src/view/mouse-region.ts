@@ -4,7 +4,7 @@ import {
 	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
-} from "../tui.ts";
+} from "../screen.ts";
 
 export type MouseRegionHandler = (event: TuiMouseEvent) => TuiMouseEventResult | undefined;
 

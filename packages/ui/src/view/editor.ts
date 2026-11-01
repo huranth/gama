@@ -3,6 +3,25 @@ import type {
 	AutocompleteProvider,
 	AutocompleteSuggestions,
 } from "../autocomplete.ts";
+import {
+	buildDebouncePattern,
+	buildTriggerCharacters,
+	buildTriggerPattern,
+	DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS,
+	findBestMatchIndex,
+	resolveDebounceMs,
+	SLASH_COMMAND_SELECT_LIST_LAYOUT,
+} from "../editor/autocomplete.ts";
+import { type EditorSnapshot, type EditorState, MAX_HISTORY } from "../editor/history.ts";
+import { createScrollBorder, type LayoutLine, visibleLineCount } from "../editor/layout.ts";
+import type { EditorTheme } from "../editor/theme.ts";
+import {
+	isPasteMarker,
+	PASTE_MARKER_REGEX,
+	PASTE_MARKER_SINGLE,
+	segmentText,
+	wordWrapLine,
+} from "../editor/wrap.ts";
 import { getKeybindings } from "../keybindings.ts";
 import { decodePrintableKey, matchesKey } from "../keys.ts";
 import { KillRing } from "../kill-ring.ts";
@@ -14,266 +33,39 @@ import {
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 	type TuiTextSelectionTarget,
-} from "../tui.ts";
+} from "../screen.ts";
 import { UndoStack } from "../undo-stack.ts";
-import {
-	autocompleteBoundaryRegex,
-	autocompleteSeparatorRegex,
-	cjkBreakRegex,
-	getGraphemeSegmenter,
-	getWordSegmenter,
-	isWhitespaceChar,
-	sliceByColumn,
-	visibleWidth,
-} from "../utils.ts";
+import { clampPaddingX, cjkBreakRegex, isWhitespaceChar, padLine, visibleWidth } from "../utils.ts";
 import { findWordBackward, findWordForward } from "../word-navigation.ts";
-import { SelectList, type SelectListLayoutOptions, type SelectListTheme } from "./select-list.ts";
+import { SelectList } from "./select-list.ts";
 
-export interface TextChunk {
-	text: string;
-	startIndex: number;
-	endIndex: number;
-}
+export type { EditorTheme } from "../editor/theme.ts";
 
-interface EditorState {
-	lines: string[];
-	cursorLine: number;
-	cursorCol: number;
-}
+export type { TextChunk } from "../editor/wrap.ts";
 
-interface EditorSnapshot {
-	state: EditorState;
-	pastes: Map<number, string>;
-	pasteCounter: number;
-}
+export { wordWrapLine } from "../editor/wrap.ts";
 
-interface LayoutLine {
-	text: string;
-	hasCursor: boolean;
-	cursorPos?: number;
-}
+const PASTE_LINE_LIMIT = 10;
 
-export interface EditorTheme {
-	borderColor: (str: string) => string;
-	selectList: SelectListTheme;
+const PASTE_CHAR_LIMIT = 1000;
+
+const AUTOCOMPLETE_CHAIN_TIMEOUT_MS = 2000;
+
+function waitForAutocompleteChain(task: Promise<void>, timeoutMs: number): Promise<void> {
+	return new Promise((resolve) => {
+		const finish = () => {
+			clearTimeout(timer);
+			resolve();
+		};
+		const timer = setTimeout(finish, timeoutMs);
+		timer.unref?.();
+		void task.then(finish, finish);
+	});
 }
 
 export interface EditorOptions {
 	paddingX?: number;
 	autocompleteMaxVisible?: number;
-}
-
-const graphemeSegmenter = getGraphemeSegmenter();
-const wordSegmenter = getWordSegmenter();
-
-const PASTE_MARKER_REGEX = /\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]/g;
-
-const PASTE_MARKER_SINGLE = /^\[paste #(\d+)( (\+\d+ lines|\d+ chars))?\]$/;
-
-function isPasteMarker(segment: string): boolean {
-	return segment.length >= 10 && PASTE_MARKER_SINGLE.test(segment);
-}
-
-function segmentWithMarkers(
-	text: string,
-	baseSegmenter: Intl.Segmenter,
-	validIds: Set<number>,
-): Iterable<Intl.SegmentData> {
-	if (validIds.size === 0 || !text.includes("[paste #")) {
-		return baseSegmenter.segment(text);
-	}
-
-	const markers: Array<{ start: number; end: number }> = [];
-	for (const m of text.matchAll(PASTE_MARKER_REGEX)) {
-		const id = Number.parseInt(m[1]!, 10);
-		if (!validIds.has(id)) continue;
-		markers.push({ start: m.index, end: m.index + m[0].length });
-	}
-	if (markers.length === 0) {
-		return baseSegmenter.segment(text);
-	}
-
-	const baseSegments = baseSegmenter.segment(text);
-	const result: Intl.SegmentData[] = [];
-	let markerIdx = 0;
-
-	for (const seg of baseSegments) {
-		while (markerIdx < markers.length && markers[markerIdx]!.end <= seg.index) {
-			markerIdx++;
-		}
-
-		const marker = markerIdx < markers.length ? markers[markerIdx]! : null;
-
-		if (marker && seg.index >= marker.start && seg.index < marker.end) {
-			if (seg.index === marker.start) {
-				const markerText = text.slice(marker.start, marker.end);
-				result.push({
-					segment: markerText,
-					index: marker.start,
-					input: text,
-				});
-			}
-		} else {
-			result.push(seg);
-		}
-	}
-
-	return result;
-}
-
-export function wordWrapLine(
-	line: string,
-	maxWidth: number,
-	preSegmented?: Intl.SegmentData[],
-): TextChunk[] {
-	if (!line || maxWidth <= 0) {
-		return [{ text: "", startIndex: 0, endIndex: 0 }];
-	}
-
-	const lineWidth = visibleWidth(line);
-	if (lineWidth <= maxWidth) {
-		return [{ text: line, startIndex: 0, endIndex: line.length }];
-	}
-
-	const chunks: TextChunk[] = [];
-	const segments = preSegmented ?? [...graphemeSegmenter.segment(line)];
-
-	let currentWidth = 0;
-	let chunkStart = 0;
-
-	let wrapOppIndex = -1;
-	let wrapOppWidth = 0;
-
-	for (let i = 0; i < segments.length; i++) {
-		const seg = segments[i]!;
-		const grapheme = seg.segment;
-		const gWidth = visibleWidth(grapheme);
-		const charIndex = seg.index;
-		const isWs = !isPasteMarker(grapheme) && isWhitespaceChar(grapheme);
-
-		if (currentWidth + gWidth > maxWidth) {
-			if (wrapOppIndex >= 0 && currentWidth - wrapOppWidth + gWidth <= maxWidth) {
-				chunks.push({
-					text: line.slice(chunkStart, wrapOppIndex),
-					startIndex: chunkStart,
-					endIndex: wrapOppIndex,
-				});
-				chunkStart = wrapOppIndex;
-				currentWidth -= wrapOppWidth;
-			} else if (chunkStart < charIndex) {
-				chunks.push({
-					text: line.slice(chunkStart, charIndex),
-					startIndex: chunkStart,
-					endIndex: charIndex,
-				});
-				chunkStart = charIndex;
-				currentWidth = 0;
-			}
-			wrapOppIndex = -1;
-		}
-
-		if (gWidth > maxWidth) {
-			if (isPasteMarker(grapheme)) {
-				const subChunks = wordWrapLine(grapheme, maxWidth);
-				for (let j = 0; j < subChunks.length - 1; j++) {
-					const sc = subChunks[j]!;
-					chunks.push({
-						text: sc.text,
-						startIndex: charIndex + sc.startIndex,
-						endIndex: charIndex + sc.endIndex,
-					});
-				}
-				const last = subChunks[subChunks.length - 1]!;
-				chunkStart = charIndex + last.startIndex;
-				currentWidth = visibleWidth(last.text);
-			} else {
-				chunks.push({
-					text: grapheme,
-					startIndex: charIndex,
-					endIndex: charIndex + grapheme.length,
-				});
-				chunkStart = charIndex + grapheme.length;
-				currentWidth = 0;
-			}
-			wrapOppIndex = -1;
-			continue;
-		}
-
-		currentWidth += gWidth;
-
-		const next = segments[i + 1];
-		if (isWs && next && (isPasteMarker(next.segment) || !isWhitespaceChar(next.segment))) {
-			wrapOppIndex = next.index;
-			wrapOppWidth = currentWidth;
-		} else if (!isWs && next && !isWhitespaceChar(next.segment)) {
-			const isCjk = !isPasteMarker(grapheme) && cjkBreakRegex.test(grapheme);
-			const nextIsCjk = !isPasteMarker(next.segment) && cjkBreakRegex.test(next.segment);
-			if (isCjk || nextIsCjk) {
-				wrapOppIndex = next.index;
-				wrapOppWidth = currentWidth;
-			}
-		}
-	}
-
-	chunks.push({ text: line.slice(chunkStart), startIndex: chunkStart, endIndex: line.length });
-
-	return chunks;
-}
-
-const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
-	minPrimaryColumnWidth: 12,
-	maxPrimaryColumnWidth: 32,
-};
-
-const ATTACHMENT_AUTOCOMPLETE_DEBOUNCE_MS = 20;
-const DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS = ["@", "#"];
-const unquotedAutocompleteSuffixRegex = new RegExp(
-	`(?:(?!${autocompleteSeparatorRegex.source}).)*`,
-	"u",
-);
-const autocompleteTokenStartSource = `${autocompleteBoundaryRegex.source}[([{<\`]*`;
-
-function escapeCharacterClass(value: string): string {
-	return value.replace(/[\\^$.*+?()[\]{}|-]/g, "\\$&");
-}
-
-function buildTriggerPattern(triggerCharacters: string[]): RegExp {
-	return new RegExp(
-		`${autocompleteTokenStartSource}(?:@"[^"]*|[` +
-			`${triggerCharacters.map(escapeCharacterClass).join("")}]` +
-			`${unquotedAutocompleteSuffixRegex.source})$`,
-		"u",
-	);
-}
-
-function buildDebouncePattern(triggerCharacters: string[]): RegExp {
-	const escapedWithoutAt = triggerCharacters
-		.filter((character) => character !== "@")
-		.map(escapeCharacterClass);
-	return new RegExp(
-		`${autocompleteTokenStartSource}(?:@(?:"[^"]*|` +
-			`${unquotedAutocompleteSuffixRegex.source})|[${escapedWithoutAt.join("")}]` +
-			`${unquotedAutocompleteSuffixRegex.source})$`,
-		"u",
-	);
-}
-
-function createScrollBorder(direction: "↑" | "↓", hiddenLineCount: number, width: number): string {
-	const availableWidth = Math.max(0, width);
-	const label = ` ${direction} ${hiddenLineCount} more `;
-	const labelWidth = visibleWidth(label);
-	if (labelWidth + 2 <= availableWidth) {
-		const leftWidth = Math.floor((availableWidth - labelWidth) / 2);
-		return "─".repeat(leftWidth) + label + "─".repeat(availableWidth - leftWidth - labelWidth);
-	}
-
-	const indicator = `─── ${direction} ${hiddenLineCount} more `;
-	const remaining = availableWidth - visibleWidth(indicator);
-	if (remaining >= 0) return indicator + "─".repeat(remaining);
-
-	const ellipsis = "...".slice(0, availableWidth);
-	const indicatorWidth = availableWidth - visibleWidth(ellipsis);
-	return sliceByColumn(indicator, 0, indicatorWidth, true) + ellipsis;
 }
 
 export class Editor implements Component, Focusable, TuiTextSelectionTarget {
@@ -330,6 +122,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	private preferredVisualCol: number | null = null;
 
 	private snappedFromCursorCol: number | null = null;
+	private snappedVisualCol: number | null = null;
 
 	private undoStack = new UndoStack<EditorSnapshot>();
 
@@ -354,11 +147,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private segment(text: string, mode: "word" | "grapheme"): Iterable<Intl.SegmentData> {
-		return segmentWithMarkers(
-			text,
-			mode === "word" ? wordSegmenter : graphemeSegmenter,
-			this.validPasteIds(),
-		);
+		return segmentText(text, mode, this.validPasteIds());
 	}
 
 	getPaddingX(): number {
@@ -398,7 +187,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		if (!trimmed) return;
 		if (this.history.length > 0 && this.history[0] === trimmed) return;
 		this.history.unshift(trimmed);
-		if (this.history.length > 100) {
+		if (this.history.length > MAX_HISTORY) {
 			this.history.pop();
 		}
 	}
@@ -476,19 +265,18 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 
 	protected renderTopBorder(width: number, hiddenLineCount: number): string {
 		const border =
-			hiddenLineCount > 0 ? createScrollBorder("↑", hiddenLineCount, width) : "─".repeat(width);
+			hiddenLineCount > 0 ? createScrollBorder("up", hiddenLineCount, width) : "─".repeat(width);
 		return this.borderColor(border);
 	}
 
 	protected renderBottomBorder(width: number, hiddenLineCount: number): string {
 		const border =
-			hiddenLineCount > 0 ? createScrollBorder("↓", hiddenLineCount, width) : "─".repeat(width);
+			hiddenLineCount > 0 ? createScrollBorder("down", hiddenLineCount, width) : "─".repeat(width);
 		return this.borderColor(border);
 	}
 
 	render(width: number): string[] {
-		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
-		const paddingX = Math.min(this.paddingX, maxPadding);
+		const paddingX = clampPaddingX(width, this.paddingX);
 		this.renderedPaddingX = paddingX;
 		const contentWidth = Math.max(1, width - paddingX * 2);
 
@@ -499,7 +287,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		const layoutLines = this.layoutText(layoutWidth);
 
 		const terminalRows = this.tui.terminal.rows;
-		const maxVisibleLines = Math.max(5, Math.floor(terminalRows * 0.3));
+		const maxVisibleLines = visibleLineCount(terminalRows);
 
 		let cursorLineIndex = layoutLines.findIndex((line) => line.hasCursor);
 		if (cursorLineIndex === -1) cursorLineIndex = 0;
@@ -559,10 +347,9 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 				}
 			}
 
-			const padding = " ".repeat(Math.max(0, contentWidth - lineVisibleWidth));
 			const lineRightPadding = cursorInPadding ? rightPadding.slice(1) : rightPadding;
 
-			result.push(`${leftPadding}${displayText}${padding}${lineRightPadding}`);
+			result.push(`${leftPadding}${padLine(displayText, contentWidth)}${lineRightPadding}`);
 		}
 
 		const linesBelow = layoutLines.length - (this.scrollOffset + visibleLines.length);
@@ -573,9 +360,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			const autocompleteResult = this.autocompleteList.render(contentWidth);
 			this.renderedAutocompleteHeight = autocompleteResult.length;
 			for (const line of autocompleteResult) {
-				const lineWidth = visibleWidth(line);
-				const linePadding = " ".repeat(Math.max(0, contentWidth - lineWidth));
-				result.push(`${leftPadding}${line}${linePadding}${rightPadding}`);
+				result.push(`${leftPadding}${padLine(line, contentWidth)}${rightPadding}`);
 			}
 		}
 
@@ -736,10 +521,14 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			this.jumpMode = null;
 		}
 
-		if (data.includes("\x1b[200~")) {
+		const pasteStart = data.indexOf("\x1b[200~");
+		if (pasteStart !== -1) {
+			// Normal input
+			const beforePaste = data.slice(0, pasteStart);
+			if (beforePaste) this.handleInput(beforePaste);
 			this.isInPaste = true;
 			this.pasteBuffer = "";
-			data = data.replace("\x1b[200~", "");
+			data = data.slice(pasteStart + "\x1b[200~".length);
 		}
 
 		if (this.isInPaste) {
@@ -878,9 +667,14 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			return;
 		}
 
+		if (data.charCodeAt(0) === 10 && data.length > 1) {
+			this.addNewLine();
+			this.handleInput(data.slice(1));
+			return;
+		}
+
 		if (
 			kb.matches(data, "tui.input.newLine") ||
-			(data.charCodeAt(0) === 10 && data.length > 1) ||
 			data === "\x1b\r" ||
 			data === "\x1b[13;2~" ||
 			(data.length > 1 && data.includes("\x1b") && data.includes("\r")) ||
@@ -1060,15 +854,55 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private expandPasteMarkers(text: string): string {
-		let result = text;
-		for (const [pasteId, pasteContent] of this.pastes) {
-			const markerRegex = new RegExp(
-				`\\[paste #${pasteId}( (\\+\\d+ lines|\\d+ chars))?\\]`,
-				"g",
-			);
-			result = result.replace(markerRegex, () => pasteContent);
+		return text.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup) => {
+			const pasteContent = this.pastes.get(Number(idGroup));
+			return pasteContent ?? fullMatch;
+		});
+	}
+
+	private removePasteMarkerAt(
+		lineIndex: number,
+		markerStart: number,
+		targetId: number,
+		markerLength: number,
+	): void {
+		const line = this.state.lines[lineIndex] ?? "";
+		const liveIds = new Set(this.pastes.keys());
+
+		let renumberShift = 0;
+		for (const match of line.matchAll(PASTE_MARKER_REGEX)) {
+			const index = match.index ?? 0;
+			if (index >= markerStart) break;
+
+			const id = Number(match[1]);
+			if (id <= targetId || !liveIds.has(id)) continue;
+
+			// Shift ids.
+			renumberShift += String(id - 1).length - String(id).length;
 		}
-		return result;
+
+		this.state.lines[lineIndex] =
+			line.slice(0, markerStart) + line.slice(markerStart + markerLength);
+
+		this.pastes.delete(targetId);
+		const higherIds = [...this.pastes.keys()]
+			.filter((id) => id > targetId)
+			.sort((a, b) => a - b);
+		for (const id of higherIds) {
+			this.pastes.set(id - 1, this.pastes.get(id)!);
+			this.pastes.delete(id);
+		}
+
+		this.state.lines = this.state.lines.map((current) =>
+			current.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup, suffixGroup) => {
+				const id = Number(idGroup);
+				if (id <= targetId || !liveIds.has(id)) return fullMatch;
+				return `[paste #${id - 1}${suffixGroup ?? ""}]`;
+			}),
+		);
+
+		this.pasteCounter = this.pastes.size;
+		this.setCursorCol(Math.max(0, markerStart + renumberShift));
 	}
 
 	getExpandedText(): string {
@@ -1101,11 +935,12 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		this.lastAction = null;
 		this.exitHistoryBrowsing();
 		const normalized = this.normalizeText(text);
-		if (this.getText() !== normalized) {
+		const changed = this.getText() !== normalized;
+		if (changed) {
 			this.pushUndoSnapshot();
+			this.pastes.clear();
+			this.pasteCounter = 0;
 		}
-		this.pastes.clear();
-		this.pasteCounter = 0;
 		this.setTextInternal(normalized);
 	}
 
@@ -1220,7 +1055,12 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 
 		let filteredText = cleanText
 			.split("")
-			.filter((char) => char === "\n" || char.charCodeAt(0) >= 32)
+			.filter((char) => {
+				const code = char.charCodeAt(0);
+				if (char === "\n") return true;
+				// Drop controls
+				return code >= 32 && code !== 0x7f && (code < 0x80 || code > 0x9f);
+			})
 			.join("");
 
 		if (/^[/~.]/.test(filteredText)) {
@@ -1235,7 +1075,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		const pastedLines = filteredText.split("\n");
 
 		const totalChars = filteredText.length;
-		if (pastedLines.length > 10 || totalChars > 1000) {
+		if (pastedLines.length > PASTE_LINE_LIMIT || totalChars > PASTE_CHAR_LIMIT) {
 			this.pasteCounter++;
 			const pasteId = this.pasteCounter;
 			this.pastes.set(pasteId, filteredText);
@@ -1322,33 +1162,19 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 
 			if (isPastedSegmented) {
 				const targetId = Number(isPastedSegmented[1]);
-				this.pastes.delete(targetId);
-				this.pasteCounter--;
-
-				const higherIds = [...this.pastes.keys()]
-					.filter((id) => id > targetId)
-					.sort((a, b) => a - b);
-				for (const id of higherIds) {
-					this.pastes.set(id - 1, this.pastes.get(id)!);
-					this.pastes.delete(id);
-				}
-
-				this.state.lines = this.state.lines.map((line) =>
-					line.replace(PASTE_MARKER_REGEX, (fullMatch, idGroup, suffixGroup) => {
-						const x = Number(idGroup);
-						if (x <= targetId) return fullMatch;
-						return `[paste #${x - 1}${suffixGroup}]`;
-					}),
+				this.removePasteMarkerAt(
+					this.state.cursorLine,
+					this.state.cursorCol - graphemeLength,
+					targetId,
+					graphemeLength,
 				);
+			} else {
+				line = this.state.lines[this.state.cursorLine] || "";
+				const before = line.slice(0, this.state.cursorCol - graphemeLength);
+				const after = line.slice(this.state.cursorCol);
+				this.state.lines[this.state.cursorLine] = before + after;
+				this.setCursorCol(this.state.cursorCol - graphemeLength);
 			}
-
-			line = this.state.lines[this.state.cursorLine] || "";
-
-			const before = line.slice(0, this.state.cursorCol - graphemeLength);
-			const after = line.slice(this.state.cursorCol);
-
-			this.state.lines[this.state.cursorLine] = before + after;
-			this.setCursorCol(this.state.cursorCol - graphemeLength);
 		} else if (this.state.cursorLine > 0) {
 			this.pushUndoSnapshot();
 
@@ -1383,6 +1209,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		this.state.cursorCol = col;
 		this.preferredVisualCol = null;
 		this.snappedFromCursorCol = null;
+		this.snappedVisualCol = null;
 	}
 
 	private moveToVisualLine(
@@ -1394,31 +1221,38 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		const targetVL = visualLines[targetVisualLine];
 		if (!(currentVL && targetVL)) return;
 
+		const currentLine = this.state.lines[currentVL.logicalLine] || "";
 		let currentVisualCol: number;
-		if (this.snappedFromCursorCol !== null) {
-			const vlIndex = this.findVisualLineAt(
-				visualLines,
-				currentVL.logicalLine,
-				this.snappedFromCursorCol,
-			);
-			currentVisualCol = this.snappedFromCursorCol - visualLines[vlIndex].startCol;
+		if (this.snappedFromCursorCol !== null && this.snappedVisualCol !== null) {
+			currentVisualCol = this.snappedVisualCol;
 		} else {
-			currentVisualCol = this.state.cursorCol - currentVL.startCol;
+			currentVisualCol = visibleWidth(
+				currentLine.slice(currentVL.startCol, this.state.cursorCol),
+			);
 		}
 
 		const isLastSourceSegment =
 			currentVisualLine === visualLines.length - 1 ||
 			visualLines[currentVisualLine + 1]?.logicalLine !== currentVL.logicalLine;
+		const sourceSegmentWidth = visibleWidth(
+			currentLine.slice(currentVL.startCol, currentVL.startCol + currentVL.length),
+		);
 		const sourceMaxVisualCol = isLastSourceSegment
-			? currentVL.length
-			: Math.max(0, currentVL.length - 1);
+			? sourceSegmentWidth
+			: Math.max(0, sourceSegmentWidth - 1);
 
 		const isLastTargetSegment =
 			targetVisualLine === visualLines.length - 1 ||
 			visualLines[targetVisualLine + 1]?.logicalLine !== targetVL.logicalLine;
+		const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+		const targetSegment = logicalLine.slice(
+			targetVL.startCol,
+			targetVL.startCol + targetVL.length,
+		);
+		const targetSegmentWidth = visibleWidth(targetSegment);
 		const targetMaxVisualCol = isLastTargetSegment
-			? targetVL.length
-			: Math.max(0, targetVL.length - 1);
+			? targetSegmentWidth
+			: Math.max(0, targetSegmentWidth - 1);
 
 		const moveToVisualCol = this.computeVerticalMoveColumn(
 			currentVisualCol,
@@ -1427,8 +1261,14 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		);
 
 		this.state.cursorLine = targetVL.logicalLine;
-		const targetCol = targetVL.startCol + moveToVisualCol;
-		const logicalLine = this.state.lines[targetVL.logicalLine] || "";
+		let targetCol = targetVL.startCol;
+		let targetVisualCol = 0;
+		for (const seg of this.segment(targetSegment, "grapheme")) {
+			const segWidth = visibleWidth(seg.segment);
+			if (targetVisualCol + segWidth > moveToVisualCol) break;
+			targetVisualCol += segWidth;
+			targetCol = targetVL.startCol + seg.index + seg.segment.length;
+		}
 		this.state.cursorCol = Math.min(targetCol, logicalLine.length);
 
 		const segments = [...this.segment(logicalLine, "grapheme")];
@@ -1456,12 +1296,14 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 				}
 
 				this.snappedFromCursorCol = this.state.cursorCol;
+				this.snappedVisualCol = moveToVisualCol;
 				this.state.cursorCol = seg.index;
 				return;
 			}
 		}
 
 		this.snappedFromCursorCol = null;
+		this.snappedVisualCol = null;
 	}
 
 	private computeVerticalMoveColumn(
@@ -1505,6 +1347,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private deleteToStartOfLine(): void {
+		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1537,6 +1380,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private deleteToEndOfLine(): void {
+		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1569,6 +1413,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private deleteWordBackwards(): void {
+		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1611,6 +1456,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private deleteWordForward(): void {
+		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
 
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
@@ -1663,10 +1509,22 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			const graphemes = [...this.segment(afterCursor, "grapheme")];
 			const firstGrapheme = graphemes[0];
 			const graphemeLength = firstGrapheme ? firstGrapheme.segment.length : 1;
+			const pastedSegment = firstGrapheme
+				? PASTE_MARKER_SINGLE.exec(firstGrapheme.segment)
+				: null;
 
-			const before = currentLine.slice(0, this.state.cursorCol);
-			const after = currentLine.slice(this.state.cursorCol + graphemeLength);
-			this.state.lines[this.state.cursorLine] = before + after;
+			if (pastedSegment) {
+				this.removePasteMarkerAt(
+					this.state.cursorLine,
+					this.state.cursorCol,
+					Number(pastedSegment[1]),
+					graphemeLength,
+				);
+			} else {
+				const before = currentLine.slice(0, this.state.cursorCol);
+				const after = currentLine.slice(this.state.cursorCol + graphemeLength);
+				this.state.lines[this.state.cursorLine] = before + after;
+			}
 		} else if (this.state.cursorLine < this.state.lines.length - 1) {
 			this.pushUndoSnapshot();
 
@@ -1800,7 +1658,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	private pageScroll(direction: -1 | 1): void {
 		this.lastAction = null;
 		const terminalRows = this.tui.terminal.rows;
-		const pageSize = Math.max(5, Math.floor(terminalRows * 0.3));
+		const pageSize = visibleLineCount(terminalRows);
 
 		const visualLines = this.buildVisualLineMap(this.lastWidth);
 		const currentVisualLine = this.findCurrentVisualLine(visualLines);
@@ -1935,6 +1793,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private undo(): void {
+		this.cancelAutocomplete();
 		this.exitHistoryBrowsing();
 		const snapshot = this.undoStack.pop();
 		if (!snapshot) return;
@@ -1943,6 +1802,8 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		this.pasteCounter = snapshot.pasteCounter;
 		this.lastAction = null;
 		this.preferredVisualCol = null;
+		this.snappedFromCursorCol = null;
+		this.snappedVisualCol = null;
 		if (this.onChange) {
 			this.onChange(this.getText());
 		}
@@ -2013,27 +1874,6 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		return this.isSlashMenuAllowed() && textBeforeCursor.trimStart().startsWith("/");
 	}
 
-	private getBestAutocompleteMatchIndex(
-		items: Array<{ value: string; label: string }>,
-		prefix: string,
-	): number {
-		if (!prefix) return -1;
-
-		let firstPrefixIndex = -1;
-
-		for (let i = 0; i < items.length; i++) {
-			const value = items[i]!.value;
-			if (value === prefix) {
-				return i;
-			}
-			if (firstPrefixIndex === -1 && value.startsWith(prefix)) {
-				firstPrefixIndex = i;
-			}
-		}
-
-		return firstPrefixIndex;
-	}
-
 	private createAutocompleteList(
 		prefix: string,
 		items: Array<{ value: string; label: string; description?: string }>,
@@ -2054,10 +1894,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		return list;
 	}
 
-	/**
-	 * Applies a completion through the provider. A throwing provider (extension
-	 * code) drops the completion instead of crashing the input handler.
-	 */
+	// Safe complete
 	private applyCompletionItem(item: AutocompleteItem, prefix: string): boolean {
 		let result: ReturnType<AutocompleteProvider["applyCompletion"]>;
 		try {
@@ -2142,7 +1979,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	): Promise<void> {
 		const previousTask = this.autocompleteRequestTask;
 		this.autocompleteRequestTask = (async () => {
-			await previousTask;
+			await waitForAutocompleteChain(previousTask, AUTOCOMPLETE_CHAIN_TIMEOUT_MS);
 			if (startToken !== this.autocompleteStartToken || !this.autocompleteProvider) {
 				return;
 			}
@@ -2164,8 +2001,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 					options,
 				);
 			} catch {
-				// A throwing provider (extension code) must neither crash the app nor
-				// leave a rejected task that every later request would await.
+				// Safe hook
 				if (requestId === this.autocompleteRequestId) {
 					this.cancelAutocomplete();
 					this.tui.requestRender();
@@ -2176,33 +2012,16 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 	}
 
 	private setAutocompleteTriggerCharacters(triggerCharacters: string[]): void {
-		const next = [...DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS];
-		for (const character of triggerCharacters) {
-			if (
-				character.length !== 1 ||
-				character === "/" ||
-				isWhitespaceChar(character) ||
-				next.includes(character)
-			) {
-				continue;
-			}
-			next.push(character);
-		}
+		const next = buildTriggerCharacters(triggerCharacters);
 		this.autocompleteTriggerCharacters = next;
 		this.autocompleteTriggerPattern = buildTriggerPattern(next);
 		this.autocompleteDebouncePattern = buildDebouncePattern(next);
 	}
 
 	private getAutocompleteDebounceMs(options: { force: boolean; explicitTab: boolean }): number {
-		if (options.explicitTab || options.force) {
-			return 0;
-		}
-
 		const currentLine = this.state.lines[this.state.cursorLine] || "";
 		const textBeforeCursor = currentLine.slice(0, this.state.cursorCol);
-		return this.autocompleteDebouncePattern.test(textBeforeCursor)
-			? ATTACHMENT_AUTOCOMPLETE_DEBOUNCE_MS
-			: 0;
+		return resolveDebounceMs(this.autocompleteDebouncePattern, options, textBeforeCursor);
 	}
 
 	private async runAutocompleteRequest(
@@ -2277,10 +2096,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 		this.autocompletePrefix = suggestions.prefix;
 		this.autocompleteList = this.createAutocompleteList(suggestions.prefix, suggestions.items);
 
-		const bestMatchIndex = this.getBestAutocompleteMatchIndex(
-			suggestions.items,
-			suggestions.prefix,
-		);
+		const bestMatchIndex = findBestMatchIndex(suggestions.items, suggestions.prefix);
 		if (bestMatchIndex >= 0) {
 			this.autocompleteList.setSelectedIndex(bestMatchIndex);
 		}

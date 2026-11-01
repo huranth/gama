@@ -1,12 +1,14 @@
 import { getKeybindings } from "../keybindings.ts";
-import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
-import { truncateToWidth, visibleWidth } from "../utils.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../screen.ts";
+import { closeBeforePadding, truncateToWidth, visibleWidth } from "../utils.ts";
 
 const DEFAULT_PRIMARY_COLUMN_WIDTH = 32;
 
 const PRIMARY_COLUMN_GAP = 2;
 
 const MIN_DESCRIPTION_WIDTH = 10;
+
+const WIDE_MIN_WIDTH = 40;
 
 const normalizeToSingleLine = (text: string): string => text.replace(/[\r\n]+/g, " ").trim();
 
@@ -48,8 +50,10 @@ export class SelectList implements Component {
 	private selectedIndex: number = 0;
 	private topIndex: number = 0;
 	private currentValue: string | undefined;
+
 	private mousePressedIndex: number | undefined;
 	private mousePressedRow: number | undefined;
+
 	private maxVisible: number = 5;
 	private theme: SelectListTheme;
 	private layout: SelectListLayoutOptions;
@@ -224,7 +228,7 @@ export class SelectList implements Component {
 		const prefix = "  ";
 		const prefixWidth = visibleWidth(prefix);
 
-		if (descriptionSingleLine && width > 40) {
+		if (descriptionSingleLine && width > WIDE_MIN_WIDTH) {
 			const effectivePrimaryColumnWidth = Math.max(
 				1,
 				Math.min(primaryColumnWidth, width - prefixWidth - 4),
@@ -237,15 +241,16 @@ export class SelectList implements Component {
 				effectivePrimaryColumnWidth,
 			);
 			const truncatedValueWidth = visibleWidth(truncatedValue);
-			const spacing = " ".repeat(Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth));
-			const descriptionStart = prefixWidth + truncatedValueWidth + spacing.length;
+			const gapWidth = Math.max(1, effectivePrimaryColumnWidth - truncatedValueWidth);
+			const spacing = `${closeBeforePadding(truncatedValue)} ${" ".repeat(gapWidth - 1)}`;
+			const descriptionStart = prefixWidth + truncatedValueWidth + gapWidth;
 			const remainingWidth = width - descriptionStart - 2;
 
 			if (remainingWidth > MIN_DESCRIPTION_WIDTH) {
 				const truncatedDesc = truncateToWidth(descriptionSingleLine, remainingWidth, "");
 				const fullLine = `${prefix}${truncatedValue}${spacing}${truncatedDesc}`;
 				if (isSelected) return this.theme.selectedText(fullLine);
-				const descText = this.theme.description(spacing + truncatedDesc);
+				const descText = spacing + this.theme.description(truncatedDesc);
 				return this.styleCurrent(item, prefix + truncatedValue) + descText;
 			}
 		}
@@ -318,7 +323,7 @@ export class SelectList implements Component {
 		const lines: string[] = [];
 
 		if (this.filteredItems.length === 0) {
-			lines.push(this.theme.noMatch("  No matching commands"));
+			lines.push(truncateToWidth(this.theme.noMatch("  No matching commands"), width));
 			return lines;
 		}
 

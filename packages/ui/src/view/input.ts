@@ -1,3 +1,4 @@
+import { styleTextWithAnsi } from "../colors.ts";
 import { getKeybindings } from "../keybindings.ts";
 import { decodeKittyPrintable } from "../keys.ts";
 import { KillRing } from "../kill-ring.ts";
@@ -7,8 +8,9 @@ import {
 	type Focusable,
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
-} from "../tui.ts";
+} from "../screen.ts";
 import { UndoStack } from "../undo-stack.ts";
+import { padLine } from "../utils.ts";
 import {
 	getGraphemeSegmenter,
 	isWhitespaceChar,
@@ -28,14 +30,15 @@ export interface InputOptions {
 	prompt?: string;
 	placeholder?: string;
 	placeholderStyle?: (text: string) => string;
-	/** Render bullets instead of the typed text (for secrets). */
+	cursorStyle?: (text: string) => string;
+	// Mask text
 	mask?: boolean;
 }
 
 const segmenter = getGraphemeSegmenter();
 
-const CURSOR_FOCUSED_STYLE = "\x1b[1;97;7m";
-const CURSOR_STYLE_RESET = "\x1b[0m";
+const DEFAULT_CURSOR_STYLE = (text: string) =>
+	styleTextWithAnsi(text, undefined, undefined, { inverse: true });
 
 export class Input implements Component, Focusable {
 	private value: string = "";
@@ -43,6 +46,7 @@ export class Input implements Component, Focusable {
 	private readonly prompt: string;
 	private readonly placeholder: string;
 	private readonly placeholderStyle: (text: string) => string;
+	private readonly cursorStyle: (text: string) => string;
 	private readonly mask: boolean;
 	private renderedStartColumn = 0;
 	public onSubmit?: (value: string) => void;
@@ -52,6 +56,7 @@ export class Input implements Component, Focusable {
 
 	private pasteBuffer: string = "";
 	private isInPaste: boolean = false;
+	private pendingPastePrefix: string = "";
 
 	private killRing = new KillRing();
 	private lastAction: "kill" | "yank" | "type-word" | null = null;
@@ -62,6 +67,7 @@ export class Input implements Component, Focusable {
 		this.prompt = options.prompt ?? "> ";
 		this.placeholder = options.placeholder ?? "";
 		this.placeholderStyle = options.placeholderStyle ?? ((text) => text);
+		this.cursorStyle = options.cursorStyle ?? DEFAULT_CURSOR_STYLE;
 		this.mask = options.mask === true;
 	}
 
@@ -70,12 +76,30 @@ export class Input implements Component, Focusable {
 	}
 
 	setValue(value: string): void {
+		this.undoStack.clear();
+		this.lastAction = null;
 		this.value = value;
 		this.cursor = value.length;
 	}
 
 	handleInput(data: string): void {
-		const pasteStart = data.indexOf("\x1b[200~");
+		const pasteMarker = "\x1b[200~";
+		data = this.pendingPastePrefix + data;
+		this.pendingPastePrefix = "";
+		let pasteStart = data.indexOf(pasteMarker);
+
+		if (pasteStart === -1 && !this.isInPaste) {
+			const maxPrefix = Math.min(pasteMarker.length - 1, data.length);
+			for (let length = maxPrefix; length >= 2; length--) {
+				const suffix = data.slice(-length);
+				if (pasteMarker.startsWith(suffix)) {
+					this.pendingPastePrefix = suffix;
+					data = data.slice(0, -length);
+					pasteStart = data.indexOf(pasteMarker);
+					break;
+				}
+			}
+		}
 
 		if (pasteStart !== -1) {
 			const beforePaste = data.slice(0, pasteStart);
@@ -83,7 +107,7 @@ export class Input implements Component, Focusable {
 
 			this.isInPaste = true;
 			this.pasteBuffer = "";
-			data = data.slice(pasteStart + 6);
+			data = data.slice(pasteStart + pasteMarker.length);
 		}
 
 		if (this.isInPaste) {
@@ -399,7 +423,7 @@ export class Input implements Component, Focusable {
 	}
 
 	private displayValue(): string {
-		return this.mask ? "•".repeat(this.value.length) : this.value;
+		return this.mask ? "*".repeat(this.value.length) : this.value;
 	}
 
 	invalidate(): void {}
@@ -418,11 +442,10 @@ export class Input implements Component, Focusable {
 			const afterCursor = placeholder.slice(atCursor.length);
 			const marker = this.focused ? CURSOR_MARKER : "";
 			const cursorChar = this.focused
-				? `${CURSOR_FOCUSED_STYLE}${atCursor}${CURSOR_STYLE_RESET}`
+				? this.cursorStyle(atCursor)
 				: this.placeholderStyle(atCursor);
 			const textWithCursor = marker + cursorChar + this.placeholderStyle(afterCursor);
-			const padding = " ".repeat(Math.max(0, availableWidth - visibleWidth(textWithCursor)));
-			return [this.prompt + textWithCursor + padding];
+			return [this.prompt + padLine(textWithCursor, availableWidth)];
 		}
 
 		const shown = this.displayValue();
@@ -474,13 +497,11 @@ export class Input implements Component, Focusable {
 		const marker = this.focused ? CURSOR_MARKER : "";
 
 		const cursorChar = this.focused
-			? `${CURSOR_FOCUSED_STYLE}${atCursor}${CURSOR_STYLE_RESET}`
+			? this.cursorStyle(atCursor)
 			: atCursor;
 		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
-		const visualLength = visibleWidth(textWithCursor);
-		const padding = " ".repeat(Math.max(0, availableWidth - visualLength));
-		const line = this.prompt + textWithCursor + padding;
+		const line = this.prompt + padLine(textWithCursor, availableWidth);
 
 		return [line];
 	}

@@ -1,6 +1,6 @@
 import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
-import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../tui.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../screen.ts";
 import { truncateToWidth, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
 import { Input } from "./input.ts";
 
@@ -291,7 +291,7 @@ export class SettingsList implements Component {
 		}
 
 		if (this.items.length === 0) {
-			lines.push(this.theme.hint("  No settings available"));
+			lines.push(truncateToWidth(this.theme.hint("  No settings available"), width));
 			if (this.searchEnabled) {
 				this.addHintLine(lines, width);
 			}
@@ -320,20 +320,20 @@ export class SettingsList implements Component {
 			// Color only
 			const labelPadded =
 				item.label + " ".repeat(Math.max(0, maxLabelWidth - visibleWidth(item.label)));
-			const styledAsCursor = isSelected;
 
-			const labelText = this.theme.label(labelPadded, styledAsCursor);
+			const labelText = this.theme.label(labelPadded, isSelected);
 			const separator = "  ";
 			const usedWidth = maxLabelWidth + visibleWidth(separator);
 			const valueMaxWidth = width - usedWidth - 2;
 
 			const valueText = this.theme.value(
 				truncateToWidth(item.currentValue, valueMaxWidth, ""),
-				styledAsCursor,
+				isSelected,
 			);
 
 			const rowText = labelText + separator + valueText;
-			const rowStyled = isSelected ? (this.theme.selectedRow?.(rowText) ?? rowText) : rowText;
+			let rowStyled = rowText;
+			if (isSelected) rowStyled = this.theme.selectedRow?.(rowText) ?? rowText;
 			lines.push(truncateToWidth(rowStyled, width));
 		}
 
