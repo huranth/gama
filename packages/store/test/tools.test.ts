@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { symlink } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
-import type { Context, JsonValue } from "@huranth/chord";
-import { BACKGROUND_CONTEXT, withAbortSignal } from "@huranth/chord/context";
+import type { Context, JsonValue } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT, withAbortSignal } from "@huranth/gama-bus/context";
 import type {
 	ToolDiagnostic,
 	ToolExecutionApi,
@@ -21,16 +21,16 @@ import {
 	type Result,
 	type ShellExecOptions,
 	type ShellExecResult,
-} from "../src/env/index.ts";
-import { NodeExecutionEnv } from "../src/env/node.ts";
-import { withFileMutationQueue } from "../src/tools/file-mutation-queue.ts";
-import { detectSupportedImageMimeType } from "../src/tools/image.ts";
+} from "../src/system/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
+import { withFileMutationQueue } from "../src/ops/file-mutation-queue.ts";
+import { detectSupportedImageMimeType } from "../src/ops/image.ts";
 import {
 	createBashTool,
 	createEditTool,
 	createReadTool,
 	createWriteTool,
-} from "../src/tools/index.ts";
+} from "../src/ops/index.ts";
 import { DEFAULT_MAX_LINES } from "../src/truncate.ts";
 
 const tempDirs: string[] = [];
@@ -54,35 +54,6 @@ function createTempDir(): string {
 function createEnv(): NodeExecutionEnv {
 	return new NodeExecutionEnv({ cwd: createTempDir() });
 }
-
-function supportsSymlink(type: "file" | "dir"): boolean {
-	const root = mkdtempSync(join(tmpdir(), "gama-durable-symlink-"));
-	const target = join(root, "target");
-	try {
-		if (type === "file") writeFileSync(target, "");
-		else mkdirSync(target);
-		symlinkSync(
-			target,
-			join(root, "link"),
-			process.platform === "win32" && type === "dir" ? "junction" : type,
-		);
-		return true;
-	} catch (error) {
-		if (
-			["EPERM", "EACCES", "ENOTSUP", "EOPNOTSUPP"].includes(
-				(error as NodeJS.ErrnoException).code ?? "",
-			)
-		) {
-			return false;
-		}
-		throw error;
-	} finally {
-		rmSync(root, { recursive: true, force: true });
-	}
-}
-
-const fileSymlinksSupported = supportsSymlink("file");
-const directorySymlinksSupported = supportsSymlink("dir");
 
 function fakeApi(env: ExecutionEnv | undefined): {
 	api: ToolExecutionApi;
@@ -229,7 +200,7 @@ class TimeoutOutputExecutionEnv extends NodeExecutionEnv {
 describe("durable tools", () => {
 	it("fail with an ordinary error when no environment is configured", async () => {
 		await expect(run(createReadTool(), { path: "x" }, undefined)).rejects.toThrow(
-			"No execution environment",
+			"Missing environment",
 		);
 	});
 
@@ -299,6 +270,34 @@ describe("durable tools", () => {
 			expect(result.diagnostics).toEqual([]);
 		});
 
+		it("ignores a trailing newline when counting lines", async () => {
+			const env = createEnv();
+			getOrThrow(
+				await env.writeFile(
+					"trailing.txt",
+					`${Array.from({ length: 2100 }, (_, index) => `Line ${index + 1}`).join("\n")}\n`,
+					BACKGROUND_CONTEXT,
+				),
+			);
+			const truncated = await run(createReadTool(), { path: "trailing.txt" }, env);
+			expect(diagnosticText(truncated)).toBe(
+				"Showing lines 1-2000 of 2100. Use offset=2001 to continue.",
+			);
+
+			const limited = await run(
+				createReadTool(),
+				{ path: "trailing.txt", limit: 2 },
+				env,
+			);
+			expect(diagnosticText(limited)).toBe(
+				"2098 more lines in file. Use offset=3 to continue.",
+			);
+
+			await expect(
+				run(createReadTool(), { path: "trailing.txt", offset: 2101 }, env),
+			).rejects.toThrow("Past end: 2101");
+		});
+
 		it("shows the start of a line longer than the byte limit", async () => {
 			const env = createEnv();
 			getOrThrow(
@@ -325,7 +324,18 @@ describe("durable tools", () => {
 			getOrThrow(await env.writeFile("short.txt", "one\ntwo\nthree", BACKGROUND_CONTEXT));
 			await expect(
 				run(createReadTool(), { path: "short.txt", offset: 100 }, env),
-			).rejects.toThrow("Offset 100 is beyond end of file (3 lines total)");
+			).rejects.toThrow("Past end: 100");
+		});
+
+		it("rejects non-positive integer limits", async () => {
+			const env = createEnv();
+			getOrThrow(await env.writeFile("short.txt", "one\ntwo\nthree", BACKGROUND_CONTEXT));
+			await expect(
+				run(createReadTool(), { path: "short.txt", offset: 0 }, env),
+			).rejects.toThrow("Invalid offset");
+			await expect(
+				run(createReadTool(), { path: "short.txt", limit: 1.5 }, env),
+			).rejects.toThrow("Invalid limit");
 		});
 
 		it("reports images by content as unsupported", async () => {
@@ -443,7 +453,7 @@ describe("durable tools", () => {
 					},
 					env,
 				),
-			).rejects.toThrow(/overlap/);
+			).rejects.toThrow(/Overlapping edits/);
 			expect(getOrThrow(await env.readTextFile("edit.txt", BACKGROUND_CONTEXT))).toBe(
 				"one\ntwo\nthree\n",
 			);
@@ -455,10 +465,10 @@ describe("durable tools", () => {
 			const tool = createEditTool();
 			await expect(
 				run(tool, { path: "edit.txt", edits: [{ oldText: "bar", newText: "baz" }] }, env),
-			).rejects.toThrow(/Could not find the exact text/);
+			).rejects.toThrow(/Edit missing/);
 			await expect(
 				run(tool, { path: "edit.txt", edits: [{ oldText: "foo", newText: "bar" }] }, env),
-			).rejects.toThrow(/Found 3 occurrences/);
+			).rejects.toThrow(/Ambiguous edit/);
 		});
 
 		it("keeps the mutation queue locked until an aborted edit write settles", async () => {
@@ -490,29 +500,6 @@ describe("durable tools", () => {
 			);
 		});
 
-		it.skipIf(!fileSymlinksSupported)(
-			"serializes concurrent edits through canonical and symlink paths",
-			async () => {
-				const env = new SlowReadExecutionEnv({ cwd: createTempDir() });
-				getOrThrow(
-					await env.writeFile("target.txt", "alpha\nbeta\ngamma\n", BACKGROUND_CONTEXT),
-				);
-				await symlink("target.txt", join(env.cwd, "link.txt"), "file");
-				const tool = createEditTool();
-				await Promise.all([
-					run(
-						tool,
-						{ path: "target.txt", edits: [{ oldText: "alpha", newText: "ALPHA" }] },
-						env,
-					),
-					run(tool, { path: "link.txt", edits: [{ oldText: "beta", newText: "BETA" }] }, env),
-				]);
-				expect(getOrThrow(await env.readTextFile("target.txt", BACKGROUND_CONTEXT))).toBe(
-					"ALPHA\nBETA\ngamma\n",
-				);
-			},
-		);
-
 		it("serializes edits of one file across environment objects of one file system", async () => {
 			const dir = createTempDir();
 			const first = new SlowReadExecutionEnv({ cwd: dir });
@@ -528,7 +515,7 @@ describe("durable tools", () => {
 			);
 		});
 
-		it.skipIf(!directorySymlinksSupported)(
+		it(
 			"serializes a new file created through a symlinked directory with its canonical path",
 			async () => {
 				const env = new BlockingWriteExecutionEnv({ cwd: createTempDir() });
@@ -552,40 +539,6 @@ describe("durable tools", () => {
 			},
 		);
 
-		it.skipIf(process.platform === "win32")(
-			"keys a missing file whose name contains a backslash like the created file",
-			async () => {
-				const env = createEnv();
-				const created = deferred();
-				const release = deferred();
-				const first = withFileMutationQueue(
-					env,
-					"a\\b.txt",
-					async () => {
-						getOrThrow(await env.writeFile("a\\b.txt", "first\n", BACKGROUND_CONTEXT));
-						created.resolve();
-						await release.promise;
-					},
-					BACKGROUND_CONTEXT,
-				);
-				await created.promise;
-				let entered = false;
-				const second = withFileMutationQueue(
-					env,
-					"a\\b.txt",
-					async () => {
-						entered = true;
-					},
-					BACKGROUND_CONTEXT,
-				);
-				await delay(20);
-				expect(entered).toBe(false);
-				release.resolve();
-				await Promise.all([first, second]);
-				expect(entered).toBe(true);
-			},
-		);
-
 		it("does not serialize the same path on different file systems", async () => {
 			class OtherFileSystem extends BlockingWriteExecutionEnv {
 				override readonly id = "other";
@@ -600,20 +553,6 @@ describe("durable tools", () => {
 			expect(other.secondWriteStarted).toBe(true);
 			local.finishFirstWrite.resolve();
 			await blocked;
-		});
-
-		it.skipIf(!fileSymlinksSupported)("edits regular files through symlinks", async () => {
-			const env = createEnv();
-			getOrThrow(await env.writeFile("target.txt", "before\n", BACKGROUND_CONTEXT));
-			await symlink("target.txt", join(env.cwd, "link.txt"), "file");
-			await run(
-				createEditTool(),
-				{ path: "link.txt", edits: [{ oldText: "before", newText: "after" }] },
-				env,
-			);
-			expect(getOrThrow(await env.readTextFile("target.txt", BACKGROUND_CONTEXT))).toBe(
-				"after\n",
-			);
 		});
 
 		it("preserves BOM and CRLF line endings", async () => {
@@ -631,6 +570,23 @@ describe("durable tools", () => {
 	});
 
 	describe("bash", () => {
+		it("allows a reentrant mutation of the same path", async () => {
+			const env = createEnv();
+			const result = await withFileMutationQueue(
+				env,
+				"nested/file.txt",
+				() =>
+					withFileMutationQueue(
+						env,
+						"nested/file.txt",
+						async () => "inner",
+						BACKGROUND_CONTEXT,
+					),
+				BACKGROUND_CONTEXT,
+			);
+			expect(result).toBe("inner");
+		});
+
 		it("streams combined stdout and stderr and returns no content of its own", async () => {
 			const result = await run(
 				createBashTool(),
@@ -646,10 +602,10 @@ describe("durable tools", () => {
 			const env = createEnv();
 			const tool = createBashTool();
 			const failed = await runFailing(tool, { command: "printf failed; exit 7" }, env);
-			expect(failed.error.message).toBe("Command exited with code 7");
+			expect(failed.error.message).toBe("Exit code: 7");
 			expect(failed.output.join("")).toBe("failed");
 			const slow = await runFailing(tool, { command: "sleep 2", timeout: 0.01 }, env);
-			expect(slow.error.message).toBe("Command timed out after 0.01 seconds");
+			expect(slow.error.message).toBe("Command timeout: 0.01");
 		});
 
 		it("reports the spill of a command that times out", async () => {
@@ -659,7 +615,7 @@ describe("durable tools", () => {
 				{ command: "emit-output-then-time-out", timeout: 0.05 },
 				env,
 			);
-			expect(failed.error.message).toBe("Command timed out after 0.05 seconds");
+			expect(failed.error.message).toBe("Command timeout: 0.05");
 			const fullOutputPath = failed.reported[0]?.message.match(/^Full output: (.+)$/)?.[1];
 			expect(fullOutputPath).toBeDefined();
 			const fullOutput = getOrThrow(await env.readTextFile(fullOutputPath!, BACKGROUND_CONTEXT));

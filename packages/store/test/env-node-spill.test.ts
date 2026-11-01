@@ -2,10 +2,10 @@ import type * as Fs from "node:fs";
 import { mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { getOrThrow } from "../src/env/index.ts";
-import { NodeExecutionEnv } from "../src/env/node.ts";
+import { getOrThrow } from "../src/system/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 
 const SPILL_WRITE_DELAY_MS = 600;
 const spill = vi.hoisted(() => ({ rejectedWrites: 0 }));
@@ -53,8 +53,8 @@ afterEach(() => {
 });
 
 describe("NodeExecutionEnv spill backpressure", () => {
-	it.skipIf(process.platform === "win32")(
-		"keeps inherited stdio open past the exit grace period while a spill write is pending",
+	it(
+		"keeps the spill stream open past the exit grace period while a write is pending",
 		async () => {
 			const root = join(
 				tmpdir(),
@@ -63,7 +63,10 @@ describe("NodeExecutionEnv spill backpressure", () => {
 			mkdirSync(root, { recursive: true });
 			tempDirs.push(root);
 			const env = new NodeExecutionEnv({ cwd: root });
-			const command = "printf '%020d' 0 | tr 0 a; (sleep 0.2; printf '%01000d' 0 | tr 0 b) &";
+			const script =
+				"process.stdout.write('a'.repeat(20));" +
+				"setTimeout(() => process.stdout.write('b'.repeat(1000)), 200)";
+			const command = `${JSON.stringify(process.execPath)} -e "${script}"`;
 
 			let output = "";
 			const result = getOrThrow(

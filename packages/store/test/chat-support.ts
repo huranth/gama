@@ -1,4 +1,4 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import {
 	createModels,
 	type FauxProviderHandle,
@@ -19,7 +19,7 @@ import {
 	type Storage,
 	type ToolRegistration,
 } from "@huranth/gama-durable";
-import type { ExecutionEnv } from "../src/env/index.ts";
+import type { ExecutionEnv } from "../src/system/index.ts";
 import { context } from "./session-support.ts";
 
 export type ChatSetup = {

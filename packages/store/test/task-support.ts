@@ -70,7 +70,10 @@ export async function openTasks(
 	readonly reports: unknown[];
 }> {
 	const registry = options.registry ?? createRegistry();
-	if (tasks.length > 0) registry.install(defineExtension({ name: "tasks", tasks }));
+	if (tasks.length > 0) {
+		registry.install(defineExtension({ name: "tasks", tasks }));
+	}
+
 	const reports: unknown[] = [];
 	const harness = await Harness.open(
 		storage,

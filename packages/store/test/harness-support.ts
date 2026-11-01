@@ -40,10 +40,12 @@ export async function openHarness(
 	options: { readonly registry?: Registry; readonly onReport?: (error: unknown) => void } = {},
 ): Promise<{ readonly harness: Harness; readonly registry: Registry }> {
 	const registry = options.registry ?? createRegistry();
-	if (toolNames.length > 0)
+	if (toolNames.length > 0) {
 		registry.install(
 			defineExtension({ name: "tools", tools: toolNames.map((name) => tool(name)) }),
 		);
+	}
+
 	const harness = await Harness.open(
 		storage,
 		{

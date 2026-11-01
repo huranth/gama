@@ -49,6 +49,7 @@ describe("truncate utilities", () => {
 			lengths: number[];
 			head: { content: string; outputBytes: number; truncatedBy: string | null };
 		};
+
 		expect(result.bufferAvailable).toBe(false);
 		expect(result.lengths).toEqual(inputs.map(byteLength));
 		expect(result.head).toMatchObject({ content: "aé🙂", outputBytes: 7, truncatedBy: "bytes" });
