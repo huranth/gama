@@ -1,4 +1,4 @@
-import type { Draft, JsonValue } from "@huranth/chord";
+import type { Draft, JsonValue } from "@huranth/gama-bus";
 import {
 	type ConversationId,
 	defineDoc,
@@ -332,7 +332,7 @@ describe("Session document transactions", () => {
 		await flush();
 		expect(settled).toBe(false);
 		gate.release();
-		await expect(commit).rejects.toThrow("pending Tx operations");
+		await expect(commit).rejects.toThrow("Commit pending");
 		await expect(pending).rejects.toThrow("Transaction has settled");
 		expect(storage.commits.length).toBe(commits);
 		await session.commit(async (tx) => {
@@ -361,7 +361,7 @@ describe("Session document transactions", () => {
 		}, context);
 		await gate.entered;
 		gate.release();
-		await expect(commit).rejects.toThrow("pending Tx operations");
+		await expect(commit).rejects.toThrow("Commit pending");
 		await expect(pending).rejects.toThrow("Transaction has settled");
 		expect(initialized).toBe(0);
 		expect(storage.mintCount).toBe(mints);
@@ -411,7 +411,7 @@ describe("Session document transactions", () => {
 			session.commit(async (tx) => {
 				await tx.doc(LiveDocV2, conversationId);
 			}, context),
-		).rejects.toThrow("requires migration from version 1");
+		).rejects.toThrow("Migration needed");
 	});
 
 	it("rejects non-JSON initializers and draft placements before admission", async () => {
@@ -462,7 +462,7 @@ describe("Session document transactions", () => {
 					state: { status: "pending", checkpoint: { phase: "start" } },
 				});
 			}, context),
-		).rejects.toThrow("Task 999 does not exist");
+		).rejects.toThrow("Unknown task");
 		expect(storage.commits.length).toBe(commits);
 		expect(await session.snapshot(LiveDoc, conversationId, context)).toBe(live);
 		expect(await session.snapshot(CounterDoc, context)).toBe(counter);

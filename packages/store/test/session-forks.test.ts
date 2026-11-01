@@ -429,7 +429,7 @@ describe("Session conversation document forks", () => {
 				(tx) => tx.forkConversation(parent.id, hidden, { ownership: { kind: "ownerless" } }),
 				context,
 			),
-		).rejects.toThrow(`Entry ${hidden} is not visible`);
+		).rejects.toThrow(`Hidden entry: ${hidden}`);
 		await flush();
 		expect(storage.commits).toHaveLength(commits);
 		expect(publications).toHaveLength(published);
@@ -472,7 +472,7 @@ describe("Session conversation document forks", () => {
 				(tx) => tx.forkConversation(parentId, oldAt, { ownership: { kind: "ownerless" } }),
 				context,
 			),
-		).rejects.toThrow("Fork selects multiple source documents");
+		).rejects.toThrow("Multiple documents");
 		expect(storage.commits).toHaveLength(commits);
 		const independent = await session.commit(
 			(tx) => tx.createConversation({ ownership: { kind: "ownerless" } }),
@@ -512,19 +512,19 @@ describe("Session conversation document forks", () => {
 				(await tx.doc(Current, parentId)).value = "before-fork";
 				await tx.forkConversation(parentId, forkAt, { ownership: { kind: "ownerless" } });
 			}, context),
-		).rejects.toThrow("Cannot change fork source document");
+		).rejects.toThrow("Fixed source");
 		await expect(
 			session.commit(async (tx) => {
 				await tx.forkConversation(parentId, forkAt, { ownership: { kind: "ownerless" } });
 				(await tx.doc(Current, parentId)).value = "after-fork";
 			}, context),
-		).rejects.toThrow("Cannot change fork source document");
+		).rejects.toThrow("Fixed source");
 		await expect(
 			session.commit(async (tx) => {
 				(await tx.doc(AsOf, parentId)).value = "as-of-write";
 				await tx.forkConversation(parentId, forkAt, { ownership: { kind: "ownerless" } });
 			}, context),
-		).rejects.toThrow("Cannot change fork source document");
+		).rejects.toThrow("Fixed source");
 		expect(storage.commits).toHaveLength(commits);
 		expect(await session.snapshot(Current, parentId, context)).toEqual({ value: "committed" });
 		const child = await session.commit(

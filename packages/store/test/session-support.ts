@@ -1,5 +1,5 @@
-import type { Context } from "@huranth/chord";
-import { BACKGROUND_CONTEXT } from "@huranth/chord/context";
+import type { Context } from "@huranth/gama-bus";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	type CommitPublication,
 	type ConversationId,
@@ -13,7 +13,7 @@ import {
 	type Seq,
 	type StorageWrite,
 } from "@huranth/gama-durable";
-import { SessionImpl } from "../src/session/session.ts";
+import { SessionImpl } from "../src/records/session.ts";
 
 export const context: Context = BACKGROUND_CONTEXT;
 

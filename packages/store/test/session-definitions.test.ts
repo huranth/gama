@@ -1,4 +1,4 @@
-import type { Draft } from "@huranth/chord";
+import type { Draft } from "@huranth/gama-bus";
 import {
 	type ConversationId,
 	createSession,

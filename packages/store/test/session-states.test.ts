@@ -1,6 +1,6 @@
 import { defineDoc, defineDocFamily } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { getReplicatedStateInternals } from "../../chord/src/services/state-internals.ts";
+import { getReplicatedStateInternals } from "../../bus/src/peers/state-internals.ts";
 import {
 	context,
 	createConversation,

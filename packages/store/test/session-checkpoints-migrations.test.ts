@@ -1,4 +1,4 @@
-import type { Op } from "@huranth/chord/delta";
+import type { Op } from "@huranth/gama-bus/delta";
 import {
 	defineDoc,
 	defineDocFamily,
@@ -510,7 +510,9 @@ describe("Session document migrations", () => {
 		expect(migrations).toBe(1);
 	});
 
-	it("strict-checks migration results before ownership, staying usable after rejection", async () => {
+	it(
+		"strict-checks migration results before ownership, staying usable after rejection",
+		async () => {
 		const Old = defineDoc<{ count: number }>({
 			kind: "migration.invalid",
 			version: 1,
@@ -567,16 +569,16 @@ describe("Session document migrations", () => {
 		await session.unloadDocuments();
 		const commits = storage.commits.length;
 
-		await expect(session.snapshot(V1, context)).rejects.toThrow("newer version 2 than 1");
+		await expect(session.snapshot(V1, context)).rejects.toThrow("Newer document");
 		await expect(
 			session.commit((tx) => tx.doc(V1).then(() => undefined), context),
-		).rejects.toThrow("newer version 2 than 1");
+		).rejects.toThrow("Newer document");
 		await expect(session.snapshot(V3WithoutMigration, context)).rejects.toThrow(
-			"requires migration from version 2",
+			"Migration needed",
 		);
 		await expect(
 			session.commit((tx) => tx.doc(V3WithoutMigration).then(() => undefined), context),
-		).rejects.toThrow("requires migration from version 2");
+		).rejects.toThrow("Migration needed");
 		expect(storage.commits).toHaveLength(commits);
 	});
 
@@ -768,7 +770,7 @@ describe("Session historical document snapshots", () => {
 			count: 1,
 		});
 		await expect(session.snapshotAsOf(V3, childId, thirdEntry, context)).rejects.toThrow(
-			`Entry ${thirdEntry} is not visible`,
+			`Hidden entry: ${thirdEntry}`,
 		);
 	});
 
@@ -851,7 +853,7 @@ describe("Session tracker cache across definition versions", () => {
 			type: "document.change",
 			content: { version: 2, kind: "base", value: { names: ["first", "second"] } },
 		});
-		await expect(session.snapshot(V1Doc, context)).rejects.toThrow("newer version 2");
+		await expect(session.snapshot(V1Doc, context)).rejects.toThrow("Newer document");
 	});
 
 	it("sends observers of an older shape a root replacement after a newer token writes", async () => {

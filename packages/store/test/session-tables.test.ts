@@ -1,4 +1,4 @@
-import type { JsonValue } from "@huranth/chord";
+import type { JsonValue } from "@huranth/gama-bus";
 import {
 	type ConversationId,
 	defineDoc,
@@ -202,7 +202,7 @@ describe("Session transaction tables", () => {
 				(tx) => tx.appendEntry(idFromNumber<ConversationId>(12345), { kind: "note" }),
 				context,
 			),
-		).rejects.toThrow("Conversation 12345 does not exist");
+		).rejects.toThrow("Unknown conversation");
 	});
 
 	it("creates a conversation with an explicitly staged task owner", async () => {
@@ -231,7 +231,7 @@ describe("Session transaction tables", () => {
 				const supervisor = (await tx.task(created.supervisorId))!;
 				tx.setTask({ ...supervisor, conversationId: created.child.id });
 			}, context),
-		).rejects.toThrow(`Task ${created.supervisorId} cannot change conversations`);
+		).rejects.toThrow(`Fixed conversation: ${created.supervisorId}`);
 		expect((await storage.task(created.supervisorId, context))?.conversationId).toBe(parentId);
 	});
 
@@ -258,7 +258,7 @@ describe("Session transaction tables", () => {
 					state: { status: "pending", checkpoint: { phase: "start" } },
 				});
 			}, context),
-		).rejects.toThrow("cannot change conversations");
+		).rejects.toThrow("Fixed conversation");
 		if (movedStagedTaskId === undefined) throw new Error("Expected a staged task ID");
 		expect(await storage.task(movedStagedTaskId, context)).toBeUndefined();
 
@@ -268,7 +268,7 @@ describe("Session transaction tables", () => {
 				(tx) => tx.createConversation({ ownership: { kind: "task", taskId: missingTaskId } }),
 				context,
 			),
-		).rejects.toThrow("Conversation owner task 999 does not exist");
+		).rejects.toThrow("Unknown owner");
 
 		let rejectedChildId: ConversationId | undefined;
 		await expect(
@@ -292,7 +292,7 @@ describe("Session transaction tables", () => {
 					state: { status: "pending", checkpoint: { phase: "start" } },
 				});
 			}, context),
-		).rejects.toThrow("is abort-marked");
+		).rejects.toThrow("aborted");
 		expect(rejectedChildId).toBeDefined();
 		if (rejectedChildId === undefined) throw new Error("Expected a rejected child ID");
 		expect(await storage.conversation(rejectedChildId, context)).toBeUndefined();
@@ -319,7 +319,7 @@ describe("Session transaction tables", () => {
 					},
 				});
 			}, context),
-		).rejects.toThrow("is terminal");
+		).rejects.toThrow("status: terminal");
 
 		const terminalOwnerId = await createTask(session, parentId);
 		await session.commitWith(async (tx) => {
@@ -330,7 +330,7 @@ describe("Session transaction tables", () => {
 				(tx) => tx.createConversation({ ownership: { kind: "task", taskId: terminalOwnerId } }),
 				context,
 			),
-		).rejects.toThrow("is terminal");
+		).rejects.toThrow("status: terminal");
 	});
 
 	it("takes ownership of table JSON and rejects non-strict values", async () => {
@@ -430,16 +430,16 @@ describe("Session transaction tables", () => {
 			const task = (await tx.task(taskId))!;
 			const progress = await tx.doc(ProgressDoc, taskId);
 			tx.setTask(terminal(task));
-			await expect(tx.doc(ProgressDoc, taskId)).rejects.toThrow(`Task ${taskId} is terminal`);
+			await expect(tx.doc(ProgressDoc, taskId)).rejects.toThrow(`Task closed: ${taskId}`);
 			await expect(tx.doc(StepDoc, taskId, "late", null)).rejects.toThrow(
-				`Task ${taskId} is terminal`,
+				`Task closed: ${taskId}`,
 			);
-			expect(() => tx.setTask(task)).toThrow("terminal candidate");
+			expect(() => tx.setTask(task)).toThrow("Duplicate terminal");
 			progress.lines.push("final");
 		}, context);
 		await expect(
 			session.commit((tx) => tx.doc(ProgressDoc, taskId).then(() => undefined), context),
-		).rejects.toThrow(`Task ${taskId} is terminal`);
+		).rejects.toThrow(`Task closed: ${taskId}`);
 	});
 
 	it("retires task documents at terminal settlement, even ones created then", async () => {
@@ -489,7 +489,7 @@ describe("Session transaction tables", () => {
 			session.commitWith(async (tx) => {
 				tx.setTask(terminal((await tx.task(taskId))!));
 			}, context),
-		).rejects.toThrow(`Task ${taskId} is already terminal`);
+		).rejects.toThrow(`Task closed: ${taskId}`);
 	});
 
 	it("validates document owners", async () => {
@@ -499,12 +499,12 @@ describe("Session transaction tables", () => {
 				(tx) => tx.doc(ProgressDoc, idFromNumber<TaskId>(4242)).then(() => undefined),
 				context,
 			),
-		).rejects.toThrow("Task 4242 does not exist");
+		).rejects.toThrow("Unknown task");
 		await expect(
 			session.commit(
 				(tx) => tx.doc(NotesDoc, idFromNumber<ConversationId>(4242)).then(() => undefined),
 				context,
 			),
-		).rejects.toThrow("Conversation 4242 does not exist");
+		).rejects.toThrow("Unknown conversation");
 	});
 });

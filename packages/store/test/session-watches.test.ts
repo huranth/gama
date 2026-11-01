@@ -1,12 +1,12 @@
-import type { Context } from "@huranth/chord";
+import type { Context } from "@huranth/gama-bus";
 import {
 	BACKGROUND_CONTEXT,
 	createContextKey,
 	withAbortSignal,
 	withCancel,
 	withContextValue,
-} from "@huranth/chord/context";
-import { applyImmutable } from "@huranth/chord/delta";
+} from "@huranth/gama-bus/context";
+import { applyImmutable } from "@huranth/gama-bus/delta";
 import { defineDoc } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
 import { context, documentChanges, flush, openTestSession } from "./session-support.ts";
@@ -339,7 +339,7 @@ describe("Session document watches", () => {
 		const { session } = await createState();
 		const started = (await session.watchDoc(StateDoc, context))!;
 		started.start(async () => undefined);
-		expect(() => started.start(async () => undefined)).toThrow("already started");
+		expect(() => started.start(async () => undefined)).toThrow("Watch started");
 		const first = started.stop();
 		const second = started.stop();
 		expect(second).toBe(first);
