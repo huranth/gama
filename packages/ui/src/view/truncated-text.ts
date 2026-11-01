@@ -1,5 +1,5 @@
-import type { Component } from "../tui.ts";
-import { truncateToWidth, visibleWidth } from "../utils.ts";
+import type { Component } from "../screen.ts";
+import { clampPaddingX, padLine, truncateToWidth } from "../utils.ts";
 
 export class TruncatedText implements Component {
 	private text: string;
@@ -15,26 +15,26 @@ export class TruncatedText implements Component {
 	invalidate(): void {}
 
 	render(width: number): string[] {
-		const emptyLine = " ".repeat(width);
+		const safeWidth = Number.isFinite(width) ? Math.max(0, Math.floor(width)) : 0;
+		if (safeWidth === 0) return [];
+		const emptyLine = " ".repeat(safeWidth);
 		const padding = Array.from({ length: this.paddingY }, () => emptyLine);
-		const paddingX = this.clampPadding(width);
-		const availableWidth = Math.max(1, width - paddingX * 2);
+		const paddingX = this.clampPadding(safeWidth);
+		const availableWidth = Math.max(1, safeWidth - paddingX * 2);
 		const displayText = truncateToWidth(this.firstLine(), availableWidth);
 		const margin = " ".repeat(paddingX);
 		const lineWithPadding = margin + displayText + margin;
-		const paddingNeeded = Math.max(0, width - visibleWidth(lineWithPadding));
 
-		return [...padding, lineWithPadding + " ".repeat(paddingNeeded), ...padding];
+		return [...padding, padLine(lineWithPadding, safeWidth), ...padding];
 	}
 
 	private clampPadding(width: number): number {
-		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
-		return Math.min(this.paddingX, maxPadding);
+		return clampPaddingX(width, this.paddingX);
 	}
 
 	private firstLine(): string {
-		const newlineIndex = this.text.indexOf("\n");
-		if (newlineIndex === -1) return this.text;
-		return this.text.substring(0, newlineIndex);
+		// CRLF guard
+		const newline = /\r\n|\r|\n/.exec(this.text);
+		return newline ? this.text.slice(0, newline.index) : this.text;
 	}
 }

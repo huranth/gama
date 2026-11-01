@@ -1,5 +1,5 @@
-import type { Component } from "../tui.ts";
-import { applyBackgroundToLine, visibleWidth, wrapTextWithAnsi } from "../utils.ts";
+import type { Component } from "../screen.ts";
+import { applyBackgroundToLine, clampPaddingX, padLine, wrapTextWithAnsi } from "../utils.ts";
 
 export class Text implements Component {
 	private text: string;
@@ -56,8 +56,7 @@ export class Text implements Component {
 	}
 
 	private clampPadding(width: number): number {
-		const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
-		return Math.min(this.paddingX, maxPadding);
+		return clampPaddingX(width, this.paddingX);
 	}
 
 	private buildContentLines(
@@ -73,8 +72,7 @@ export class Text implements Component {
 			if (this.customBgFn) {
 				return applyBackgroundToLine(lineWithMargins, width, this.customBgFn);
 			}
-			const paddingNeeded = Math.max(0, width - visibleWidth(lineWithMargins));
-			return lineWithMargins + " ".repeat(paddingNeeded);
+			return padLine(lineWithMargins, width);
 		});
 	}
 

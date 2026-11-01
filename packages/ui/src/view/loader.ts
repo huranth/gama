@@ -1,9 +1,11 @@
-import type { TUI } from "../tui.ts";
+import type { TUI } from "../screen.ts";
 import { Text } from "./text.ts";
 
 const DEFAULT_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 
 const DEFAULT_INTERVAL_MS = 80;
+
+const DEFAULT_MESSAGE = "Loading...";
 
 export interface LoaderIndicatorOptions {
 	frames?: string[];
@@ -13,7 +15,7 @@ export interface LoaderIndicatorOptions {
 export class Loader extends Text {
 	private frames = [...DEFAULT_FRAMES];
 	private intervalMs = DEFAULT_INTERVAL_MS;
-	private message: string = "Loading...";
+	private message: string = DEFAULT_MESSAGE;
 	private currentFrame = 0;
 	private intervalId: NodeJS.Timeout | null = null;
 	private ui: TUI | null = null;
@@ -25,7 +27,7 @@ export class Loader extends Text {
 		ui: TUI,
 		spinnerColorFn: (str: string) => string,
 		messageColorFn: (str: string) => string,
-		message: string = "Loading...",
+		message: string = DEFAULT_MESSAGE,
 		indicator?: LoaderIndicatorOptions,
 	) {
 		super("", 1, 0);
@@ -55,11 +57,11 @@ export class Loader extends Text {
 
 	setIndicator(indicator?: LoaderIndicatorOptions): void {
 		this.renderIndicatorVerbatim = indicator !== undefined;
-		this.frames = indicator?.frames !== undefined ? [...indicator.frames] : [...DEFAULT_FRAMES];
-		this.intervalMs =
-			indicator?.intervalMs && indicator.intervalMs > 0
-				? indicator.intervalMs
-				: DEFAULT_INTERVAL_MS;
+		this.frames = [...(indicator?.frames ?? DEFAULT_FRAMES)];
+
+		const interval = indicator?.intervalMs;
+		this.intervalMs = interval !== undefined && interval > 0 ? interval : DEFAULT_INTERVAL_MS;
+
 		this.currentFrame = 0;
 		this.start();
 	}

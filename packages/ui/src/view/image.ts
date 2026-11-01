@@ -8,7 +8,7 @@ import {
 	imageFallback,
 	renderImage,
 } from "../terminal-image.ts";
-import type { Component } from "../tui.ts";
+import type { Component } from "../screen.ts";
 import { truncateToWidth } from "../utils.ts";
 
 let imageTranscoder: ImageTranscoder | undefined;
@@ -33,14 +33,22 @@ export function setImageTranscoder(transcoder: ImageTranscoder | undefined): voi
 	pngCache.clear();
 }
 
+const MAX_PNG_CACHE = 32;
+
+const DEFAULT_WIDTH_PX = 800;
+
+const DEFAULT_HEIGHT_PX = 600;
+
 function toPng(base64Data: string, mimeType: string): string | null {
 	if (!imageTranscoder) return null;
+
 	const cached = pngCache.get(base64Data);
 	const png = cached === undefined ? imageTranscoder(base64Data, mimeType) : cached;
+
 	pngCache.delete(base64Data);
 	pngCache.set(base64Data, png);
 
-	if (pngCache.size > 32) {
+	if (pngCache.size > MAX_PNG_CACHE) {
 		pngCache.delete(pngCache.keys().next().value!);
 	}
 
@@ -71,7 +79,10 @@ export class Image implements Component {
 		this.theme = theme;
 		this.options = options;
 		this.dimensions = dimensions ||
-			getImageDimensions(base64Data, mimeType) || { widthPx: 800, heightPx: 600 };
+			getImageDimensions(base64Data, mimeType) || {
+				widthPx: DEFAULT_WIDTH_PX,
+				heightPx: DEFAULT_HEIGHT_PX,
+			};
 		this.imageId = options.imageId;
 	}
 

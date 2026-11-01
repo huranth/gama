@@ -1,5 +1,6 @@
+import { ANSI_BRIGHT_BLACK, ANSI_FOREGROUND_RESET, ANSI_WHITE } from "../colors.ts";
 import { LAYOUT_NODE, type ScrollLayoutNode } from "../layout-node.ts";
-import { type Component, Container } from "../tui.ts";
+import { type Component, Container } from "../screen.ts";
 
 export type ScrollViewScrollbar = "hidden" | "auto" | "always";
 
@@ -8,6 +9,7 @@ export interface ScrollViewOptions {
 	follow?: "none" | "end";
 	primary?: boolean;
 	overscroll?: "chain" | "contain";
+	align?: "start" | "end";
 	scrollbar?: ScrollViewScrollbar;
 	scrollbarTrackStyle?: (text: string) => string;
 	scrollbarThumbStyle?: (text: string) => string;
@@ -18,11 +20,14 @@ export interface ScrollViewScrollToOptions {
 	disableFollow?: boolean;
 }
 
+const DEFAULT_SCROLLBAR_HIDE_DELAY_MS = 1000;
+
 export class ScrollView extends Container {
 	private readonly child: Component;
 	readonly followEnd: boolean;
 	readonly primary: boolean;
 	readonly overscroll: "chain" | "contain";
+	private currentAlign: "start" | "end";
 	readonly scrollbarTrackStyle: (text: string) => string;
 	readonly scrollbarThumbStyle: (text: string) => string;
 	private currentScrollbar: ScrollViewScrollbar;
@@ -40,7 +45,7 @@ export class ScrollView extends Container {
 	constructor(component: Component, options: ScrollViewOptions = {}) {
 		super();
 		if (options.axis !== undefined && options.axis !== "vertical") {
-			throw new Error(`Unsupported ScrollView axis: ${options.axis}`);
+			throw new Error(`Bad axis`);
 		}
 		this.child = component;
 		this.children.push(component);
@@ -48,12 +53,18 @@ export class ScrollView extends Container {
 		this.followingEnd = this.followEnd;
 		this.primary = options.primary ?? false;
 		this.overscroll = options.overscroll ?? "chain";
+		this.currentAlign = options.align ?? "start";
 		this.currentScrollbar = options.scrollbar ?? "hidden";
 		this.scrollbarTrackStyle =
-			options.scrollbarTrackStyle ?? ((text) => `\x1b[90m${text}\x1b[39m`);
+			options.scrollbarTrackStyle ??
+			((text) => `${ANSI_BRIGHT_BLACK}${text}${ANSI_FOREGROUND_RESET}`);
 		this.scrollbarThumbStyle =
-			options.scrollbarThumbStyle ?? ((text) => `\x1b[37m${text}\x1b[39m`);
-		this.scrollbarHideDelayMs = Math.max(0, Math.floor(options.scrollbarHideDelayMs ?? 1000));
+			options.scrollbarThumbStyle ??
+			((text) => `${ANSI_WHITE}${text}${ANSI_FOREGROUND_RESET}`);
+		this.scrollbarHideDelayMs = Math.max(
+			0,
+			Math.floor(options.scrollbarHideDelayMs ?? DEFAULT_SCROLLBAR_HIDE_DELAY_MS),
+		);
 	}
 
 	get scrollTop(): number {
@@ -62,6 +73,16 @@ export class ScrollView extends Container {
 
 	get isFollowingEnd(): boolean {
 		return this.followingEnd;
+	}
+
+	get align(): "start" | "end" {
+		return this.currentAlign;
+	}
+
+	setAlign(align: "start" | "end"): void {
+		if (align === this.currentAlign) return;
+		this.currentAlign = align;
+		this.requestRenderCallback?.();
 	}
 
 	get viewportHeight(): number {
@@ -211,15 +232,15 @@ export class ScrollView extends Container {
 	}
 
 	override addChild(_component: Component): void {
-		throw new Error("ScrollView has exactly one child");
+		throw new Error("One child only");
 	}
 
 	override removeChild(_component: Component): void {
-		throw new Error("ScrollView child cannot be removed");
+		throw new Error("Cannot remove");
 	}
 
 	override clear(): void {
-		throw new Error("ScrollView child cannot be cleared");
+		throw new Error("Cannot clear");
 	}
 
 	override render(width: number): string[] {

@@ -3,8 +3,8 @@ import {
 	dispatchMouseEvent,
 	type TuiMouseDispatchResult,
 	type TuiMouseEvent,
-} from "../tui.ts";
-import { visibleWidth } from "../utils.ts";
+} from "../screen.ts";
+import { closeBeforePadding, visibleWidth } from "../utils.ts";
 
 type RenderCache = {
 	childLines: string[];
@@ -168,7 +168,14 @@ export class Box implements Component {
 
 	private applyBg(line: string, width: number): string {
 		const padNeeded = Math.max(0, width - visibleWidth(line));
-		const padded = line + " ".repeat(padNeeded);
-		return this.bgFn ? this.bgFn(padded) : padded;
+		const padded =
+			padNeeded > 0 ? `${line}${closeBeforePadding(line)} ${" ".repeat(padNeeded - 1)}` : line;
+		const bgFn = this.bgFn;
+		if (!bgFn) return padded;
+
+		return padded
+			.split(/(\x1b\[0m)/)
+			.map((part) => (part === "\x1b[0m" || part.length === 0 ? part : bgFn(part)))
+			.join("");
 	}
 }

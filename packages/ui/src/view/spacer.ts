@@ -1,4 +1,4 @@
-import type { Component } from "../tui.ts";
+import type { Component } from "../screen.ts";
 
 export class Spacer implements Component {
 	private lines: number;

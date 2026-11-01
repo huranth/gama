@@ -1,5 +1,5 @@
 import type { StackLayoutEntry } from "../layout-node.ts";
-import { compositeTuiLine } from "../tui.ts";
+import { compositeTuiLine } from "../screen.ts";
 import { visibleWidth } from "../utils.ts";
 import {
 	allocateStackSizes,
