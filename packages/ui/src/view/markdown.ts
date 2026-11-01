@@ -1,9 +1,12 @@
 import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } from "marked";
+import { ANSI_CELL_RESET, ANSI_RESET } from "../colors.ts";
 import { renderLatex } from "../latex.ts";
 import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
-import type { Component } from "../tui.ts";
+import type { Component } from "../screen.ts";
 import {
 	applyBackgroundToLine,
+	clampPaddingX,
+	padLine,
 	stripControlChars,
 	visibleWidth,
 	wrapTextWithAnsi,
@@ -56,6 +59,10 @@ interface InlineStyleContext {
 }
 
 const STRICT_STRIKETHROUGH_REGEX = /^(~~)(?=[^\s~])((?:\\.|[^\\])*?(?:\\.|[^\s~\\]))\1(?=[^~]|$)/;
+
+const MAX_RULE_WIDTH = 80;
+
+const MAX_WORD_WIDTH = 30;
 
 class StrictStrikethroughTokenizer extends Tokenizer {
 	override del(src: string): Tokens.Del | undefined {
@@ -271,7 +278,7 @@ export class Markdown implements Component {
 		}
 
 		// Clamp padding
-		const paddingX = Math.min(this.paddingX, Math.max(0, Math.floor((width - 1) / 2)));
+		const paddingX = clampPaddingX(width, this.paddingX);
 		const contentWidth = Math.max(1, width - paddingX * 2);
 		const text = this.options.transform?.(this.text, contentWidth) ?? this.text;
 
@@ -331,9 +338,7 @@ export class Markdown implements Component {
 			if (bgFn) {
 				contentLines.push(applyBackgroundToLine(lineWithMargins, width, bgFn));
 			} else {
-				const visibleLen = visibleWidth(lineWithMargins);
-				const paddingNeeded = Math.max(0, width - visibleLen);
-				contentLines.push(lineWithMargins + " ".repeat(paddingNeeded));
+				contentLines.push(padLine(lineWithMargins, width));
 			}
 		}
 
@@ -439,7 +444,6 @@ export class Markdown implements Component {
 		switch (token.type) {
 			case "heading": {
 				const headingLevel = token.depth;
-				const headingPrefix = `${"#".repeat(headingLevel)} `;
 
 				let headingStyleFn: (text: string) => string;
 				if (headingLevel === 1) {
@@ -455,9 +459,7 @@ export class Markdown implements Component {
 				};
 
 				const headingText = this.renderInlineTokens(token.tokens || [], headingStyleContext);
-				const styledHeading =
-					headingLevel >= 3 ? headingStyleFn(headingPrefix) + headingText : headingText;
-				lines.push(styledHeading);
+				lines.push(headingText);
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push("");
 				}
@@ -494,7 +496,6 @@ export class Markdown implements Component {
 
 			case "code": {
 				const indent = this.theme.codeBlockIndent ?? "  ";
-				lines.push(this.theme.codeBlockBorder(`\`\`\`${token.lang || ""}`));
 				if (this.theme.highlightCode) {
 					const highlightedLines = this.theme.highlightCode(token.text, token.lang);
 					for (const hlLine of highlightedLines) {
@@ -506,7 +507,6 @@ export class Markdown implements Component {
 						lines.push(`${indent}${this.theme.codeBlock(codeLine)}`);
 					}
 				}
-				lines.push(this.theme.codeBlockBorder("```"));
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push("");
 				}
@@ -537,10 +537,9 @@ export class Markdown implements Component {
 					if (!quoteStylePrefix) {
 						return quoteStyle(line);
 					}
-					const lineWithReappliedStyle = line.replace(
-						/\x1b\[0m/g,
-						`\x1b[0m${quoteStylePrefix}`,
-					);
+					const lineWithReappliedStyle = line
+						.split(ANSI_RESET)
+						.join(`${ANSI_RESET}${quoteStylePrefix}`);
 					return quoteStyle(lineWithReappliedStyle);
 				};
 
@@ -586,7 +585,7 @@ export class Markdown implements Component {
 			}
 
 			case "hr":
-				lines.push(this.theme.hr("─".repeat(Math.min(width, 80))));
+				lines.push(this.theme.hr("─".repeat(Math.min(width, MAX_RULE_WIDTH))));
 				if (nextTokenType && nextTokenType !== "space") {
 					lines.push("");
 				}
@@ -674,7 +673,7 @@ export class Markdown implements Component {
 
 				case "link": {
 					const linkText = this.renderInlineTokens(token.tokens || [], resolvedStyleContext);
-					const styledLink = this.theme.link(this.theme.underline(linkText));
+					const styledLink = this.theme.link(linkText);
 					if (getCapabilities().hyperlinks) {
 						result += hyperlink(styledLink, token.href) + stylePrefix;
 					} else {
@@ -748,8 +747,8 @@ export class Markdown implements Component {
 					? (this.getOrderedListMarker(item) ?? `${startNumber + i}. `)
 					: `${startNumber + i}. `
 				: this.options.preserveOrderedListMarkers
-					? (this.getUnorderedListMarker(item) ?? "- ")
-					: "- ";
+					? (this.getUnorderedListMarker(item) ?? "• ")
+					: "• ";
 			const taskMarker = item.task ? `[${item.checked ? "x" : " "}] ` : "";
 			const marker = bullet + taskMarker;
 			const firstPrefix = indent + this.theme.listBullet(marker);
@@ -803,7 +802,7 @@ export class Markdown implements Component {
 	private wrapCellText(text: string, maxWidth: number, stylePrefix = ""): string[] {
 		const lines = wrapTextWithAnsi(text, Math.max(1, maxWidth));
 		return lines.map((line, index) => {
-			const styleReset = index < lines.length - 1 ? "\x1b[22;23;24;25;27;28;29;39m" : "";
+			const styleReset = index < lines.length - 1 ? ANSI_CELL_RESET : "";
 			return `${line}${styleReset}${stylePrefix}`;
 		});
 	}
@@ -831,7 +830,7 @@ export class Markdown implements Component {
 			return fallbackLines;
 		}
 
-		const maxUnbrokenWordWidth = 30;
+		const maxUnbrokenWordWidth = MAX_WORD_WIDTH;
 
 		const naturalWidths: number[] = [];
 		const minWordWidths: number[] = [];
@@ -934,9 +933,7 @@ export class Markdown implements Component {
 		for (let lineIdx = 0; lineIdx < headerLineCount; lineIdx++) {
 			const rowParts = headerCellLines.map((cellLines, colIdx) => {
 				const text = cellLines[lineIdx] || "";
-				const padded =
-					text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
-				return this.theme.bold(padded);
+				return this.theme.bold(padLine(text, columnWidths[colIdx] ?? 0));
 			});
 			lines.push(`│ ${rowParts.join(" │ ")} │`);
 		}
@@ -956,7 +953,7 @@ export class Markdown implements Component {
 			for (let lineIdx = 0; lineIdx < rowLineCount; lineIdx++) {
 				const rowParts = rowCellLines.map((cellLines, colIdx) => {
 					const text = cellLines[lineIdx] || "";
-					return text + " ".repeat(Math.max(0, columnWidths[colIdx] - visibleWidth(text)));
+					return padLine(text, columnWidths[colIdx] ?? 0);
 				});
 				lines.push(`│ ${rowParts.join(" │ ")} │`);
 			}

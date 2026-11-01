@@ -558,9 +558,13 @@ const SPACING_COMMANDS = new Set([
 	"thickspace",
 	"thinspace",
 ]);
+
 const NEGATIVE_SPACING_COMMANDS = new Set(["!", "negmedspace", "negthickspace", "negthinspace"]);
+
 const NEGATIVE_SPACE = "\u0000";
+
 const FONT_SWITCH_COMMANDS = new Set(["bf", "cal", "it", "rm", "sf", "sl", "tt"]);
+
 const IGNORED_COMMANDS = new Set([
 	"displaystyle",
 	"limits",
@@ -569,6 +573,7 @@ const IGNORED_COMMANDS = new Set([
 	"scriptscriptstyle",
 	"textstyle",
 ]);
+
 const SIZE_COMMANDS = new Set([
 	"big",
 	"Big",
@@ -583,6 +588,7 @@ const SIZE_COMMANDS = new Set([
 	"biggr",
 	"Biggr",
 ]);
+
 const PLAIN_WRAPPERS = new Set([
 	"emph",
 	"mathcal",
@@ -615,6 +621,7 @@ const PLAIN_WRAPPERS = new Set([
 	"bm",
 	"boldsymbol",
 ]);
+
 const ACCENTS: Readonly<Record<string, string>> = {
 	acute: "\u0301",
 	bar: "\u0305",
@@ -693,8 +700,11 @@ function formatRoot(value: string, symbol = "√"): string {
 }
 
 const NAMED_OPERATOR_START = "\u{f0004}";
+
 const NAMED_OPERATOR_END = "\u{f0005}";
+
 const NAMED_OPERATOR_LEFT_SPACING_PATTERN = /(?<=[\p{L}\p{N})\]}\u{f0001}])\u{f0004}/gu;
+
 const NAMED_OPERATOR_RIGHT_SPACING_PATTERN = /\u{f0005}(?=[\p{L}\p{N}√\u{f0000}])/gu;
 
 function normalizeOutput(value: string): string {
@@ -711,10 +721,24 @@ function normalizeOutput(value: string): string {
 }
 
 const LAYOUT_MARKER_START = "\u{f0000}";
+
 const LAYOUT_MARKER_END = "\u{f0001}";
+
 const LAYOUT_MARKER_PATTERN = /\u{f0000}(\d+)\u{f0001}/gu;
+
 const TRAILING_LAYOUT_MARKER_PATTERN = /\u{f0000}(\d+)\u{f0001}$/u;
+
 const PROTECTED_SPACE = "\u{f0002}";
+
+type MatrixDelimiter = readonly [string, string, string, string, string, string];
+
+const MATRIX_DELIMITERS: Readonly<Record<string, MatrixDelimiter>> = {
+	pmatrix: ["⎛", "⎞", "⎜", "⎟", "⎝", "⎠"],
+	bmatrix: ["⎡", "⎤", "⎢", "⎥", "⎣", "⎦"],
+	Bmatrix: ["⎧", "⎫", "⎨", "⎬", "⎩", "⎭"],
+	vmatrix: ["│", "│", "│", "│", "│", "│"],
+	Vmatrix: ["║", "║", "║", "║", "║", "║"],
+};
 
 function padLayoutLine(line: string, width: number, centered = false): string {
 	const padding = Math.max(0, width - visibleWidth(line));
@@ -1509,16 +1533,8 @@ class LatexParser {
 		if (environment === "array" || environment === "matrix" || environment === "smallmatrix") {
 			lines = rows;
 		} else {
-			const delimiters: Readonly<
-				Record<string, readonly [string, string, string, string, string, string]>
-			> = {
-				pmatrix: ["⎛", "⎞", "⎜", "⎟", "⎝", "⎠"],
-				bmatrix: ["⎡", "⎤", "⎢", "⎥", "⎣", "⎦"],
-				Bmatrix: ["⎧", "⎫", "⎨", "⎬", "⎩", "⎭"],
-				vmatrix: ["│", "│", "│", "│", "│", "│"],
-				Vmatrix: ["║", "║", "║", "║", "║", "║"],
-			};
-			const delimiter = delimiters[environment];
+			const delimiter = MATRIX_DELIMITERS[environment];
+
 			if (!delimiter) {
 				this.supported = false;
 				return rows.join("\n");
