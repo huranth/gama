@@ -3,6 +3,7 @@ import { defineConfig } from "vitest/config";
 
 const durableSrcIndex = fileURLToPath(new URL("./src/index.ts", import.meta.url));
 const durableSrcTesting = fileURLToPath(new URL("./src/testing/index.ts", import.meta.url));
+const chordSrcIndex = fileURLToPath(new URL("../bus/src/index.ts", import.meta.url));
 
 export default defineConfig({
 	test: {
@@ -13,6 +14,7 @@ export default defineConfig({
 		alias: [
 			{ find: /^@huranth\/gama-durable$/, replacement: durableSrcIndex },
 			{ find: /^@huranth\/gama-durable\/testing$/, replacement: durableSrcTesting },
+			{ find: /^@huranth\/gama-bus$/, replacement: chordSrcIndex },
 		],
 	},
 	ssr: { resolve: { conditions: ["source"] } },

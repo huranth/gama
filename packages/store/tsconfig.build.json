@@ -3,8 +3,8 @@
 	"compilerOptions": {
 		"outDir": "./dist",
 		"paths": {
-			"@huranth/chord": ["../chord/dist/index.d.ts"],
-			"@huranth/gama-ai": ["../ai/dist/index.d.ts"]
+			"@huranth/gama-bus": ["../bus/dist/index.d.ts"],
+			"@huranth/gama-ai": ["../model/dist/index.d.ts"]
 		},
 		"rootDir": "./src"
 	},

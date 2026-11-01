@@ -5,7 +5,7 @@ import {
 	type OutputLimits,
 	Progress,
 	sanitizeOutput,
-} from "../src/harness/output.ts";
+} from "../src/engine/output.ts";
 
 const head = (maxLines: number, maxBytes = 1000): OutputLimits => ({
 	maxBytes,
@@ -127,7 +127,11 @@ describe("tool output bounds", () => {
 	});
 
 	it("cuts a single line longer than the byte limit on a character boundary", () => {
-		expect(bound("ééé\n", head(10, 5))).toEqual({ kept: "éé", droppedBytes: 3, droppedLines: 0 });
+		expect(bound("ééé\n", head(10, 5))).toEqual({
+			kept: "éé",
+			droppedBytes: 3,
+			droppedLines: 0,
+		});
 		expect(bound("x\néééé", tail(10, 5))).toEqual({
 			kept: "éé",
 			droppedBytes: 6,
