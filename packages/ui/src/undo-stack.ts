@@ -5,7 +5,10 @@ export class UndoStack<S> {
 
 	push(state: S): void {
 		this.stack.push(structuredClone(state));
-		if (this.stack.length > MAX_UNDO_DEPTH) this.stack.shift();
+
+		if (this.stack.length > MAX_UNDO_DEPTH) {
+			this.stack.shift();
+		}
 	}
 
 	pop(): S | undefined {

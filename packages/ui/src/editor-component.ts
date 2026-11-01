@@ -1,5 +1,5 @@
 import type { AutocompleteProvider } from "./autocomplete.ts";
-import type { Component } from "./tui.ts";
+import type { Component } from "./screen.ts";
 
 export interface EditorComponent extends Component {
 	getText(): string;
