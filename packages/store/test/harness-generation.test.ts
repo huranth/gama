@@ -25,8 +25,8 @@ import {
 	wrapSection,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { resolveSettings } from "../src/harness/agent.ts";
-import type { SessionImpl } from "../src/session/session.ts";
+import { resolveSettings } from "../src/engine/agent.ts";
+import type { SessionImpl } from "../src/records/session.ts";
 import {
 	allEntries,
 	type ChatSetup,
@@ -720,6 +720,6 @@ describe("generation", () => {
 				},
 				context,
 			),
-		).rejects.toThrow("Registry lacks built-in tasks gama.generation");
+		).rejects.toThrow("Missing tasks: gama.generation");
 	});
 });

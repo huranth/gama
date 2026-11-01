@@ -16,7 +16,7 @@ import {
 	wrapTool,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { agentHooks, resolveAgent, resolveSettings } from "../src/harness/agent.ts";
+import { agentHooks, resolveAgent, resolveSettings } from "../src/engine/agent.ts";
 import { context } from "./session-support.ts";
 
 type AppTool = ToolRegistration & { readonly snippet?: string };
@@ -115,22 +115,22 @@ describe("registry", () => {
 		const invalid = [
 			[
 				defineExtension({ name: "x", tools: [tool("read"), tool("read")] }),
-				"two tools named read",
+				"Duplicate tool: read",
 			],
 			[
 				defineExtension({
 					name: "x",
 					sections: [section("a", () => "1"), section("a", () => "2")],
 				}),
-				"two sections",
+				"Duplicate section",
 			],
 			[defineExtension({ name: "x", sections: [section("Bad Key", () => "")] }), "must match"],
 			[
 				defineExtension({ name: "x", sections: [section("instructions", () => "")] }),
-				"reserved",
+				"Reserved key",
 			],
-			[defineExtension({ name: "x", tasks: [task("gama.generation")] }), "already installed"],
-			[defineExtension({ name: "x", tasks: [task("app.index")] }), "already installed"],
+			[defineExtension({ name: "x", tasks: [task("gama.generation")] }), "Duplicate task"],
+			[defineExtension({ name: "x", tasks: [task("app.index")] }), "Duplicate task"],
 		] as const;
 		for (const [extension, message] of invalid)
 			expect(() => registry.install(extension)).toThrow(message);
@@ -269,7 +269,7 @@ describe("agent resolution", () => {
 		expect(agent.sections.map((each) => each.key)).toEqual(["preamble"]);
 		expect(reports.map((error) => (error as Error).message)).toEqual([
 			"wrapper failed",
-			"Wrapper renamed edit to renamed",
+			"Wrapper renamed: edit",
 			"section wrapper failed",
 		]);
 	});

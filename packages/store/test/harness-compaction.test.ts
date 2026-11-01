@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -30,9 +27,9 @@ import {
 	watchEvents,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { selectCut, serializeConversation } from "../src/harness/compaction.ts";
-import { orderToolResults } from "../src/harness/context.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { selectCut, serializeConversation } from "../src/engine/compaction.ts";
+import { orderToolResults } from "../src/engine/context.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import {
 	allEntries,
 	type ChatSetup,
@@ -43,23 +40,15 @@ import {
 	waitFor,
 } from "./chat-support.ts";
 import { addHooks, addSection, addTask, addTool } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { ControlledStorage, context } from "./session-support.ts";
 import { aborted, type Deferred, deferred } from "./task-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+const sqlitePath = () => temp.sqlitePath("compaction");
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-compaction-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+afterEach(() => temp.cleanup());
 
 function text(label: string, tokens: number): string {
 	return `${label} ${"x".repeat(Math.max(0, tokens * 4 - label.length - 1))}`;
@@ -201,6 +190,7 @@ function entry(kind: string, model: Message[], head?: number): EntryRecord {
 		...(head === undefined ? {} : { head }),
 	} as unknown as EntryRecord;
 }
+
 const user = (content: string): UserMessage => ({ role: "user", content, timestamp: 0 });
 const assistant = (
 	content: string,

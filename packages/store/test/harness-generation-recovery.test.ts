@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import {
 	type AssistantMessage,
 	createModels,
@@ -9,7 +6,7 @@ import {
 } from "@huranth/gama-ai";
 import { AssistantEntry, type Harness, LiveDoc, type TaskId } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import {
 	allEntries,
 	type ChatSetup,
@@ -20,23 +17,15 @@ import {
 	waitFor,
 } from "./chat-support.ts";
 import { addSection } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { context } from "./session-support.ts";
 import { aborted, deferred } from "./task-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+const sqlitePath = () => temp.sqlitePath("generation");
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-generation-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+afterEach(() => temp.cleanup());
 
 async function open(path: string, setup: ChatSetup) {
 	return openChat(await openNodeSqliteStorage(path), setup);
