@@ -1,6 +1,3 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { createModels } from "@huranth/gama-ai";
 import {
 	AgentDoc,
@@ -20,24 +17,16 @@ import {
 	ROOT_CONVERSATION_ID,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { addTool, openHarness, tool, user } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { ControlledStorage, context } from "./session-support.ts";
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-harness-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+const sqlitePath = () => temp.sqlitePath("harness");
 
-afterEach(async () => {
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
-});
+afterEach(() => temp.cleanup());
 
 const NoteDoc = defineDoc<{ text: string }>({
 	kind: "test.note",
@@ -225,7 +214,7 @@ describe("Harness root and conversations", () => {
 		).resolves.toBeDefined();
 		await expect(
 			unrelated.fork(at.id, { ownership: { kind: "ownerless" } }, context),
-		).rejects.toThrow("is not visible");
+		).rejects.toThrow("Hidden entry");
 		await harness.close(context);
 	});
 

@@ -1,7 +1,4 @@
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
-import type { Context, JsonValue } from "@huranth/chord";
+import type { Context, JsonValue } from "@huranth/gama-bus";
 import {
 	fauxAssistantMessage,
 	fauxText,
@@ -36,8 +33,9 @@ import {
 	watchEvents,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { allEntries, chatSetup, openChat, waitFor } from "./chat-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { addHooks, addTask, addTool } from "./harness-support.ts";
 import { context } from "./session-support.ts";
 import { aborted, type Deferred, deferred, openTasks, settled } from "./task-support.ts";
@@ -177,22 +175,15 @@ async function until(check: () => boolean | Promise<boolean>): Promise<void> {
 	await waitFor(check);
 }
 
-const directories = new Set<string>();
+const temp = createTempDirs();
 
-async function sqlitePath(): Promise<string> {
-	const directory = await mkdtemp(join(tmpdir(), "gama-durable-structured-"));
-	directories.add(directory);
-	return join(directory, "session.sqlite");
-}
+const sqlitePath = () => temp.sqlitePath("structured");
 
 afterEach(async () => {
 	behaviors.clear();
 	gates.clear();
 	log.length = 0;
-	for (const directory of directories) {
-		await rm(directory, { recursive: true, force: true });
-	}
-	directories.clear();
+	await temp.cleanup();
 });
 
 describe("task ownership", () => {
@@ -223,9 +214,9 @@ describe("task ownership", () => {
 		const create = (options: TaskOptions) =>
 			root.commit((tx) => tx.createTask(Node, { name: "x" }, options), context);
 		await expect(create({} as TaskOptions)).rejects.toThrow();
-		await expect(create(owned(999_999 as TaskId))).rejects.toThrow("does not exist");
+		await expect(create(owned(999_999 as TaskId))).rejects.toThrow("Unknown owner");
 		await expect(create({ ...owned(parent), conversationId: other.id })).rejects.toThrow(
-			"owner's conversation",
+			"Child conversation",
 		);
 		await expect(create({ ...owned(parent), background: true })).rejects.toThrow(
 			"cannot be background",
@@ -256,12 +247,12 @@ describe("task ownership", () => {
 				(tx) => tx.createConversation({ ownership: { kind: "task", taskId: parent } }),
 				context,
 			);
-		await expect(createChild()).rejects.toThrow("is completing");
-		await expect(createConversation()).rejects.toThrow("is completing");
+		await expect(createChild()).rejects.toThrow("status: completing");
+		await expect(createConversation()).rejects.toThrow("status: completing");
 		open("child");
 		await harness.waitForTask(parent, context);
-		await expect(createChild()).rejects.toThrow("is terminal");
-		await expect(createConversation()).rejects.toThrow("is terminal");
+		await expect(createChild()).rejects.toThrow("status: terminal");
+		await expect(createConversation()).rejects.toThrow("status: terminal");
 
 		script("slow", {
 			abort: async (runtime, ctx) => {
@@ -276,7 +267,7 @@ describe("task ownership", () => {
 		await until(() => log.includes("run:slow"));
 		await harness.abortTask(slow, context);
 		await expect(root.commit((tx) => spawn(tx, slow, "late"), context)).rejects.toThrow(
-			"is abort-marked",
+			"aborted",
 		);
 		open("abort.slow");
 		expect(await outcomeOf(harness, slow)).toBe("aborted");
@@ -295,7 +286,7 @@ describe("task ownership", () => {
 		const eager = await start(root, "eager");
 		expect((await harness.waitForTask(eager, context)).state.outcome).toMatchObject({
 			status: "faulted",
-			error: { message: expect.stringContaining("is completing") },
+			error: { message: expect.stringContaining("status: completing") },
 		});
 		const nodes = await harness.commit((tx) => tx.scanTasks({ kind: "test.node" }, 20), context);
 		expect(nodes.items.map((task) => (task.input as NodeInput).name)).toEqual(["eager"]);
@@ -494,10 +485,10 @@ describe("waiting", () => {
 				"self",
 				(runtime) => [runtime.taskId],
 				"allSettled",
-				"cannot wait on itself or its owner",
+				"Invalid wait",
 			],
-			["missing", () => [999_999 as TaskId], "allSettled", "does not exist"],
-			["foreign", () => [other], "failFast", "only on tasks it owns"],
+			["missing", () => [999_999 as TaskId], "allSettled", "Unknown task"],
+			["foreign", () => [other], "failFast", "Invalid failFast"],
 		];
 		for (const [name, on, policy, message] of cases) {
 			script(name, {
@@ -525,7 +516,7 @@ describe("waiting", () => {
 		expect((await harness.waitForTask(parent, context)).state.outcome.status).toBe("completed");
 		expect((await harness.waitForTask(child!, context)).state.outcome).toMatchObject({
 			status: "faulted",
-			error: { message: expect.stringContaining("cannot wait on itself or its owner") },
+			error: { message: expect.stringContaining("Invalid wait") },
 		});
 		open("other");
 		await harness.close(context);
@@ -798,7 +789,7 @@ describe("abort order", () => {
 		await harness.abortTask(parent, context);
 		expect((await harness.waitForTask(parent, context)).state.outcome).toMatchObject({
 			status: "faulted",
-			error: { message: expect.stringContaining("cannot wait") },
+			error: { message: expect.stringContaining("blocked") },
 		});
 		await harness.close(context);
 	});
@@ -1514,7 +1505,7 @@ describe("definitions and waits", () => {
 		});
 		const reader = await start(root, "reader");
 		await until(async () => (await state(harness, reader)).status === "waiting");
-		expect(rejection).toBe(`Task ${held} is not terminal`);
+		expect(rejection).toBe(`Task running: ${held}`);
 		open("child");
 		expect(await outcomeOf(harness, reader)).toBe("completed");
 		expect(log.indexOf("resume:reader")).toBeGreaterThan(-1);

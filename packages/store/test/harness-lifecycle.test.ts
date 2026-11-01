@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Context, JsonValue } from "@huranth/chord";
+import type { Context, JsonValue } from "@huranth/gama-bus";
 import { createModels, fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@huranth/gama-ai";
 import {
 	type Conversation,
@@ -17,8 +17,8 @@ import {
 	type TaskId,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import type { SessionImpl } from "../src/session/session.ts";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import type { SessionImpl } from "../src/records/session.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { chatSetup, openChat } from "./chat-support.ts";
 import { addHooks, addTask, addTool } from "./harness-support.ts";
 import { ControlledStorage, context, flush } from "./session-support.ts";

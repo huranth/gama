@@ -116,7 +116,7 @@ describe("Harness.inspect()", () => {
 		expect(stateOf(paused.tasks, ids.noMigration)).toMatchObject({
 			kind: "blocked",
 			reason: "migration_failed",
-			error: new Error("Task test.no-migration version 2 has no migration from 1"),
+			error: new Error("Missing migration: test.no-migration"),
 		});
 		expect(stateOf(paused.tasks, ids.tooOld)).toEqual({
 			kind: "blocked",

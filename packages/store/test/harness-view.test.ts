@@ -1,4 +1,4 @@
-import { applyImmutable, type Op } from "@huranth/chord/delta";
+import { applyImmutable, type Op } from "@huranth/gama-bus/delta";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,

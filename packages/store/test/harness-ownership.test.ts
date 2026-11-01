@@ -27,7 +27,7 @@ import {
 	type TaskId,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { openNodeSqliteStorage } from "../src/storage/sqlite/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { chatSetup, openChat } from "./chat-support.ts";
 import { addTask, addTool } from "./harness-support.ts";
 import { context } from "./session-support.ts";
@@ -684,11 +684,11 @@ describe("owned conversations from tools and supervisors", () => {
 		await (await root.submit({ type: "input", content: "go" }, context)).wait(context);
 		expect(missing).toBeUndefined();
 		await expect(handle!.submit({ type: "input", content: "again" }, context)).rejects.toThrow(
-			"invocation has ended",
+			"Task ended",
 		);
-		await expect(handle!.waitForIdle(context)).rejects.toThrow("invocation has ended");
-		await expect(handle!.abort(context)).rejects.toThrow("invocation has ended");
-		await expect(submission!.wait(context)).rejects.toThrow("invocation has ended");
+		await expect(handle!.waitForIdle(context)).rejects.toThrow("Task ended");
+		await expect(handle!.abort(context)).rejects.toThrow("Task ended");
+		await expect(submission!.wait(context)).rejects.toThrow("Task ended");
 		const childConversation = (await harness.conversation(handle!.id, context))!;
 		const childEntries = (await childConversation.entries({}, 100, undefined, context)).items;
 		expect(childEntries.filter((entry) => entry.kind === "gama.user")).toHaveLength(1);

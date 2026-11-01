@@ -1,4 +1,4 @@
-import type { Draft } from "@huranth/chord";
+import type { Draft } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -75,11 +75,13 @@ function applyChanges(
 	changes: readonly MessageChange[],
 ): AssistantMessage {
 	let next = structuredClone(message);
+
 	for (const change of changes) {
-		if (change.type === "message") next = structuredClone(change.message);
-		else if (change.type === "block")
+		if (change.type === "message") {
+			next = structuredClone(change.message);
+		} else if (change.type === "block") {
 			next.content[change.contentIndex] = structuredClone(change.block);
-		else if (change.type.endsWith("_start") && "block" in change) {
+		} else if (change.type.endsWith("_start") && "block" in change) {
 			next.content.splice(change.contentIndex, 0, structuredClone(change.block));
 		} else if (change.type === "text_delta" || change.type === "thinking_delta") {
 			const block = next.content[change.contentIndex] as unknown as Mutable;
@@ -95,6 +97,7 @@ function applyChanges(
 			target[last] = `${target[last] as string}${change.delta}`;
 		}
 	}
+
 	return next;
 }
 
@@ -105,7 +108,9 @@ function partialsOf(harness: Harness): AssistantMessage[] {
 			const message = (change.value as LiveState | null)?.generation?.message as
 				| AssistantMessage
 				| undefined;
-			if (change.record.kind === "gama.live" && message !== undefined) partials.push(message);
+			if (change.record.kind === "gama.live" && message !== undefined) {
+				partials.push(message);
+			}
 		}
 	});
 	return partials;
@@ -130,8 +135,9 @@ describe("agent events", () => {
 				const message = (change.value as LiveState | null)?.generation?.message as
 					| AssistantMessage
 					| undefined;
-				if (change.record.kind === "gama.live" && message !== undefined)
+				if (change.record.kind === "gama.live" && message !== undefined) {
 					partials.push(textOf(message) ?? "");
+				}
 			}
 		});
 		const submission = await root.submit({ type: "input", content: "hi" }, context);

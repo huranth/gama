@@ -13,8 +13,8 @@ import {
 	wrapSection,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { resolveAgent, resolveSettings } from "../src/harness/agent.ts";
-import { planSystemEntries, renderSections, replaySections } from "../src/harness/prompt.ts";
+import { resolveAgent, resolveSettings } from "../src/engine/agent.ts";
+import { planSystemEntries, renderSections, replaySections } from "../src/engine/prompt.ts";
 import { addSection, openHarness, user } from "./harness-support.ts";
 import { context } from "./session-support.ts";
 
