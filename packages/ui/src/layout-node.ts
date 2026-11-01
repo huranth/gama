@@ -1,4 +1,4 @@
-import type { Component } from "./tui.ts";
+import type { Component } from "./screen.ts";
 
 export interface LayoutViewport {
 	width: number;
@@ -26,6 +26,7 @@ export interface ScrollLayoutState {
 	readonly scrollTop: number;
 	readonly primary: boolean;
 	readonly overscroll: "chain" | "contain";
+	readonly align: "start" | "end";
 	readonly viewportHeight: number;
 	getContentWidth(width: number): number;
 	updateLayout(contentHeight: number, viewportHeight: number, requestRender: () => void): void;

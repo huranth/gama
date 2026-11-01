@@ -1,8 +1,8 @@
 import { getLayoutNode } from "./layout-node.ts";
-import type { ScrollView } from "./parts/scroll-view.ts";
-import { allocateStackSizes, visibleStackEntries } from "./parts/stack.ts";
+import type { ScrollView } from "./view/scroll-view.ts";
+import { allocateStackSizes, visibleStackEntries } from "./view/stack.ts";
 import { cropKittyImageLine, getKittyImageMetadata, isImageLine } from "./terminal-image.ts";
-import { type Component, CURSOR_MARKER, compositeTuiLine } from "./tui.ts";
+import { type Component, CURSOR_MARKER, compositeTuiLine } from "./screen.ts";
 import {
 	extractAnsiCode,
 	getActiveBackgroundAnsi,
@@ -221,8 +221,9 @@ function replaceScrollbarCell(
 	const cellPaddingAfter = " ".repeat(Math.max(0, end - column - 1));
 	const background = preserveTargetBackground ? getActiveBackgroundAnsi(targetPrefix) : "";
 	const targetStyle = `\x1b[0m\x1b]8;;\x07${background}`;
-	const middle = `${targetStyle}${cellPaddingBefore}${replacement}${cellPaddingAfter}`;
-	return `${before}${beforePadding}${middle}${after}`;
+	const middle = `${cellPaddingBefore}${replacement}${cellPaddingAfter}`;
+	// Reset first
+	return `${before}${targetStyle}${beforePadding}${middle}${after}`;
 }
 
 function paintScrollbar(box: LayoutBox, screen: string[], totalWidth: number): void {
@@ -240,8 +241,9 @@ function paintScrollbar(box: LayoutBox, screen: string[], totalWidth: number): v
 			continue;
 		}
 		const isThumb = row >= geometry.thumbTop && row < geometry.thumbTop + geometry.thumbHeight;
+		const thumbGlyph = box.scrollView.isScrollbarActive ? "█" : "┃";
 		const replacement = isThumb
-			? box.scrollView.scrollbarThumbStyle(box.scrollView.isScrollbarActive ? "█" : "┃")
+			? box.scrollView.scrollbarThumbStyle(thumbGlyph)
 			: box.scrollView.scrollbarTrackStyle("│");
 		screen[row] = replaceScrollbarCell(
 			screen[row] ?? "",
@@ -334,7 +336,9 @@ function layoutComponent(
 		const viewportHeight = height === undefined ? contentHeight : Math.max(0, Math.floor(height));
 		node.state.updateLayout(contentHeight, viewportHeight, context.requestRender);
 
-		translateBox(childBox, previousScrollTop - node.state.scrollTop);
+		const slack =
+			node.state.align === "end" ? Math.max(0, viewportHeight - contentHeight) : 0;
+		translateBox(childBox, previousScrollTop - node.state.scrollTop + slack);
 		const scrollView = node.state as ScrollView;
 		if (node.state.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;
 
