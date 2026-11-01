@@ -14,7 +14,27 @@ interface ActiveHyperlink {
 }
 
 const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
+
+const TAB_WIDTH = 3;
+
+const TAB_CODE = 0x09;
+
+const ESC_CODE = 0x1b;
+
+const ASCII_PRINTABLE_START = 0x20;
+
+const ASCII_PRINTABLE_END = 0x7e;
+
+const SGR_RESET = "\x1b[0m";
+
+const EMOJI_RANGES: ReadonlyArray<readonly [number, number]> = [
+	[0x1f000, 0x1fbff],
+	[0x2300, 0x23ff],
+	[0x2600, 0x27bf],
+	[0x2b50, 0x2b55],
+];
 
 export function getGraphemeSegmenter(): Intl.Segmenter {
 	return graphemeSegmenter;
@@ -26,38 +46,53 @@ export function getWordSegmenter(): Intl.Segmenter {
 
 function couldBeEmoji(segment: string): boolean {
 	const cp = segment.codePointAt(0)!;
-	return (
-		(cp >= 0x1f000 && cp <= 0x1fbff) ||
-		(cp >= 0x2300 && cp <= 0x23ff) ||
-		(cp >= 0x2600 && cp <= 0x27bf) ||
-		(cp >= 0x2b50 && cp <= 0x2b55) ||
-		segment.includes("\uFE0F") ||
-		segment.length > 2
-	);
+	const inEmojiRange = EMOJI_RANGES.some(([start, end]) => cp >= start && cp <= end);
+
+	return inEmojiRange || segment.includes("\uFE0F") || segment.length > 2;
 }
 
 const zeroWidthRegex =
 	/^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Mark}|\p{Surrogate})+$/v;
+
 const leadingNonPrintingRegex =
 	/^[\p{Default_Ignorable_Code_Point}\p{Control}\p{Format}\p{Mark}\p{Surrogate}]+/v;
+
 const nonPrintingCharRegex =
 	/^(?:\p{Default_Ignorable_Code_Point}|\p{Control}|\p{Format}|\p{Mark}|\p{Surrogate})$/v;
+
 const markCharRegex = /^\p{Mark}$/v;
-const terminalSpacingMarkRegex =
-	/^(?:[\p{Spacing_Mark}--[\u1734\u302E\u302F]]|[\u065F\u0F7F\u102B\u102C\u1031\u1033-\u1035\u1038\u103A-\u103E])+$/v;
+
+const spacingMarkExterior = "[\\p{Spacing_Mark}--[\\u1734\\u302E\\u302F]]";
+
+const spacingMarkExtra =
+	"[\\u065F\\u0F7F\\u102B\\u102C\\u1031\\u1033-\\u1035\\u1038\\u103A-\\u103E]";
+
+const terminalSpacingMarkRegex = new RegExp(
+	`^(?:${spacingMarkExterior}|${spacingMarkExtra})+$`,
+	"v",
+);
+
 const rgiEmojiRegex = /^\p{RGI_Emoji}$/v;
 
 const WIDTH_CACHE_SIZE = 512;
+
 const widthCache = new Map<string, number>();
 
-export const cjkBreakRegex =
-	/[\p{Script_Extensions=Han}\p{Script_Extensions=Hiragana}\p{Script_Extensions=Katakana}\p{Script_Extensions=Hangul}\p{Script_Extensions=Bopomofo}]/u;
-
-export const cjkPunctuationRegex = new RegExp(
-	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|[，．：；！？（）［］｛｝“”‘’…—])`,
+export const cjkBreakRegex = new RegExp(
+	"[\\p{Script_Extensions=Han}\\p{Script_Extensions=Hiragana}" +
+		"\\p{Script_Extensions=Katakana}\\p{Script_Extensions=Hangul}" +
+		"\\p{Script_Extensions=Bopomofo}]",
 	"u",
 );
+
+export const cjkPunctuationRegex = new RegExp(
+	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|` +
+		`[，．：；！？（）［］｛｝“”‘’…—])`,
+	"u",
+);
+
 export const autocompleteSeparatorRegex = new RegExp(`(?:\\s|${cjkPunctuationRegex.source})`, "u");
+
 export const autocompleteBoundaryRegex = new RegExp(
 	`(?:^|${autocompleteSeparatorRegex.source})`,
 	"u",
@@ -66,7 +101,7 @@ export const autocompleteBoundaryRegex = new RegExp(
 function isPrintableAscii(str: string): boolean {
 	for (let i = 0; i < str.length; i++) {
 		const code = str.charCodeAt(i);
-		if (code < 0x20 || code > 0x7e) {
+		if (code < ASCII_PRINTABLE_START || code > ASCII_PRINTABLE_END) {
 			return false;
 		}
 	}
@@ -113,7 +148,7 @@ function truncateFragmentToWidth(text: string, maxWidth: number): { text: string
 		}
 
 		if (text[i] === "\t") {
-			if (width + 3 > maxWidth) {
+			if (width + TAB_WIDTH > maxWidth) {
 				break;
 			}
 			if (pendingAnsi) {
@@ -121,7 +156,7 @@ function truncateFragmentToWidth(text: string, maxWidth: number): { text: string
 				pendingAnsi = "";
 			}
 			result += "\t";
-			width += 3;
+			width += TAB_WIDTH;
 			i++;
 			continue;
 		}
@@ -161,25 +196,45 @@ function finalizeTruncatedResult(
 	maxWidth: number,
 	pad: boolean,
 ): string {
-	const reset = "\x1b[0m";
 	const hyperlinkClose = getActiveOsc8Close(prefix);
 	const visibleWidth = prefixWidth + ellipsisWidth;
 	let result: string;
 
 	if (ellipsis.length > 0) {
-		result = `${prefix}${hyperlinkClose}${reset}${ellipsis}${reset}`;
+		result = `${prefix}${hyperlinkClose}${SGR_RESET}${ellipsis}${SGR_RESET}`;
 	} else {
-		result = `${prefix}${hyperlinkClose}${reset}`;
+		result = `${prefix}${hyperlinkClose}${SGR_RESET}`;
 	}
 
 	return pad ? result + " ".repeat(Math.max(0, maxWidth - visibleWidth)) : result;
 }
 
+// Close styles
+export function closeBeforePadding(text: string): string {
+	if (!text.includes("\x1b")) return "";
+	return `${getActiveOsc8Close(text)}\x1b[24m\x1b[25m\x1b[27m\x1b[29m`;
+}
+
+// Guard fill
+export function padLine(line: string, width: number): string {
+	const padding = Math.max(0, width - visibleWidth(line));
+	if (padding === 0) return line;
+	const guard = closeBeforePadding(line);
+	const fill = `${line}${guard}${SGR_RESET}${" ".repeat(padding)}`;
+	return guard ? fill : `${line}${" ".repeat(padding)}`;
+}
+
+export function clampPaddingX(width: number, paddingX: number): number {
+	const maxPadding = Math.max(0, Math.floor((width - 1) / 2));
+
+	return Math.min(paddingX, maxPadding);
+}
+
 function graphemeWidth(segment: string): number {
 	if (segment.length === 1) {
 		const code = segment.charCodeAt(0);
-		if (code >= 0x20 && code <= 0x7e) return 1;
-		if (code === 0x09) return 3;
+		if (code >= ASCII_PRINTABLE_START && code <= ASCII_PRINTABLE_END) return 1;
+		if (code === TAB_CODE) return TAB_WIDTH;
 	}
 
 	if (terminalSpacingMarkRegex.test(segment)) {
@@ -245,7 +300,7 @@ export function visibleWidth(str: string): number {
 
 	let clean = str;
 	if (str.includes("\t")) {
-		clean = clean.replace(/\t/g, "   ");
+		clean = clean.replace(/\t/g, " ".repeat(TAB_WIDTH));
 	}
 	let escapeIndex = clean.indexOf("\x1b");
 	if (escapeIndex !== -1) {
@@ -281,13 +336,14 @@ export function visibleWidth(str: string): number {
 	return width;
 }
 
-/** Removes C0 controls (except \t and \n), DEL and C1 controls, so untrusted text cannot inject terminal sequences. */
+// Strip controls
 export function stripControlChars(str: string): string {
 	return str.replace(/[\x00-\x08\x0b-\x1f\x7f-\x9f]/g, "");
 }
 
 export function stripTerminalSequences(str: string): string {
 	if (!str.includes("\x1b")) return str;
+
 	let result = "";
 	let i = 0;
 	while (i < str.length) {
@@ -344,7 +400,7 @@ export function getOsc8LinkAtColumn(line: string, column: number): string | unde
 			textEnd++;
 		}
 		for (const { segment } of graphemeSegmenter.segment(line.slice(i, textEnd))) {
-			const width = segment === "\t" ? 3 : graphemeWidth(segment);
+			const width = segment === "\t" ? TAB_WIDTH : graphemeWidth(segment);
 			if (column >= currentCol && column < currentCol + width) return activeUrl;
 			currentCol += width;
 		}
@@ -354,6 +410,7 @@ export function getOsc8LinkAtColumn(line: string, column: number): string | unde
 }
 
 const THAI_LAO_AM_REGEX = /[\u0e33\u0eb3]/;
+
 const THAI_LAO_AM_GLOBAL_REGEX = /[\u0e33\u0eb3]/g;
 
 export function normalizeTerminalOutput(str: string): string {
@@ -374,7 +431,7 @@ export function normalizeTerminalOutput(str: string): string {
 			i += ansi.length;
 			continue;
 		}
-		result += normalized[i] === "\t" ? "   " : normalized[i];
+		result += normalized[i] === "\t" ? " ".repeat(TAB_WIDTH) : normalized[i];
 		i++;
 	}
 	return result;
@@ -399,11 +456,26 @@ export function closePadStyles(line: string): string {
 	}
 	while (end > 0 && end < line.length) {
 		const ansi = extractAnsiCode(line, end);
-		if (!ansi) break;
-		end += ansi.length;
+		if (ansi) {
+			end += ansi.length;
+			continue;
+		}
+		if (line[end] !== " " || line[end + 1] === " ") break;
+		const close = extractAnsiCode(line, end + 1);
+		if (!close || !closesAttributes(close.code)) break;
+		end += close.length + 1;
 	}
 	if (end === 0 || end >= line.length) return line;
 	return `${line.slice(0, end)}${PAD_OFF}${line.slice(end)}`;
+}
+
+function closesAttributes(code: string): boolean {
+	const sgr = /^\x1b\[([0-9;]*)m$/.exec(code);
+	if (!sgr) return false;
+	const params = sgr[1] === "" ? ["0"] : sgr[1].split(";");
+	return params.some(
+		(param) => param === "0" || param === "39" || param === "49" || /^2[2-9]$/.test(param),
+	);
 }
 
 function asciiVisibleWidth(str: string): number {
@@ -411,13 +483,13 @@ function asciiVisibleWidth(str: string): number {
 	let i = 0;
 	while (i < str.length) {
 		const code = str.charCodeAt(i);
-		if (code >= 0x20 && code <= 0x7e) {
+		if (code >= ASCII_PRINTABLE_START && code <= ASCII_PRINTABLE_END) {
 			width++;
 			i++;
-		} else if (code === 0x09) {
-			width += 3;
+		} else if (code === TAB_CODE) {
+			width += TAB_WIDTH;
 			i++;
-		} else if (code === 0x1b) {
+		} else if (code === ESC_CODE) {
 			const length = ansiCodeLength(str, i);
 			if (length === 0) return -1;
 			i += length;
@@ -429,7 +501,7 @@ function asciiVisibleWidth(str: string): number {
 }
 
 function ansiCodeLength(str: string, pos: number): number {
-	if (pos >= str.length || str.charCodeAt(pos) !== 0x1b) return 0;
+	if (pos >= str.length || str.charCodeAt(pos) !== ESC_CODE) return 0;
 
 	const next = str[pos + 1];
 
@@ -528,12 +600,19 @@ class AnsiCodeTracker {
 			return;
 		}
 
-		const match = ansiCode.match(/\x1b\[([\d;]*)m/);
+		const match = ansiCode.match(/\x1b\[([\d;:]*)m/);
 		if (!match) return;
 
 		const params = match[1];
 		if (params === "" || params === "0") {
 			this.reset();
+			return;
+		}
+
+		const colonColor = /^(38|48):/.exec(params);
+		if (colonColor) {
+			if (colonColor[1] === "38") this.fgColor = params;
+			else this.bgColor = params;
 			return;
 		}
 
@@ -838,7 +917,12 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 		updateTrackerFromText(inputLine, tracker);
 	}
 
-	return result.length > 0 ? result : [""];
+	return result.length > 0 ? result.map(clampWrappedLineToWidth(width)) : [""];
+}
+
+function clampWrappedLineToWidth(width: number): (line: string) => string {
+	return (line) =>
+		visibleWidth(line) <= width ? line : truncateToWidth(line, width, "");
 }
 
 function wrapSingleLine(line: string, width: number): string[] {
@@ -890,7 +974,9 @@ function wrapSingleLine(line: string, width: number): string[] {
 			if (lineEndReset) {
 				lineToWrap += lineEndReset;
 			}
-			wrapped.push(lineToWrap);
+			if (visibleWidth(lineToWrap) > 0) {
+				wrapped.push(lineToWrap);
+			}
 			if (isWhitespace) {
 				currentLine = tracker.getActiveCodes();
 				currentVisibleLength = 0;
@@ -914,14 +1000,11 @@ function wrapSingleLine(line: string, width: number): string[] {
 }
 
 export const PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
-const PAD_OFF = "\x1b[24m\x1b[25m\x1b[28m\x1b[29m";
+
+const PAD_OFF = "\x1b[22m\x1b[23m\x1b[24m\x1b[25m\x1b[27m\x1b[28m\x1b[29m";
 
 export function isWhitespaceChar(char: string): boolean {
 	return /\s/.test(char);
-}
-
-export function isPunctuationChar(char: string): boolean {
-	return PUNCTUATION_REGEX.test(char);
 }
 
 function breakLongWord(word: string, width: number, tracker: AnsiCodeTracker): string[] {
@@ -994,7 +1077,8 @@ export function applyBackgroundToLine(
 	const paddingNeeded = Math.max(0, width - visibleLen);
 	const padding = " ".repeat(paddingNeeded);
 
-	const withPadding = line + padding;
+	// Keep bg
+	const withPadding = `${line}${closeBeforePadding(line)}${padding}`;
 	return bgFn(withPadding);
 }
 
@@ -1014,9 +1098,8 @@ export function truncateToWidth(
 
 	const ellipsisWidth = visibleWidth(ellipsis);
 	if (ellipsisWidth >= maxWidth) {
-		const textWidth = visibleWidth(text);
-		if (textWidth <= maxWidth) {
-			return pad ? text + " ".repeat(maxWidth - textWidth) : text;
+		if (visibleWidth(text) <= maxWidth) {
+			return pad ? padLine(text, maxWidth) : text;
 		}
 
 		const clippedEllipsis = truncateFragmentToWidth(ellipsis, maxWidth);
@@ -1086,18 +1169,18 @@ export function truncateToWidth(
 			}
 
 			if (text[i] === "\t") {
-				if (keepContiguousPrefix && keptWidth + 3 <= targetWidth) {
+				if (keepContiguousPrefix && keptWidth + TAB_WIDTH <= targetWidth) {
 					if (pendingAnsi) {
 						result += pendingAnsi;
 						pendingAnsi = "";
 					}
 					result += "\t";
-					keptWidth += 3;
+					keptWidth += TAB_WIDTH;
 				} else {
 					keepContiguousPrefix = false;
 					pendingAnsi = "";
 				}
-				visibleSoFar += 3;
+				visibleSoFar += TAB_WIDTH;
 				if (visibleSoFar > maxWidth) {
 					overflowed = true;
 					break;
@@ -1144,7 +1227,7 @@ export function truncateToWidth(
 	}
 
 	if (!overflowed && exhaustedInput) {
-		return pad ? text + " ".repeat(Math.max(0, maxWidth - visibleSoFar)) : text;
+		return pad ? padLine(text, maxWidth) : text;
 	}
 
 	return finalizeTruncatedResult(result, keptWidth, ellipsis, ellipsisWidth, maxWidth, pad);

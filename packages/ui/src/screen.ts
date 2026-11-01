@@ -10,6 +10,7 @@ import {
 } from "./terminal-colors.ts";
 import { getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.ts";
 import {
+	closeBeforePadding,
 	closePadStyles,
 	extractSegments,
 	normalizeTerminalOutput,
@@ -17,6 +18,29 @@ import {
 	sliceWithWidth,
 	visibleWidth,
 } from "./utils.ts";
+
+const paletteSize = 16;
+
+const colorReplyCount = 2 + paletteSize;
+
+const colorQuery = `\x1b]10;?\x07\x1b]11;?\x07${Array.from(
+	{ length: paletteSize },
+	(_, index) => `\x1b]4;${index};?\x07`,
+).join("")}\x1b[c`;
+
+const deviceAttributesPattern = /^\x1b\[\?[\d;]*c$/;
+
+const cellSizeQuery = "\x1b[16t";
+
+const cellSizeResponsePattern = /^\x1b\[6;(\d+);(\d+)t$/;
+
+const defaultOverlayWidth = 80;
+
+const percentScale = 100;
+
+const enableColorScheme = "\x1b[?2031h";
+
+const disableColorScheme = "\x1b[?2031l";
 
 export type TuiMouseEventType = "press" | "release" | "move" | "leave" | "drag" | "click" | "wheel";
 
@@ -209,6 +233,7 @@ export type TuiMode = "regular" | "fullscreen";
 
 export interface TuiStopOptions {
 	preserveScreen?: boolean;
+	clearScreen?: boolean;
 }
 
 export interface TUI extends Component {
@@ -287,14 +312,6 @@ export function retargetMouseEvent(
 		height: target.height,
 	};
 }
-
-const TERMINAL_PALETTE_SIZE = 16;
-const TERMINAL_COLOR_REPLY_COUNT = 2 + TERMINAL_PALETTE_SIZE;
-const TERMINAL_COLOR_QUERY = `\x1b]10;?\x07\x1b]11;?\x07${Array.from(
-	{ length: TERMINAL_PALETTE_SIZE },
-	(_, index) => `\x1b]4;${index};?\x07`,
-).join("")}\x1b[c`;
-const DEVICE_ATTRIBUTES_RESPONSE_PATTERN = /^\x1b\[\?[\d;]*c$/;
 
 export function isFocusable(component: Component | null): component is Component & Focusable {
 	return component !== null && "focused" in component;
@@ -405,7 +422,12 @@ export class Container implements Component {
 	}
 }
 
-const SEGMENT_RESET = "\x1b[0m\x1b]8;;\x07";
+const segmentReset = "\x1b[0m\x1b]8;;\x07";
+
+// Close fragment
+function gapAfter(anchor: string, size: number): string {
+	return size > 0 ? `${closeBeforePadding(anchor)} ${" ".repeat(size - 1)}` : "";
+}
 
 export function compositeTuiLine(
 	baseLine: string,
@@ -427,13 +449,13 @@ export function compositeTuiLine(
 	const afterPad = Math.max(0, afterTarget - base.afterWidth);
 	const result =
 		base.before +
-		" ".repeat(beforePad) +
-		SEGMENT_RESET +
+		gapAfter(base.before, beforePad) +
+		segmentReset +
 		overlay.text +
-		" ".repeat(overlayPad) +
-		SEGMENT_RESET +
+		gapAfter(overlay.text, overlayPad) +
+		segmentReset +
 		base.after +
-		" ".repeat(afterPad);
+		gapAfter(base.after, afterPad);
 
 	return visibleWidth(result) <= totalWidth ? result : sliceByColumn(result, 0, totalWidth, true);
 }
@@ -474,15 +496,16 @@ export abstract class TuiBase extends Container implements TUI {
 	private immediateRenderScheduled = false;
 	private renderTimer: NodeJS.Timeout | undefined;
 	private lastRenderAt = 0;
-	private static readonly MIN_RENDER_INTERVAL_MS = 16;
+	private static readonly minRenderIntervalMs = 16;
 	private showHardwareCursor = false;
 	protected hardwareCursorVisible = false;
 	private clearOnShrink = false;
 	protected fullRedrawCount = 0;
 	protected stopped = false;
+	protected started = false;
 	private pendingTerminalColorQueries: PendingTerminalColorQuery[] = [];
-	private lateTerminalColorQuery?: PendingTerminalColorQuery;
-	private terminalColorDeviceAttributesDue = 0;
+	private lateTerminalColorQueries: PendingTerminalColorQuery[] = [];
+	private terminalColorDeviceAttributesQueue: PendingTerminalColorQuery[] = [];
 	private terminalColorSchemeListeners = new Set<(scheme: TerminalColorScheme) => void>();
 	private terminalColorSchemeNotificationsEnabled = false;
 	protected readonly logDirectory: string | undefined;
@@ -494,6 +517,11 @@ export abstract class TuiBase extends Container implements TUI {
 	get hasOverlayEntries(): boolean {
 		return this.overlayStack.length > 0;
 	}
+
+	protected getRenderedOverlayLayouts(): readonly RenderedOverlayLayout[] {
+		return this.renderedOverlayLayouts;
+	}
+
 	private overlayFocusRestore: OverlayFocusRestoreState = { status: "inactive" };
 
 	constructor(terminal: Terminal, showHardwareCursor?: boolean, logDirectory?: string) {
@@ -730,6 +758,7 @@ export abstract class TuiBase extends Container implements TUI {
 				}
 			},
 			setHidden: (hidden: boolean) => {
+				if (!this.overlayStack.includes(entry)) return;
 				if (entry.hidden === hidden) return;
 				entry.hidden = hidden;
 				if (hidden) {
@@ -849,6 +878,12 @@ export abstract class TuiBase extends Container implements TUI {
 		for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
 			const layout = this.renderedOverlayLayouts[index]!;
 			if (
+				!this.overlayStack.includes(layout.entry) ||
+				!this.isOverlayVisible(layout.entry)
+			) {
+				continue;
+			}
+			if (
 				event.screenX < layout.col ||
 				event.screenX >= layout.col + layout.width ||
 				event.screenY < layout.row ||
@@ -904,19 +939,26 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	start(): void {
+		if (this.started) return;
+		this.started = true;
 		this.stopped = false;
-		this.beforeTerminalStart();
-		this.terminal.start(
-			(data) => this.handleTerminalInput(data),
-			() => this.requestRender(),
-		);
-		this.afterTerminalStart();
-		this.terminal.hideCursor();
-		if (this.terminalColorSchemeNotificationsEnabled) {
-			this.terminal.write("\x1b[?2031h");
+		try {
+			this.beforeTerminalStart();
+			this.terminal.start(
+				(data) => this.handleTerminalInput(data),
+				() => this.requestRender(),
+			);
+			this.afterTerminalStart();
+			this.hideTerminalCursor();
+			if (this.terminalColorSchemeNotificationsEnabled) {
+				this.terminal.write(enableColorScheme);
+			}
+			this.queryCellSize();
+			this.requestRender();
+		} catch (error) {
+			this.stop({ preserveScreen: true });
+			throw error;
 		}
-		this.queryCellSize();
-		this.requestRender();
 	}
 
 	addInputListener(listener: TuiInputListener): () => void {
@@ -943,7 +985,7 @@ export abstract class TuiBase extends Container implements TUI {
 		}
 		this.terminalColorSchemeNotificationsEnabled = enabled;
 		if (!this.stopped) {
-			this.terminal.write(enabled ? "\x1b[?2031h" : "\x1b[?2031l");
+			this.terminal.write(enabled ? enableColorScheme : disableColorScheme);
 		}
 	}
 
@@ -951,24 +993,35 @@ export abstract class TuiBase extends Container implements TUI {
 		if (!getCapabilities().images) {
 			return;
 		}
-		this.terminal.write("\x1b[16t");
+		this.terminal.write(cellSizeQuery);
 	}
 
 	stop(options: TuiStopOptions = {}): void {
+		if (!this.started) {
+			this.stopped = true;
+			this.cancelRenderTimer();
+			this.renderRequested = false;
+			return;
+		}
+		this.started = false;
 		this.stopped = true;
 		this.cancelRenderTimer();
 		this.renderRequested = false;
 		this.settleTerminalColorQueries();
 		if (this.terminalColorSchemeNotificationsEnabled) {
-			this.terminal.write("\x1b[?2031l");
+			this.terminal.write(disableColorScheme);
 		}
-		this.beforeTerminalStop(options);
-		this.terminal.showCursor();
-		this.terminal.stop();
-		this.afterTerminalStop(options);
+		try {
+			this.beforeTerminalStop(options);
+		} finally {
+			this.terminal.showCursor();
+			this.terminal.stop();
+			this.afterTerminalStop(options);
+		}
 	}
 
 	renderNow(force = false): void {
+		if (!this.started || this.stopped) return;
 		if (force) this.resetRenderState();
 		this.renderRequested = false;
 		this.cancelRenderTimer();
@@ -977,6 +1030,7 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	requestRender(force = false): void {
+		if (!this.started || this.stopped) return;
 		if (force) {
 			this.resetRenderState();
 			this.requestImmediateRender();
@@ -1009,11 +1063,13 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	private scheduleRender(): void {
-		if (this.stopped || this.renderTimer || !this.renderRequested) {
+		if (this.stopped) {
+			this.renderRequested = false;
 			return;
 		}
+		if (this.renderTimer || !this.renderRequested) return;
 		const elapsed = performance.now() - this.lastRenderAt;
-		const delay = Math.max(0, TuiBase.MIN_RENDER_INTERVAL_MS - elapsed);
+		const delay = Math.max(0, TuiBase.minRenderIntervalMs - elapsed);
 		this.renderTimer = setTimeout(() => {
 			this.renderTimer = undefined;
 			if (this.stopped || !this.renderRequested) {
@@ -1029,6 +1085,7 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	private handleTerminalInput(data: string): void {
+		const previousFocus = this.focusedComponent;
 		if (this.consumeTerminalColorResponse(data)) {
 			return;
 		}
@@ -1093,6 +1150,8 @@ export abstract class TuiBase extends Container implements TUI {
 			}
 		}
 
+		if (this.focusedComponent !== previousFocus) this.requestImmediateRender();
+
 		if (this.focusedComponent?.handleInput) {
 			if (isKeyRelease(data) && !this.focusedComponent.wantsKeyRelease) {
 				return;
@@ -1105,8 +1164,8 @@ export abstract class TuiBase extends Container implements TUI {
 	private settleTerminalColorQueries(): void {
 		const pending = this.pendingTerminalColorQueries;
 		this.pendingTerminalColorQueries = [];
-		this.lateTerminalColorQuery = undefined;
-		this.terminalColorDeviceAttributesDue = 0;
+		this.lateTerminalColorQueries = [];
+		this.terminalColorDeviceAttributesQueue = [];
 
 		for (const query of pending) {
 			clearTimeout(query.timer);
@@ -1116,27 +1175,35 @@ export abstract class TuiBase extends Container implements TUI {
 		}
 	}
 
-	private consumeTerminalColorResponse(data: string): boolean {
-		if (DEVICE_ATTRIBUTES_RESPONSE_PATTERN.test(data)) {
-			if (this.terminalColorDeviceAttributesDue > 0) {
-				this.terminalColorDeviceAttributesDue--;
-				return true;
-			}
+	private pickColorReplyQuery(key: string): PendingTerminalColorQuery | undefined {
+		const queries = [...this.lateTerminalColorQueries, ...this.pendingTerminalColorQueries];
+		return queries.find((query) => query.deliver !== undefined && !query.replied.has(key));
+	}
 
-			const pending = this.pendingTerminalColorQueries[0] ?? this.lateTerminalColorQuery;
-			if (!pending) return false;
+	private settleLateTerminalColorQueries(): void {
+		const late = this.lateTerminalColorQueries;
+		this.lateTerminalColorQueries = [];
 
-			if (this.pendingTerminalColorQueries[0]) {
-				this.pendingTerminalColorQueries.shift();
-			}
-
-			this.completeTerminalColorQuery(pending);
-			return true;
+		for (const query of late) {
+			clearTimeout(query.timer);
+			const deliver = query.deliver;
+			query.deliver = undefined;
+			deliver?.(this.terminalColorQueryResult(query));
 		}
+	}
 
-		const query = this.pendingTerminalColorQueries[0] ?? this.lateTerminalColorQuery;
-		if (!query) {
-			return false;
+	private hasColorQuery(): boolean {
+		return this.lateTerminalColorQueries.length > 0 || this.pendingTerminalColorQueries.length > 0;
+	}
+
+	private consumeTerminalColorResponse(data: string): boolean {
+		if (deviceAttributesPattern.test(data)) {
+			const query =
+				this.terminalColorDeviceAttributesQueue.shift() ?? this.lateTerminalColorQueries[0];
+			if (!query) return false;
+
+			this.completeTerminalColorQuery(query);
+			return true;
 		}
 
 		const response = parseOscColorResponse(data);
@@ -1145,20 +1212,20 @@ export abstract class TuiBase extends Container implements TUI {
 		}
 		const { target, rgb } = response;
 		const key = String(target);
-		if (!query.deliver || query.replied.has(key)) {
-			return true;
+		const query = this.pickColorReplyQuery(key);
+		if (!query) {
+			return this.hasColorQuery();
 		}
 		query.replied.add(key);
 		if (target === "foreground") {
 			query.foreground = rgb;
 		} else if (target === "background") {
 			query.background = rgb;
-		} else if (target < TERMINAL_PALETTE_SIZE) {
+		} else if (target < paletteSize) {
 			query.palette[target] = rgb;
 		}
-		if (query.replied.size === TERMINAL_COLOR_REPLY_COUNT) {
+		if (query.replied.size === colorReplyCount) {
 			this.completeTerminalColorQuery(query);
-			this.terminalColorDeviceAttributesDue = 1;
 		}
 		return true;
 	}
@@ -1175,8 +1242,9 @@ export abstract class TuiBase extends Container implements TUI {
 		if (index !== -1) {
 			this.pendingTerminalColorQueries.splice(index, 1);
 		}
-		if (this.lateTerminalColorQuery === query) {
-			this.lateTerminalColorQuery = undefined;
+		const lateIndex = this.lateTerminalColorQueries.indexOf(query);
+		if (lateIndex !== -1) {
+			this.lateTerminalColorQueries.splice(lateIndex, 1);
 		}
 
 		const deliver = query.deliver;
@@ -1198,7 +1266,7 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	private consumeCellSizeResponse(data: string): boolean {
-		const match = data.match(/^\x1b\[6;(\d+);(\d+)t$/);
+		const match = data.match(cellSizeResponsePattern);
 		if (!match) {
 			return false;
 		}
@@ -1235,7 +1303,7 @@ export abstract class TuiBase extends Container implements TUI {
 		const availWidth = Math.max(1, termWidth - marginLeft - marginRight);
 		const availHeight = Math.max(1, termHeight - marginTop - marginBottom);
 
-		let width = parseSizeValue(opt.width, termWidth) ?? Math.min(80, availWidth);
+		let width = parseSizeValue(opt.width, termWidth) ?? Math.min(defaultOverlayWidth, availWidth);
 		if (opt.minWidth !== undefined) {
 			width = Math.max(width, opt.minWidth);
 		}
@@ -1257,7 +1325,7 @@ export abstract class TuiBase extends Container implements TUI {
 				const match = opt.row.match(/^(\d+(?:\.\d+)?)%$/);
 				if (match) {
 					const maxRow = Math.max(0, availHeight - effectiveHeight);
-					const percent = parseFloat(match[1]) / 100;
+					const percent = parseFloat(match[1]) / percentScale;
 					row = marginTop + Math.floor(maxRow * percent);
 				} else {
 					row = this.resolveAnchorRow("center", effectiveHeight, availHeight, marginTop);
@@ -1275,7 +1343,7 @@ export abstract class TuiBase extends Container implements TUI {
 				const match = opt.col.match(/^(\d+(?:\.\d+)?)%$/);
 				if (match) {
 					const maxCol = Math.max(0, availWidth - width);
-					const percent = parseFloat(match[1]) / 100;
+					const percent = parseFloat(match[1]) / percentScale;
 					col = marginLeft + Math.floor(maxCol * percent);
 				} else {
 					col = this.resolveAnchorCol("center", width, availWidth, marginLeft);
@@ -1424,7 +1492,7 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	protected applyLineResets(lines: string[]): string[] {
-		const reset = SEGMENT_RESET;
+		const reset = segmentReset;
 		for (let i = 0; i < lines.length; i++) {
 			const line = lines[i];
 			if (!isImageLine(line)) {
@@ -1472,9 +1540,19 @@ export abstract class TuiBase extends Container implements TUI {
 		timeoutMs: number;
 		onLateReply?: (colors: TerminalColors) => void;
 	}): Promise<TerminalColors> {
+		if (!this.started || this.stopped) {
+			return Promise.resolve({
+				foreground: undefined,
+				background: undefined,
+				palette: undefined,
+			});
+		}
+
+		this.settleLateTerminalColorQueries();
+
 		return new Promise((resolve) => {
 			const query: PendingTerminalColorQuery = {
-				palette: Array.from({ length: TERMINAL_PALETTE_SIZE }, () => undefined),
+				palette: Array.from({ length: paletteSize }, () => undefined),
 				replied: new Set(),
 				deliver: resolve,
 				timer: undefined,
@@ -1482,15 +1560,17 @@ export abstract class TuiBase extends Container implements TUI {
 			query.timer = setTimeout(() => {
 				const index = this.pendingTerminalColorQueries.indexOf(query);
 				if (index !== -1) this.pendingTerminalColorQueries.splice(index, 1);
+				const daIndex = this.terminalColorDeviceAttributesQueue.indexOf(query);
+				if (daIndex !== -1) this.terminalColorDeviceAttributesQueue.splice(daIndex, 1);
 				if (onLateReply) {
-					this.lateTerminalColorQuery = query;
+					this.lateTerminalColorQueries.push(query);
 					query.deliver = onLateReply;
 				}
 				resolve(this.terminalColorQueryResult(query));
 			}, timeoutMs);
-			this.lateTerminalColorQuery = undefined;
 			this.pendingTerminalColorQueries.push(query);
-			this.terminal.write(TERMINAL_COLOR_QUERY);
+			this.terminalColorDeviceAttributesQueue.push(query);
+			this.terminal.write(colorQuery);
 		});
 	}
 }

@@ -1,7 +1,7 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { setKittyProtocolActive } from "./keys.ts";
-import { isNativeModifierPressed } from "./native-modifiers.ts";
+import { isNativeModifierPressed } from "./native-keys.ts";
 import { getNativePlatformHelper } from "./native-platform.ts";
 import { StdinBuffer } from "./stdin-buffer.ts";
 
@@ -17,6 +17,8 @@ export interface Terminal {
 	drainInput(maxMs?: number, idleMs?: number): Promise<void>;
 
 	write(data: string): void;
+
+	writeSync?(data: string): void;
 
 	get columns(): number;
 	get rows(): number;
@@ -38,11 +40,53 @@ export interface Terminal {
 }
 
 const TERMINAL_PROGRESS_KEEPALIVE_MS = 1000;
+
 const TERMINAL_PROGRESS_ACTIVE_SEQUENCE = "\x1b]9;4;3\x07";
+
 const TERMINAL_PROGRESS_CLEAR_SEQUENCE = "\x1b]9;4;0\x07";
+
 const NATIVE_SHIFT_ENTER_SEQUENCE = "\x1b[13;2u";
+
+const ENABLE_BRACKETED_PASTE = "\x1b[?2004h";
+
+const DISABLE_BRACKETED_PASTE = "\x1b[?2004l";
+
+const POP_KEYBOARD_PROTOCOL = "\x1b[<u";
+
+const ENABLE_MODIFY_OTHER_KEYS = "\x1b[>4;2m";
+
+const DISABLE_MODIFY_OTHER_KEYS = "\x1b[>4;0m";
+
+const DEFAULT_COLUMNS = 80;
+
+const DEFAULT_ROWS = 24;
+
+const DEFAULT_DRAIN_MAX_MS = 1000;
+
+const DEFAULT_DRAIN_IDLE_MS = 50;
+
+const DEFAULT_ESCAPE_TIMEOUT_MS = 10;
+
+const DEFAULT_SSH_ESCAPE_TIMEOUT_MS = 100;
+
+const HIDE_CURSOR = "\x1b[?25l";
+
+const SHOW_CURSOR = "\x1b[?25h";
+
+const CLEAR_LINE = "\x1b[K";
+
+const CLEAR_FROM_CURSOR = "\x1b[J";
+
+const CLEAR_SCREEN = "\x1b[2J\x1b[H";
+
+const PASTE_START = "\x1b[200~";
+
+const PASTE_END = "\x1b[201~";
+
 const KEYBOARD_PROTOCOL_RESPONSE_FRAGMENT_TIMEOUT_MS = 150;
+
 const DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS = 7;
+
 const KITTY_KEYBOARD_PROTOCOL_QUERY = [
 	`\x1b[>${DESIRED_KITTY_KEYBOARD_PROTOCOL_FLAGS}u`,
 	"\x1b[?u\x1b[c",
@@ -88,16 +132,18 @@ export function normalizeNativeShiftEnterInput(
 	return data;
 }
 
-export function normalizeAppleTerminalInput(
-	data: string,
-	isAppleTerminal: boolean,
-	isShiftPressed: boolean,
-): string {
-	return normalizeNativeShiftEnterInput(data, isAppleTerminal, isShiftPressed);
+function resolveTerminalDimension(
+	reported: number | undefined,
+	envValue: string | undefined,
+	fallback: number,
+): number {
+	if (typeof reported === "number" && Number.isFinite(reported) && reported > 0) {
+		return Math.floor(reported);
+	}
+	const fromEnv = Number(envValue);
+	if (Number.isFinite(fromEnv) && fromEnv > 0) return Math.floor(fromEnv);
+	return fallback;
 }
-
-const DEFAULT_ESCAPE_TIMEOUT_MS = 10;
-const DEFAULT_SSH_ESCAPE_TIMEOUT_MS = 100;
 
 export function resolveEscapeTimeoutMs(env: NodeJS.ProcessEnv = process.env): number {
 	const configured = Number(env.GAMA_TUI_ESC_TIMEOUT);
@@ -172,7 +218,7 @@ export class ProcessTerminal implements Terminal {
 		process.stdin.setEncoding("utf8");
 		process.stdin.resume();
 
-		process.stdout.write("\x1b[?2004h");
+		process.stdout.write(ENABLE_BRACKETED_PASTE);
 
 		process.stdout.on("resize", this.resizeHandler);
 
@@ -201,7 +247,7 @@ export class ProcessTerminal implements Terminal {
 
 		this.stdinBuffer.on("paste", (content) => {
 			if (this.inputHandler) {
-				this.inputHandler(`\x1b[200~${content}\x1b[201~`);
+				this.inputHandler(`${PASTE_START}${content}${PASTE_END}`);
 			}
 		});
 
@@ -229,6 +275,7 @@ export class ProcessTerminal implements Terminal {
 			}
 			this.pendingKeyboardProtocolDeviceAttributes -= 1;
 		}
+
 		if (negotiationSequence.type === "kitty-flags") {
 			if (negotiationSequence.flags !== 0) {
 				this.disableModifyOtherKeys();
@@ -309,6 +356,7 @@ export class ProcessTerminal implements Terminal {
 
 	private forwardInputSequence(sequence: string): void {
 		if (!this.inputHandler) return;
+
 		const shouldDetectNativeShiftEnter =
 			sequence === "\r" && (isAppleTerminalSession() || process.platform === "win32");
 		const input = normalizeNativeShiftEnterInput(
@@ -325,7 +373,7 @@ export class ProcessTerminal implements Terminal {
 		if (!shouldDisable) {
 			return;
 		}
-		process.stdout.write("\x1b[<u");
+		process.stdout.write(POP_KEYBOARD_PROTOCOL);
 		this.keyboardProtocolPushed = false;
 		this._kittyProtocolActive = false;
 		setKittyProtocolActive(false);
@@ -333,13 +381,13 @@ export class ProcessTerminal implements Terminal {
 
 	private enableModifyOtherKeys(): void {
 		if (this._kittyProtocolActive || this._modifyOtherKeysActive) return;
-		process.stdout.write("\x1b[>4;2m");
+		process.stdout.write(ENABLE_MODIFY_OTHER_KEYS);
 		this._modifyOtherKeysActive = true;
 	}
 
 	private disableModifyOtherKeys(): void {
 		if (!this._modifyOtherKeysActive) return;
-		process.stdout.write("\x1b[>4;0m");
+		process.stdout.write(DISABLE_MODIFY_OTHER_KEYS);
 		this._modifyOtherKeysActive = false;
 	}
 
@@ -350,7 +398,7 @@ export class ProcessTerminal implements Terminal {
 		} catch {}
 	}
 
-	async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
+	async drainInput(maxMs = DEFAULT_DRAIN_MAX_MS, idleMs = DEFAULT_DRAIN_IDLE_MS): Promise<void> {
 		this.disableKeyboardProtocol();
 		this.disableModifyOtherKeys();
 
@@ -384,7 +432,7 @@ export class ProcessTerminal implements Terminal {
 			process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
 		}
 
-		process.stdout.write("\x1b[?2004l");
+		process.stdout.write(DISABLE_BRACKETED_PASTE);
 
 		this.disableKeyboardProtocol();
 		this.disableModifyOtherKeys();
@@ -411,21 +459,29 @@ export class ProcessTerminal implements Terminal {
 		}
 	}
 
+	writeSync(data: string): void {
+		try {
+			fs.writeSync(1, data);
+		} catch {
+			this.write(data);
+		}
+	}
+
 	write(data: string): void {
 		process.stdout.write(data);
 		if (this.writeLogPath) {
 			try {
-				fs.appendFileSync(this.writeLogPath, data, { encoding: "utf8" });
+				fs.appendFileSync(this.writeLogPath, data, { encoding: "utf8", mode: 0o600 });
 			} catch {}
 		}
 	}
 
 	get columns(): number {
-		return process.stdout.columns || Number(process.env.COLUMNS) || 80;
+		return resolveTerminalDimension(process.stdout.columns, process.env.COLUMNS, DEFAULT_COLUMNS);
 	}
 
 	get rows(): number {
-		return process.stdout.rows || Number(process.env.LINES) || 24;
+		return resolveTerminalDimension(process.stdout.rows, process.env.LINES, DEFAULT_ROWS);
 	}
 
 	moveBy(lines: number): void {
@@ -437,27 +493,28 @@ export class ProcessTerminal implements Terminal {
 	}
 
 	hideCursor(): void {
-		process.stdout.write("\x1b[?25l");
+		process.stdout.write(HIDE_CURSOR);
 	}
 
 	showCursor(): void {
-		process.stdout.write("\x1b[?25h");
+		process.stdout.write(SHOW_CURSOR);
 	}
 
 	clearLine(): void {
-		process.stdout.write("\x1b[K");
+		process.stdout.write(CLEAR_LINE);
 	}
 
 	clearFromCursor(): void {
-		process.stdout.write("\x1b[J");
+		process.stdout.write(CLEAR_FROM_CURSOR);
 	}
 
 	clearScreen(): void {
-		process.stdout.write("\x1b[2J\x1b[H");
+		process.stdout.write(CLEAR_SCREEN);
 	}
 
 	setTitle(title: string): void {
-		process.stdout.write(`\x1b]0;${title}\x07`);
+		const safe = title.replace(/[\u0000-\u001f\u007f]/g, "");
+		process.stdout.write(`\x1b]0;${safe}\x07`);
 	}
 
 	setProgress(active: boolean): void {

@@ -2,15 +2,55 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { deleteKittyImage, isImageLine } from "./terminal-image.ts";
-import { type TUI, TuiBase, type TuiStopOptions } from "./tui.ts";
+import {
+	type TUI,
+	TuiBase,
+	type TuiMouseButton,
+	type TuiMouseEvent,
+	type TuiMouseEventType,
+	type TuiStopOptions,
+} from "./screen.ts";
 import { visibleWidth } from "./utils.ts";
+
+const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1006h";
+
+const DISABLE_MOUSE = "\x1b[?1006l\x1b[?1000l";
+
+const MOUSE_PATTERN = /^\x1b\[<(\d+);(\d+);(\d+)([Mm])$/;
+
+const MOUSE_WHEEL = 64;
+
+const MOUSE_SHIFT = 4;
+
+const MOUSE_ALT = 8;
+
+const MOUSE_CTRL = 16;
+
+const BUTTON_MASK = 3;
+
+const TERMINAL_INDEX_BASE = 1;
+
+const UNKNOWN_DIMENSION = -1;
+
+const SYNC_OUTPUT_START = "\x1b[?2026h";
+
+const SYNC_OUTPUT_END = "\x1b[?2026l";
+
+function mouseButton(code: number): TuiMouseButton {
+	if ((code & MOUSE_WHEEL) !== 0) return "none";
+	const button = code & BUTTON_MASK;
+	if (button === 0) return "left";
+	if (button === 1) return "middle";
+	if (button === 2) return "right";
+	return "none";
+}
 
 interface KittyImageHeader {
 	ids: number[];
 	rows: number;
 }
 
-export interface TuiMainScreenRenderState {
+export interface MainScreenRenderState {
 	previousLines: string[];
 	previousWidth: number;
 	previousHeight: number;
@@ -21,7 +61,18 @@ export interface TuiMainScreenRenderState {
 }
 
 const KITTY_SEQUENCE_PREFIX = "\x1b_G";
+
+const KITTY_PARAM_MAX = 0xffffffff;
+
 const MAX_RENDER_WRITE_CHARS = 1024 * 1024;
+
+const SURROGATE_HIGH_START = 0xd800;
+
+const SURROGATE_HIGH_END = 0xdbff;
+
+const SURROGATE_LOW_START = 0xdc00;
+
+const SURROGATE_LOW_END = 0xdfff;
 
 class BoundedTerminalWriter {
 	private buffer = "";
@@ -44,10 +95,10 @@ class BoundedTerminalWriter {
 			let end = Math.min(value.length, offset + capacity);
 			if (
 				end < value.length &&
-				value.charCodeAt(end - 1) >= 0xd800 &&
-				value.charCodeAt(end - 1) <= 0xdbff &&
-				value.charCodeAt(end) >= 0xdc00 &&
-				value.charCodeAt(end) <= 0xdfff
+				value.charCodeAt(end - 1) >= SURROGATE_HIGH_START &&
+				value.charCodeAt(end - 1) <= SURROGATE_HIGH_END &&
+				value.charCodeAt(end) >= SURROGATE_LOW_START &&
+				value.charCodeAt(end) <= SURROGATE_LOW_END
 			) {
 				end--;
 			}
@@ -89,7 +140,9 @@ function parseKittyImageHeader(line: string): KittyImageHeader | undefined {
 		const [key, value] = param.split("=", 2);
 		if (value === undefined) continue;
 		const numberValue = Number(value);
-		if (!Number.isInteger(numberValue) || numberValue <= 0 || numberValue > 0xffffffff) continue;
+		if (!Number.isInteger(numberValue) || numberValue <= 0 || numberValue > KITTY_PARAM_MAX) {
+			continue;
+		}
 		if (key === "i") ids.push(numberValue);
 		else if (key === "r") rows = numberValue;
 	}
@@ -108,7 +161,7 @@ function extractKittyImageRows(line: string): number {
 	return parseKittyImageHeader(line)?.rows ?? 1;
 }
 
-export class TuiMainScreen extends TuiBase implements TUI {
+export class MainScreen extends TuiBase implements TUI {
 	readonly mode = "regular" as const;
 	private previousLines: string[] = [];
 	private previousKittyImageIds = new Set<number>();
@@ -118,8 +171,12 @@ export class TuiMainScreen extends TuiBase implements TUI {
 	private hardwareCursorRow = 0;
 	private maxLinesRendered = 0;
 	private previousViewportTop = 0;
+	private mouseTracking = false;
+	private modalMouse = false;
+	private stopMouseInput: (() => void) | undefined;
+	private pressedCell: { x: number; y: number } | undefined;
 
-	captureRenderState(): TuiMainScreenRenderState {
+	captureRenderState(): MainScreenRenderState {
 		return {
 			previousLines: [...this.previousLines],
 			previousWidth: this.previousWidth,
@@ -131,7 +188,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		};
 	}
 
-	restoreRenderState(state: TuiMainScreenRenderState): void {
+	restoreRenderState(state: MainScreenRenderState): void {
 		this.previousLines = state.previousLines.map((line) => (isImageLine(line) ? "" : line));
 		this.previousKittyImageIds = new Set();
 		this.previousWidth = state.previousWidth;
@@ -144,16 +201,141 @@ export class TuiMainScreen extends TuiBase implements TUI {
 
 	protected override resetRenderState(): void {
 		this.previousLines = [];
-		this.previousWidth = -1;
-		this.previousHeight = -1;
+		this.previousWidth = UNKNOWN_DIMENSION;
+		this.previousHeight = UNKNOWN_DIMENSION;
 		this.cursorRow = 0;
 		this.hardwareCursorRow = 0;
 		this.maxLinesRendered = 0;
 		this.previousViewportTop = 0;
 	}
 
+	override start(): void {
+		if (this.started) return;
+		this.stopMouseInput = this.addInputListener((data) => this.consumeMouseInput(data));
+		super.start();
+		if (this.started) this.applyMouseTracking(true);
+	}
+
+	override stop(options: TuiStopOptions = {}): void {
+		if (this.started) {
+			this.stopMouseInput?.();
+			this.stopMouseInput = undefined;
+			this.disableMouseTracking();
+		}
+		super.stop(options);
+	}
+
+	private disableMouseTracking(): void {
+		const wasTracking = this.mouseTracking;
+		this.mouseTracking = false;
+		this.pressedCell = undefined;
+		if (wasTracking && !this.stopped) this.terminal.write(DISABLE_MOUSE);
+	}
+
+	setMouseTracking(enabled: boolean): void {
+		this.modalMouse = enabled;
+		this.applyMouseTracking();
+	}
+
+	private applyMouseTracking(force = false): void {
+		const enabled = this.modalMouse || this.hasOverlay();
+		if (!force && this.mouseTracking === enabled) return;
+		this.mouseTracking = enabled;
+		this.pressedCell = undefined;
+		if (!this.started || this.stopped) return;
+		this.terminal.write(enabled ? ENABLE_MOUSE : DISABLE_MOUSE);
+	}
+
+	private consumeMouseInput(data: string): { consume: boolean } | undefined {
+		if (!this.mouseTracking) return undefined;
+		const match = data.match(MOUSE_PATTERN);
+		if (!match) return undefined;
+
+		const code = Number(match[1]);
+		const x = Number(match[2]) - TERMINAL_INDEX_BASE;
+		const y = Number(match[3]) - TERMINAL_INDEX_BASE;
+		if ((code & MOUSE_WHEEL) !== 0) {
+			this.dispatchWheel(code, x, y);
+		} else if (match[4] === "m") {
+			this.dispatchRelease(code, x, y);
+		} else {
+			this.dispatchPress(code, x, y);
+		}
+		return { consume: true };
+	}
+
+	private dispatchPress(code: number, x: number, y: number): void {
+		this.pressedCell = { x, y };
+		this.dispatchMouse(this.mouseEvent("press", code, x, y));
+	}
+
+	private dispatchRelease(code: number, x: number, y: number): void {
+		const pressed = this.pressedCell;
+		this.pressedCell = undefined;
+		this.dispatchMouse(this.mouseEvent("release", code, x, y));
+		if (!pressed || pressed.x !== x || pressed.y !== y) return;
+		this.dispatchMouse(this.mouseEvent("click", code, x, y, undefined, 1));
+	}
+
+	private dispatchWheel(code: number, x: number, y: number): void {
+		this.dispatchMouse(this.mouseEvent("wheel", code, x, y, (code & 1) === 0 ? -1 : 1));
+	}
+
+	private mouseEvent(
+		type: TuiMouseEventType,
+		code: number,
+		x: number,
+		y: number,
+		wheelDelta?: number,
+		clickCount?: number,
+	): TuiMouseEvent {
+		const top = Math.max(0, this.previousLines.length - this.terminal.rows);
+		const line = top + y;
+
+		return {
+			type,
+			button: mouseButton(code),
+			x,
+			y: line,
+			screenX: x,
+			screenY: line,
+			width: Math.max(1, this.terminal.columns),
+			height: Math.max(1, this.previousLines.length),
+			shift: (code & MOUSE_SHIFT) !== 0,
+			alt: (code & MOUSE_ALT) !== 0,
+			ctrl: (code & MOUSE_CTRL) !== 0,
+			...(wheelDelta === undefined ? {} : { wheelDelta }),
+			...(clickCount === undefined ? {} : { clickCount }),
+		};
+	}
+
+	private dispatchMouse(event: TuiMouseEvent): void {
+		const overlay = this.dispatchMouseToOverlay(event);
+		const result = overlay.result ?? (overlay.hit ? undefined : this.handleMouse(event));
+		if (!result) return;
+
+		if (result.focus) {
+			const target = result.focusTarget ?? result.target.component;
+			this.setFocus(this.resolveMouseFocusTarget(target));
+		}
+
+		if (result.render !== false) this.requestRender();
+	}
+
 	protected override beforeTerminalStop(options: TuiStopOptions): void {
 		if (options.preserveScreen || this.previousLines.length === 0) return;
+		if (options.clearScreen) {
+			const screenRow = Math.max(0, this.hardwareCursorRow - this.previousViewportTop);
+			let sequence = "\x1b[0m\r";
+			if (screenRow > 0) sequence += `\x1b[${screenRow}A`;
+			sequence += "\x1b[0J\x1b[?25h";
+			if (this.terminal.writeSync) {
+				this.terminal.writeSync(sequence);
+			} else {
+				this.terminal.write(sequence);
+			}
+			return;
+		}
 		this.terminal.write(" ");
 		const targetRow = this.previousLines.length;
 		const lineDiff = targetRow - this.hardwareCursorRow;
@@ -209,7 +391,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 			for (let i = 0; i < lines.length; i++) {
 				if (extractKittyImageIds(lines[i]).length === 0) continue;
 				const blockEnd = i + this.getKittyImageReservedRows(lines, i) - 1;
-				if (i >= firstChanged || (i <= lastChanged && blockEnd >= firstChanged)) {
+				if (i >= firstChanged) {
 					expandedFirstChanged = Math.min(expandedFirstChanged, i);
 					expandedLastChanged = Math.max(expandedLastChanged, blockEnd);
 				}
@@ -235,8 +417,41 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		return this.deleteKittyImages(ids);
 	}
 
+	private ensureLineFits(line: string, index: number, lines: string[], width: number): void {
+		if (isImageLine(line) || visibleWidth(line) <= width) return;
+
+		const crashLogPath = path.join(this.logDirectory ?? os.tmpdir(), "gama-tui-crash.log");
+		const crashData = [
+			`Crash at ${new Date().toISOString()}`,
+			`Terminal width: ${width}`,
+			`Line ${index} visible width: ${visibleWidth(line)}`,
+			"",
+			"All rendered lines:",
+			...lines.map((entry, row) => `[${row}] (w=${visibleWidth(entry)}) ${entry}`),
+			"",
+		].join("\n");
+		let logged = false;
+		try {
+			fs.mkdirSync(path.dirname(crashLogPath), { recursive: true, mode: 0o700 });
+			fs.writeFileSync(crashLogPath, crashData, { mode: 0o600 });
+			logged = true;
+		} catch {}
+
+		this.stop();
+
+		const errorLines = [
+			`Rendered line ${index} exceeds terminal width (${visibleWidth(line)} > ${width}).`,
+			"",
+			"This is likely caused by a custom TUI component not truncating its output.",
+			"Use visibleWidth() to measure and truncateToWidth() to truncate lines.",
+		];
+		if (logged) errorLines.push("", `Debug log written to: ${crashLogPath}`);
+		throw new Error(errorLines.join("\n"));
+	}
+
 	protected doRender(): void {
 		if (this.stopped) return;
+		this.applyMouseTracking();
 		const width = this.terminal.columns;
 		const height = this.terminal.rows;
 		const widthChanged = this.previousWidth !== 0 && this.previousWidth !== width;
@@ -267,10 +482,10 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		const fullRender = (clear: boolean): void => {
 			this.fullRedrawCount += 1;
 			const output = new BoundedTerminalWriter((data) => this.terminal.write(data));
-			output.append("\x1b[?2026h");
+			output.append(SYNC_OUTPUT_START);
 			if (clear) {
 				output.append(this.deleteKittyImages(this.previousKittyImageIds));
-				output.append("\x1b[2J\x1b[H\x1b[3J");
+				output.append("\x1b[2J\x1b[H");
 			}
 			for (let i = 0; i < newLines.length; i++) {
 				if (i > 0) output.append("\r\n");
@@ -287,9 +502,10 @@ export class TuiMainScreen extends TuiBase implements TUI {
 					i += imageReservedRows - 1;
 					continue;
 				}
+				this.ensureLineFits(line, i, newLines, width);
 				output.append(line);
 			}
-			output.append("\x1b[?2026l");
+			output.append(SYNC_OUTPUT_END);
 			output.flush();
 			this.cursorRow = Math.max(0, newLines.length - 1);
 			this.hardwareCursorRow = this.cursorRow;
@@ -315,8 +531,10 @@ export class TuiMainScreen extends TuiBase implements TUI {
 			const stamp = new Date().toISOString();
 			const counts = `prev=${this.previousLines.length}, new=${newLines.length}`;
 			const msg = `[${stamp}] fullRender: ${reason} (${counts}, height=${height})\n`;
-			fs.mkdirSync(path.dirname(logPath), { recursive: true });
-			fs.appendFileSync(logPath, msg);
+			try {
+				fs.mkdirSync(path.dirname(logPath), { recursive: true, mode: 0o700 });
+				fs.appendFileSync(logPath, msg, { mode: 0o600 });
+			} catch {}
 		};
 
 		if (this.previousLines.length === 0 && !widthChanged && !heightChanged) {
@@ -390,7 +608,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		if (firstChanged >= newLines.length) {
 			if (this.previousLines.length > newLines.length) {
 				const output = new BoundedTerminalWriter((data) => this.terminal.write(data));
-				output.append("\x1b[?2026h");
+				output.append(SYNC_OUTPUT_START);
 				output.append(this.deleteChangedKittyImages(firstChanged, lastChanged));
 				const targetRow = Math.max(0, newLines.length - 1);
 				if (targetRow < prevViewportTop) {
@@ -420,7 +638,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 				if (moveBack > 0) {
 					output.append(`\x1b[${moveBack}A`);
 				}
-				output.append("\x1b[?2026l");
+				output.append(SYNC_OUTPUT_END);
 				output.flush();
 				this.cursorRow = targetRow;
 				this.hardwareCursorRow = targetRow;
@@ -441,7 +659,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 		}
 
 		const output = new BoundedTerminalWriter((data) => this.terminal.write(data));
-		output.append("\x1b[?2026h");
+		output.append(SYNC_OUTPUT_START);
 		output.append(this.deleteChangedKittyImages(firstChanged, lastChanged));
 		const prevViewportBottom = prevViewportTop + height - 1;
 		const moveTargetRow = appendStart ? firstChanged - 1 : firstChanged;
@@ -499,32 +717,7 @@ export class TuiMainScreen extends TuiBase implements TUI {
 			}
 
 			output.append("\x1b[2K");
-			if (!isImage && visibleWidth(line) > width) {
-				const crashLogPath = path.join(this.logDirectory ?? os.tmpdir(), "gama-tui-crash.log");
-				const crashData = [
-					`Crash at ${new Date().toISOString()}`,
-					`Terminal width: ${width}`,
-					`Line ${i} visible width: ${visibleWidth(line)}`,
-					"",
-					"=== All rendered lines ===",
-					...newLines.map((l, idx) => `[${idx}] (w=${visibleWidth(l)}) ${l}`),
-					"",
-				].join("\n");
-				fs.mkdirSync(path.dirname(crashLogPath), { recursive: true });
-				fs.writeFileSync(crashLogPath, crashData);
-
-				this.stop();
-
-				const errorMsg = [
-					`Rendered line ${i} exceeds terminal width (${visibleWidth(line)} > ${width}).`,
-					"",
-					"This is likely caused by a custom TUI component not truncating its output.",
-					"Use visibleWidth() to measure and truncateToWidth() to truncate lines.",
-					"",
-					`Debug log written to: ${crashLogPath}`,
-				].join("\n");
-				throw new Error(errorMsg);
-			}
+			this.ensureLineFits(line, i, newLines, width);
 			output.append(line);
 		}
 
@@ -543,11 +736,10 @@ export class TuiMainScreen extends TuiBase implements TUI {
 			output.append(`\x1b[${extraLines}A`);
 		}
 
-		output.append("\x1b[?2026l");
+		output.append(SYNC_OUTPUT_END);
 
 		if (process.env.GAMA_TUI_DEBUG === "1") {
 			const debugDir = path.join(os.tmpdir(), "tui");
-			fs.mkdirSync(debugDir, { recursive: true });
 			const debugPath = path.join(
 				debugDir,
 				`render-${Date.now()}-${Math.random().toString(36).slice(2)}.log`,
@@ -565,16 +757,19 @@ export class TuiMainScreen extends TuiBase implements TUI {
 				`newLines.length: ${newLines.length}`,
 				`previousLines.length: ${this.previousLines.length}`,
 				"",
-				"=== newLines ===",
+				"newLines:",
 				JSON.stringify(newLines, null, 2),
 				"",
-				"=== previousLines ===",
+				"previousLines:",
 				JSON.stringify(this.previousLines, null, 2),
 				"",
-				"=== buffer ===",
+				"buffer:",
 				`[${output.length} chars written in bounded chunks]`,
 			].join("\n");
-			fs.writeFileSync(debugPath, debugData);
+			try {
+				fs.mkdirSync(debugDir, { recursive: true, mode: 0o700 });
+				fs.writeFileSync(debugPath, debugData, { mode: 0o600 });
+			} catch {}
 		}
 
 		output.flush();
