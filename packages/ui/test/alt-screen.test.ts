@@ -3,21 +3,20 @@ import { describe, it } from "node:test";
 import {
 	AltScreenSearchComponent,
 	AltScreenSearchIndex,
-	findAltScreenSearchMatches,
 } from "../src/alt-screen-search.ts";
 import {
 	getKeybindings,
-	KeybindingsManager,
+	Keymap,
 	setKeybindings,
 	TUI_KEYBINDINGS,
 } from "../src/keybindings.ts";
-import { HStack } from "../src/parts/h-stack.ts";
-import { Image } from "../src/parts/image.ts";
-import { MouseRegion } from "../src/parts/mouse-region.ts";
-import { ScrollView } from "../src/parts/scroll-view.ts";
-import { SelectList } from "../src/parts/select-list.ts";
-import { Text } from "../src/parts/text.ts";
-import { VStack } from "../src/parts/v-stack.ts";
+import { HStack } from "../src/view/h-stack.ts";
+import { Image } from "../src/view/image.ts";
+import { MouseRegion } from "../src/view/mouse-region.ts";
+import { ScrollView } from "../src/view/scroll-view.ts";
+import { SelectList } from "../src/view/select-list.ts";
+import { Text } from "../src/view/text.ts";
+import { VStack } from "../src/view/v-stack.ts";
 import {
 	encodeKitty,
 	hyperlink,
@@ -25,8 +24,8 @@ import {
 	resetCapabilitiesCache,
 	setCapabilities,
 } from "../src/terminal-image.ts";
-import type { TuiMouseEvent } from "../src/tui.ts";
-import { TuiAltScreen } from "../src/tui-alt-screen.ts";
+import type { TuiMouseEvent } from "../src/screen.ts";
+import { AltScreen } from "../src/alt-screen.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
@@ -67,10 +66,10 @@ class RecordingTerminal extends VirtualTerminal {
 	}
 }
 
-describe("TuiAltScreen", () => {
+describe("AltScreen", () => {
 	it("renders a terminal-height viewport and preserves manual scroll position", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const text = new Text(
 			Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join("\n"),
 			0,
@@ -106,9 +105,11 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("shows a clickable jump-to-end indicator on the transcript's last row while scrolled up", async () => {
+	it(
+		"shows a clickable jump-to-end indicator on the transcript's last row while scrolled up",
+		async () => {
 		const terminal = new VirtualTerminal(30, 6);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			scrollToEndIndicator: () => "\x1b[7m ↓ Jump to end \x1b[27m",
 		});
 		const transcript = new ScrollView(
@@ -147,10 +148,12 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("keeps the jump-to-end indicator centered as the auto scrollbar hides and reappears", async () => {
+	it(
+		"keeps the jump-to-end indicator centered as the auto scrollbar hides and reappears",
+		async () => {
 		const terminal = new VirtualTerminal(80, 6);
 		const label = " ↓ Jump to latest message · End ";
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			scrollToEndIndicator: () => label,
 		});
 		const transcript = new ScrollView(
@@ -192,7 +195,7 @@ describe("TuiAltScreen", () => {
 			"indicator spans the transcript",
 		async () => {
 			const terminal = new VirtualTerminal(30, 6);
-			const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			const tui = new AltScreen(terminal, undefined, undefined, {
 				scrollToEndIndicator: () => "↓".repeat(30),
 			});
 			const transcript = new ScrollView(
@@ -225,9 +228,11 @@ describe("TuiAltScreen", () => {
 		},
 	);
 
-	it("never shows the jump-to-end indicator for a primary scroll view without follow-end", async () => {
+	it(
+		"never shows the jump-to-end indicator for a primary scroll view without follow-end",
+		async () => {
 		const terminal = new VirtualTerminal(30, 3);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			scrollToEndIndicator: () => " ↓ Jump to end ",
 		});
 		const transcript = new ScrollView(new Text("one\ntwo\nthree\nfour\nfive", 0, 0), {
@@ -244,7 +249,7 @@ describe("TuiAltScreen", () => {
 
 	it("keeps an explicit dock fixed while the transcript scrolls", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const transcriptText = new Text(
 			Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join("\n"),
 			0,
@@ -294,7 +299,7 @@ describe("TuiAltScreen", () => {
 	});
 
 	it("invalidates overlays with an explicit layout root", () => {
-		const tui = new TuiAltScreen(new VirtualTerminal());
+		const tui = new AltScreen(new VirtualTerminal());
 		const overlay = new Text("overlay", 0, 0);
 		let invalidated = false;
 		overlay.invalidate = () => {
@@ -311,7 +316,7 @@ describe("TuiAltScreen", () => {
 
 	it("routes wheel input to the scroll view under the pointer", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const left = new ScrollView(new Text("a1\na2\na3\na4\na5\na6\na7", 0, 0), {
 			follow: "end",
 			primary: true,
@@ -339,7 +344,7 @@ describe("TuiAltScreen", () => {
 
 	it("scrolls faster while Alt is held during wheel input", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const text = new Text(
 			Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"),
 			0,
@@ -358,7 +363,7 @@ describe("TuiAltScreen", () => {
 
 	it("does not vertically redispatch misses through horizontal layout containers", async () => {
 		const terminal = new VirtualTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		let selections = 0;
 		const list = new SelectList(
 			[
@@ -393,6 +398,19 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
+	it("re-enables mouse tracking after the terminal starts", () => {
+		const terminal = new RecordingTerminal();
+		const tui = new AltScreen(terminal);
+		tui.start();
+		const startIndex = terminal.events.findIndex((event) => event.type === "start");
+		const enabledAfterStart = terminal.events.some(
+			(event, index) =>
+				index > startIndex && event.type === "write" && event.data.includes("\x1b[?1006h"),
+		);
+		assert.ok(enabledAfterStart);
+		tui.stop();
+	});
+
 	it("uses button-motion tracking inside terminal multiplexers", () => {
 		const environmentKeys = ["TMUX", "ZELLIJ", "STY", "TERM"] as const;
 		const previousEnvironment = new Map(environmentKeys.map((key) => [key, process.env[key]]));
@@ -402,7 +420,7 @@ describe("TuiAltScreen", () => {
 			}
 			process.env.TERM = "xterm-256color";
 			const directTerminal = new RecordingTerminal();
-			const directTui = new TuiAltScreen(directTerminal);
+			const directTui = new AltScreen(directTerminal);
 			directTui.start();
 			const directWrites = directTerminal.events
 				.filter((event): event is { type: "write"; data: string } => event.type === "write")
@@ -427,7 +445,7 @@ describe("TuiAltScreen", () => {
 					process.env[key] = value;
 				}
 				const terminal = new RecordingTerminal();
-				const tui = new TuiAltScreen(terminal);
+				const tui = new AltScreen(terminal);
 				tui.start();
 				const writes = terminal.events
 					.filter((event): event is { type: "write"; data: string } => event.type === "write")
@@ -459,7 +477,7 @@ describe("TuiAltScreen", () => {
 		assert.ok(platformDescriptor);
 		const terminal = new VirtualTerminal();
 		let pasteCount = 0;
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			onRightClickPaste: () => {
 				pasteCount += 1;
 			},
@@ -490,7 +508,7 @@ describe("TuiAltScreen", () => {
 
 	it("reveals an auto scrollbar when the pointer enters its hidden track", async () => {
 		const terminal = new RecordingTerminal(10, 5);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const scrollView = new ScrollView(
 			new Text(Array.from({ length: 20 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 			{ primary: true, scrollbar: "auto", scrollbarHideDelayMs: 20 },
@@ -515,7 +533,7 @@ describe("TuiAltScreen", () => {
 
 	it("jumps to a scrollbar track position and continues dragging from there", async () => {
 		const terminal = new RecordingTerminal(10, 10);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const scrollView = new ScrollView(
 			new Text(Array.from({ length: 50 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 			{ primary: true, scrollbar: "always" },
@@ -545,7 +563,7 @@ describe("TuiAltScreen", () => {
 
 	it("applies runtime wheel line count updates", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, { wheelScrollLines: 3 });
+		const tui = new AltScreen(terminal, undefined, undefined, { wheelScrollLines: 3 });
 		const deltas: Array<number | undefined> = [];
 		tui.addChild(
 			new MouseRegion(new Text("wheel target", 0, 0), (event) => {
@@ -569,7 +587,7 @@ describe("TuiAltScreen", () => {
 
 	it("chains unused wheel delta to an outer scroll view", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, { wheelScrollLines: 3 });
+		const tui = new AltScreen(terminal, undefined, undefined, { wheelScrollLines: 3 });
 		const inner = new ScrollView(new Text("i1\ni2\ni3\ni4\ni5\ni6", 0, 0));
 		const outer = new ScrollView(
 			new VStack([
@@ -594,9 +612,11 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("supports configurable keyboard viewport navigation with four rows of page overlap", async () => {
+	it(
+		"supports configurable keyboard viewport navigation with four rows of page overlap",
+		async () => {
 		const terminal = new VirtualTerminal(20, 8);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 		);
@@ -638,7 +658,7 @@ describe("TuiAltScreen", () => {
 
 	it("searches normalized rendered transcript text across rows", () => {
 		assert.deepStrictEqual(
-			findAltScreenSearchMatches(["alpha QUICK", "brown fox"], "quick brown"),
+			new AltScreenSearchIndex().search(["alpha QUICK", "brown fox"], "quick brown").matches,
 			[
 				{
 					segments: [
@@ -652,7 +672,11 @@ describe("TuiAltScreen", () => {
 
 	it("maps normalized ASCII and Unicode search matches back to rendered columns", () => {
 		assert.deepStrictEqual(
-			findAltScreenSearchMatches(["\x1b[31mfoo  bar\x1b[0m", "A界🙂éZ"], "oo   bar\nA界🙂é"),
+			new AltScreenSearchIndex().search(
+				["\x1b[31mfoo  bar\x1b[0m", "A界🙂éZ"],
+				 "oo   bar\nA界🙂é",
+			)
+				.matches,
 			[
 				{
 					segments: [
@@ -697,15 +721,15 @@ describe("TuiAltScreen", () => {
 		assert.match(lines[0] ?? "", /^┌─+┐$/);
 		assert.match(lines[1] ?? "", /^│ Find in transcript +│$/);
 		assert.ok(rendered[1]?.includes("\x1b[2m"));
-		assert.match(lines[2] ?? "", /^└─+ ↑ Shift\+Enter {2}↓ Enter ─┘$/);
+		assert.match(lines[2] ?? "", /^└─+ Prev Shift\+Enter {2}Next Enter ─┘$/);
 		const controls = lines[2] ?? "";
-		assert.strictEqual(component.getNavigationDirectionAt(2, controls.indexOf("↑")), -1);
+		assert.strictEqual(component.getNavigationDirectionAt(2, controls.indexOf("Prev")), -1);
 		assert.strictEqual(
 			component.getNavigationDirectionAt(2, controls.indexOf("Shift+Enter") + 5),
 			-1,
 		);
 		assert.strictEqual(component.getNavigationDirectionAt(2, controls.indexOf("·")), undefined);
-		assert.strictEqual(component.getNavigationDirectionAt(2, controls.indexOf("↓")), 1);
+		assert.strictEqual(component.getNavigationDirectionAt(2, controls.indexOf("Next")), 1);
 		assert.strictEqual(
 			component.getNavigationDirectionAt(2, controls.lastIndexOf("Enter") + 2),
 			1,
@@ -721,9 +745,11 @@ describe("TuiAltScreen", () => {
 		assert.ok(!populated.some((line) => line.includes("Find in transcript")));
 	});
 
-	it("navigates transcript search with hoverable arrow buttons and toggles it with its shortcut", async () => {
+	it(
+		"navigates transcript search with hoverable arrow buttons and toggles it with its shortcut",
+		async () => {
 		const terminal = new RecordingTerminal(120, 6);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			searchNavigationButtonStyle: (text, hovered) =>
 				`${hovered ? "\x1b[45m" : "\x1b[44m"}${text}\x1b[49m`,
 		});
@@ -736,9 +762,9 @@ describe("TuiAltScreen", () => {
 		await terminal.waitForRender();
 		let viewport = terminal.getViewport();
 		assert.ok(viewport.some((line) => line.includes("1/2")));
-		assert.ok(viewport.some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(viewport.some((line) => line.includes("Prev Shift+Enter  Next Enter")));
 
-		let arrowRow = viewport.findIndex((line) => line.includes("↑") && line.includes("↓"));
+		let arrowRow = viewport.findIndex((line) => line.includes("Prev") && line.includes("Next"));
 		let arrowColumn = viewport[arrowRow]?.lastIndexOf("Enter") ?? -1;
 		assert.ok(arrowRow >= 0 && arrowColumn >= 0);
 		const hoverEventCount = terminal.events.length;
@@ -748,32 +774,34 @@ describe("TuiAltScreen", () => {
 			terminal.events
 				.slice(hoverEventCount)
 				.some(
-					(event) => event.type === "write" && event.data.includes("\x1b[45m↓ Enter\x1b[49m"),
+					(event) => event.type === "write" && event.data.includes("\x1b[45mNext Enter\x1b[49m"),
 				),
 		);
 		terminal.sendInput(`\x1b[<0;${arrowColumn + 1};${arrowRow + 1}M`);
 		await terminal.waitForRender();
 		viewport = terminal.getViewport();
 		assert.ok(viewport.some((line) => line.includes("2/2")));
-		assert.ok(viewport.some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(viewport.some((line) => line.includes("Prev Shift+Enter  Next Enter")));
 
-		arrowRow = viewport.findIndex((line) => line.includes("↑") && line.includes("↓"));
+		arrowRow = viewport.findIndex((line) => line.includes("Prev") && line.includes("Next"));
 		arrowColumn = (viewport[arrowRow]?.indexOf("Shift+Enter") ?? -3) + 3;
 		assert.ok(arrowRow >= 0 && arrowColumn >= 0);
 		terminal.sendInput(`\x1b[<0;${arrowColumn + 1};${arrowRow + 1}M`);
 		await terminal.waitForRender();
 		assert.ok(terminal.getViewport().some((line) => line.includes("1/2")));
-		assert.ok(terminal.getViewport().some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(terminal.getViewport().some((line) => line.includes("Prev Shift+Enter  Next Enter")));
 
 		terminal.sendInput("\x1b[102;6u");
 		await terminal.waitForRender();
-		assert.ok(!terminal.getViewport().some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(
+			!terminal.getViewport().some((line) => line.includes("Prev") && line.includes("Next")),
+		);
 		tui.stop();
 	});
 
 	it("does not treat transcript box drawing as search navigation buttons", async () => {
 		const terminal = new VirtualTerminal(80, 10);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(
 				[
@@ -781,9 +809,11 @@ describe("TuiAltScreen", () => {
 					"middle",
 					"needle two",
 					"filler",
-					"┌────────────────────────────────────────┐",
+					"┌────────────────────" +
+						"────────────────────┐",
 					"│ box                                    │",
-					"└────────────────────────────────────────┘",
+					"└────────────────────" +
+						"────────────────────┘",
 					"end",
 				].join("\n"),
 				0,
@@ -813,7 +843,7 @@ describe("TuiAltScreen", () => {
 
 	it("uses configured styles for current and non-current search matches", async () => {
 		const terminal = new RecordingTerminal(60, 4);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			searchMatchStyle: (text) => `\x1b[41m${text}\x1b[49m`,
 			searchCurrentMatchStyle: (text) => `\x1b[42m${text}\x1b[49m`,
 		});
@@ -840,7 +870,7 @@ describe("TuiAltScreen", () => {
 
 	it("searches the transcript with Ctrl+Shift+F and restores editor focus on close", async () => {
 		const terminal = new RecordingTerminal(60, 8);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const transcriptText = new Text(
 			Array.from({ length: 12 }, (_, index) => {
 				if (index === 4) return "line 5 needle one";
@@ -873,7 +903,9 @@ describe("TuiAltScreen", () => {
 		await terminal.waitForRender();
 		assert.strictEqual(transcript.isFollowingEnd, false);
 		assert.ok(terminal.getViewport().some((line) => line.includes("2/2")));
-		assert.ok(terminal.getViewport().some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(
+			terminal.getViewport().some((line) => line.includes("Prev") && line.includes("Next")),
+		);
 		assert.ok(terminal.getViewport().some((line) => line.includes("line 10 needle two")));
 		assert.deepStrictEqual(editorInputs, []);
 		assert.ok(
@@ -904,7 +936,9 @@ describe("TuiAltScreen", () => {
 		terminal.sendInput("\x1b");
 		terminal.sendInput("x");
 		await terminal.waitForRender();
-		assert.ok(!terminal.getViewport().some((line) => line.includes("↑ Shift+Enter  ↓ Enter")));
+		assert.ok(
+			!terminal.getViewport().some((line) => line.includes("Prev") && line.includes("Next")),
+		);
 		assert.deepStrictEqual(editorInputs, ["x"]);
 
 		tui.stop();
@@ -913,9 +947,9 @@ describe("TuiAltScreen", () => {
 	it("scrolls the transcript by half a page with custom bindings", async () => {
 		const originalKeybindings = getKeybindings();
 		const terminal = new VirtualTerminal(20, 10);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		setKeybindings(
-			new KeybindingsManager(TUI_KEYBINDINGS, {
+			new Keymap(TUI_KEYBINDINGS, {
 				"tui.altScreen.halfPageUp": "ctrl+u",
 				"tui.altScreen.halfPageDown": "ctrl+d",
 			}),
@@ -948,9 +982,9 @@ describe("TuiAltScreen", () => {
 	it("scrolls the transcript by one line with custom bindings", async () => {
 		const originalKeybindings = getKeybindings();
 		const terminal = new VirtualTerminal(20, 10);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		setKeybindings(
-			new KeybindingsManager(TUI_KEYBINDINGS, {
+			new Keymap(TUI_KEYBINDINGS, {
 				"tui.altScreen.lineUp": "ctrl+y",
 				"tui.altScreen.lineDown": "ctrl+e",
 			}),
@@ -982,7 +1016,7 @@ describe("TuiAltScreen", () => {
 
 	it("routes Ctrl-modified viewport navigation to the focused component", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const transcript = new ScrollView(
 			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 			{ follow: "end", primary: true },
@@ -1028,7 +1062,7 @@ describe("TuiAltScreen", () => {
 
 	it("jumps between OSC 133 semantic prompt markers", async () => {
 		const terminal = new VirtualTerminal(20, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(
 				[1, 2, 3, 4]
@@ -1072,7 +1106,7 @@ describe("TuiAltScreen", () => {
 		setCapabilities({ images: "iterm2", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 3);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			tui.addChild({
 				render: () => ["\x1b]133;B\x07\x1b]133;C\x07\x1b]133;A\x07content"],
 				invalidate: () => {},
@@ -1118,7 +1152,7 @@ describe("TuiAltScreen", () => {
 		setCapabilities({ images: "iterm2", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 3);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			const imageLine = "\x1b]1337;File=inline=1;width=2;height=auto:AAAA\x07";
 			tui.addChild({
 				render: () => [imageLine, "", "", "after", "more", "end"],
@@ -1145,7 +1179,7 @@ describe("TuiAltScreen", () => {
 
 	it("crops a Kitty image whose first line is above the viewport", async () => {
 		const terminal = new RecordingTerminal(20, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const imageId = 123;
 		const imageLine = encodeKitty("AAAA", { columns: 2, rows: 3, imageId, moveCursor: false });
 		registerKittyImageMetadata({ imageId, columns: 2, rows: 3, widthPx: 100, heightPx: 100 });
@@ -1171,7 +1205,7 @@ describe("TuiAltScreen", () => {
 
 	it("redraws WezTerm Kitty images after writes to covered rows", async () => {
 		const weztermPane = process.env.WEZTERM_PANE;
-		let tui: TuiAltScreen | undefined;
+		let tui: AltScreen | undefined;
 		process.env.WEZTERM_PANE = "1";
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
@@ -1180,7 +1214,7 @@ describe("TuiAltScreen", () => {
 			const imageLine = encodeKitty("AAAA", { columns: 2, rows: 3, imageId, moveCursor: false });
 			registerKittyImageMetadata({ imageId, columns: 2, rows: 3, widthPx: 100, heightPx: 100 });
 			let coveredLine = "";
-			tui = new TuiAltScreen(terminal);
+			tui = new AltScreen(terminal);
 			tui.setLayoutRoot({
 				render: () => [imageLine, coveredLine, "", "after"],
 				invalidate: () => {},
@@ -1213,7 +1247,7 @@ describe("TuiAltScreen", () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 6);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			const label = new Text("left", 0, 0);
 			const image = new Image(
 				"A".repeat(8192),
@@ -1270,7 +1304,7 @@ describe("TuiAltScreen", () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 1);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			const imageId = 321;
 			const imageLine = encodeKitty("AAAA", { columns: 2, rows: 1, imageId, moveCursor: false });
 			registerKittyImageMetadata({ imageId, columns: 2, rows: 1, widthPx: 100, heightPx: 50 });
@@ -1314,7 +1348,7 @@ describe("TuiAltScreen", () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 1);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			const firstImageId = 500;
 			const imageLines = Array.from({ length: 18 }, (_, index) => {
 				const imageId = firstImageId + index;
@@ -1365,11 +1399,13 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
-	it("evicts offscreen Kitty images when decoded raster memory exceeds the cache quota", async () => {
+	it(
+		"evicts offscreen Kitty images when decoded raster memory exceeds the cache quota",
+		async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 1);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			const firstImageId = 600;
 			const imageLines = Array.from({ length: 4 }, (_, index) => {
 				const imageId = firstImageId + index;
@@ -1410,10 +1446,12 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
-	it("opens an OSC 8 hyperlink with specific or generic release codes, but not on drag", async () => {
+	it(
+		"opens an OSC 8 hyperlink with specific or generic release codes, but not on drag",
+		async () => {
 		const terminal = new RecordingTerminal(20, 3);
 		const openedUrls: string[] = [];
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			openUrl: (url) => openedUrls.push(url),
 		});
 		const url = "https://example.com/path?q=1";
@@ -1421,7 +1459,8 @@ describe("TuiAltScreen", () => {
 		const emojiUrl = "https://example.com/emoji";
 		tui.addChild(
 			new Text(
-				`${hyperlink("link", url)}\n\x1b]8;;${belUrl}\x07link\x1b]8;;\x07\n${hyperlink("🙂", emojiUrl)}`,
+				`${hyperlink("link", url)}\n\x1b]8;;${belUrl}\x07link\x1b]8;;\x07\n` +
+					`${hyperlink("🙂", emojiUrl)}`,
 				0,
 				0,
 			),
@@ -1453,9 +1492,11 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("selects visible text with the mouse and copies it with OSC 52 after a generic release", async () => {
+	it(
+		"selects visible text with the mouse and copies it with OSC 52 after a generic release",
+		async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("\x1b[1mal\x1b[0mpha\nbeta\ngamma\ndelta", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1493,7 +1534,7 @@ describe("TuiAltScreen", () => {
 	it("uses an injected copySelection handler instead of OSC 52 and reports success", async () => {
 		const terminal = new RecordingTerminal(20, 4);
 		const copied: string[] = [];
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copySelection: async (text) => {
 				copied.push(text);
 				return true;
@@ -1523,7 +1564,7 @@ describe("TuiAltScreen", () => {
 	it("leaves selections visible without copying when copyOnSelect is disabled", async () => {
 		const terminal = new RecordingTerminal(20, 4);
 		const copied: string[] = [];
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copyOnSelect: false,
 			copySelection: async (text) => {
 				copied.push(text);
@@ -1552,7 +1593,7 @@ describe("TuiAltScreen", () => {
 	it("copies an active selection programmatically", async () => {
 		const terminal = new RecordingTerminal(20, 4);
 		const copied: string[] = [];
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copySelection: async (text) => {
 				copied.push(text);
 				return true;
@@ -1585,7 +1626,7 @@ describe("TuiAltScreen", () => {
 
 	it("flashes an error when the injected copySelection handler fails", async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copySelection: async () => false,
 		});
 		tui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
@@ -1610,7 +1651,7 @@ describe("TuiAltScreen", () => {
 
 	it("flashes a specific error returned by the injected copySelection handler", async () => {
 		const terminal = new RecordingTerminal(80, 4);
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copyOnSelect: false,
 			copySelection: async () => "Clipboard unavailable: install wl-clipboard",
 		});
@@ -1643,7 +1684,7 @@ describe("TuiAltScreen", () => {
 
 	it("does not append whitespace to double-click word highlighting", async () => {
 		const terminal = new RecordingTerminal(20, 1);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("foo  bar", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1668,7 +1709,7 @@ describe("TuiAltScreen", () => {
 		]) {
 			const copied: string[] = [];
 			const terminal = new RecordingTerminal(80, 1);
-			const tui = new TuiAltScreen(terminal, undefined, undefined, {
+			const tui = new AltScreen(terminal, undefined, undefined, {
 				copySelection: async (text) => {
 					copied.push(text);
 					return true;
@@ -1692,7 +1733,7 @@ describe("TuiAltScreen", () => {
 
 	it("highlights a complete whitespace segment during a word drag", async () => {
 		const terminal = new RecordingTerminal(20, 1);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("foo  bar", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1716,7 +1757,7 @@ describe("TuiAltScreen", () => {
 			"lines on triple click",
 		async () => {
 			const terminal = new RecordingTerminal(20, 2);
-			const tui = new TuiAltScreen(terminal);
+			const tui = new AltScreen(terminal);
 			tui.addChild(new Text("zero alpha beta\ngamma delta", 0, 0));
 			tui.start();
 			await terminal.waitForRender();
@@ -1760,7 +1801,7 @@ describe("TuiAltScreen", () => {
 
 	it("does not repaint idle or zero-width selections on focus loss", async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1811,7 +1852,7 @@ describe("TuiAltScreen", () => {
 
 	it("clears an active visible selection on focus loss and ignores orphan events", async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1845,7 +1886,7 @@ describe("TuiAltScreen", () => {
 
 	it("retains a completed visible selection across focus changes", async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("alpha\nbeta\ngamma\ndelta", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1878,7 +1919,7 @@ describe("TuiAltScreen", () => {
 
 	it("stacks flash messages and collapses them as they expire", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("one\ntwo\nthree\nfour", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1901,7 +1942,7 @@ describe("TuiAltScreen", () => {
 
 	it("auto-scrolls and extends a drag selection held at the viewport edge", async () => {
 		const terminal = new RecordingTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(Array.from({ length: 10 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 		);
@@ -1911,11 +1952,11 @@ describe("TuiAltScreen", () => {
 
 		terminal.sendInput("\x1b[<0;1;3M");
 		terminal.sendInput("\x1b[<32;1;1M");
-		await new Promise((resolve) => setTimeout(resolve, 130));
+		await new Promise((resolve) => setTimeout(resolve, 180));
 		await terminal.waitForRender();
 
 		const selectionTop = tui.viewportTop;
-		assert.ok(selectionTop < 6, `expected auto-scroll above row 6, got ${selectionTop}`);
+		assert.strictEqual(selectionTop, 0, `expected fast auto-scroll to the top, got ${selectionTop}`);
 		terminal.sendInput("\x1b[<0;1;1m");
 		await terminal.waitForRender();
 
@@ -1941,7 +1982,7 @@ describe("TuiAltScreen", () => {
 
 	it("snaps mouse selection to CJK, emoji, and combining grapheme boundaries", async () => {
 		const terminal = new RecordingTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("A界🙂éZ", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -1985,7 +2026,7 @@ describe("TuiAltScreen", () => {
 
 	it("ignores horizontal trackpad wheel events", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(Array.from({ length: 8 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 		);
@@ -2006,7 +2047,7 @@ describe("TuiAltScreen", () => {
 
 	it("dispatches clicks to nested mouse regions without breaking drag selection", async () => {
 		const terminal = new RecordingTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		let clicks = 0;
 		tui.addChild(
 			new MouseRegion(new Text("clickable\nselectable", 0, 0), (event) => {
@@ -2038,7 +2079,7 @@ describe("TuiAltScreen", () => {
 
 	it("focuses and captures drag gestures for mouse-aware components", async () => {
 		const terminal = new VirtualTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const events: string[] = [];
 		const component = {
 			render: () => ["control"],
@@ -2066,7 +2107,7 @@ describe("TuiAltScreen", () => {
 
 	it("reports consecutive click counts to component-owned controls", async () => {
 		const terminal = new VirtualTerminal(20, 1);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const clickCounts: number[] = [];
 		tui.addChild({
 			render: () => ["control"],
@@ -2092,9 +2133,11 @@ describe("TuiAltScreen", () => {
 		tui.stop();
 	});
 
-	it("sends one leave when motion changes mouse regions or enters empty and overlay areas", async () => {
+	it(
+		"sends one leave when motion changes mouse regions or enters empty and overlay areas",
+		async () => {
 		const terminal = new VirtualTerminal(20, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const events: Array<{ region: string; type: string; x: number; y: number }> = [];
 		const makeRegion = (name: string) =>
 			new MouseRegion(new Text(name, 0, 0), (event) => {
@@ -2159,7 +2202,7 @@ describe("TuiAltScreen", () => {
 
 	it("clears hover over a scrollbar and redraws a handled leave by default", async () => {
 		const terminal = new VirtualTerminal(10, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const events: string[] = [];
 		let hovered = false;
 		const scrollView = new ScrollView(
@@ -2200,9 +2243,11 @@ describe("TuiAltScreen", () => {
 		}
 	});
 
-	it("defers hover leave until after a captured drag ends without synthesizing a click", async () => {
+	it(
+		"defers hover leave until after a captured drag ends without synthesizing a click",
+		async () => {
 		const terminal = new VirtualTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const events: string[] = [];
 		tui.addChild(
 			new MouseRegion(new Text("target", 0, 0), (event) => {
@@ -2229,7 +2274,7 @@ describe("TuiAltScreen", () => {
 
 	it("does not rerender for handled no-op pointer motion", async () => {
 		const terminal = new RecordingTerminal(20, 2);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		let renderCount = 0;
 		tui.addChild({
 			render: () => {
@@ -2256,7 +2301,7 @@ describe("TuiAltScreen", () => {
 
 	it("lets mouse-aware components consume wheel events before viewport scrolling", async () => {
 		const terminal = new VirtualTerminal(20, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		let wheelEvents = 0;
 		tui.addChild(
 			new MouseRegion(
@@ -2281,7 +2326,7 @@ describe("TuiAltScreen", () => {
 
 	it("restores keyboard state before leaving alt mode and prints the full document", async () => {
 		const terminal = new RecordingTerminal(20, 3);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("first\nsecond\nthird\nfourth\nfifth\nsixth", 0, 0));
 		tui.start();
 		await terminal.waitForRender();
@@ -2317,7 +2362,7 @@ describe("TuiAltScreen", () => {
 
 	it("gives wheel and viewport keys to a focused overlay", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 		);
@@ -2349,7 +2394,7 @@ describe("TuiAltScreen", () => {
 
 	it("keeps viewport scrolling when an overlay is not focused", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const editor = new InputOverlay();
 		tui.addChild(
 			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
@@ -2381,7 +2426,7 @@ describe("TuiAltScreen", () => {
 
 	it("keeps viewport scrolling while transcript search is focused", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		tui.addChild(
 			new Text(Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).join("\n"), 0, 0),
 		);
@@ -2391,13 +2436,13 @@ describe("TuiAltScreen", () => {
 
 		terminal.sendInput("\x1b[102;6u");
 		await terminal.waitForRender();
-		assert.ok(terminal.getViewport().some((line) => line.includes("↑ ↓")));
+		assert.ok(terminal.getViewport().some((line) => line.includes("Prev Next")));
 
 		terminal.sendInput("\x1b[5~");
 		terminal.sendInput("\x1b[<64;1;4M");
 		await terminal.waitForRender();
 		assert.ok(tui.viewportTop < topBefore);
-		assert.ok(terminal.getViewport().some((line) => line.includes("↑ ↓")));
+		assert.ok(terminal.getViewport().some((line) => line.includes("Prev Next")));
 		tui.stop();
 	});
 });

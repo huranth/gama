@@ -2,7 +2,6 @@ import assert from "node:assert";
 import { describe, it, mock } from "node:test";
 import { setKittyProtocolActive } from "../src/keys.ts";
 import {
-	normalizeAppleTerminalInput,
 	normalizeNativeShiftEnterInput,
 	ProcessTerminal,
 	resolveEscapeTimeoutMs,
@@ -54,25 +53,6 @@ describe("normalizeNativeShiftEnterInput", () => {
 	it("leaves non-Return input unchanged", () => {
 		assert.equal(normalizeNativeShiftEnterInput("\x1b[13;2u", true, true), "\x1b[13;2u");
 		assert.equal(normalizeNativeShiftEnterInput("a", true, true), "a");
-	});
-});
-
-describe("normalizeAppleTerminalInput", () => {
-	it("rewrites Apple Terminal Return to CSI-u Shift+Enter when Shift is pressed", () => {
-		assert.equal(normalizeAppleTerminalInput("\r", true, true), "\x1b[13;2u");
-	});
-
-	it("leaves Apple Terminal Return unchanged when Shift is not pressed", () => {
-		assert.equal(normalizeAppleTerminalInput("\r", true, false), "\r");
-	});
-
-	it("leaves non-Apple Terminal Return unchanged when Shift is pressed", () => {
-		assert.equal(normalizeAppleTerminalInput("\r", false, true), "\r");
-	});
-
-	it("leaves non-Return input unchanged", () => {
-		assert.equal(normalizeAppleTerminalInput("\x1b[13;2u", true, true), "\x1b[13;2u");
-		assert.equal(normalizeAppleTerminalInput("a", true, true), "a");
 	});
 });
 
@@ -281,6 +261,55 @@ describe("ProcessTerminal progress", () => {
 });
 
 describe("ProcessTerminal dimensions", () => {
+	function overrideDimensions(columns: number, rows: number): () => void {
+		const previousColumns = Object.getOwnPropertyDescriptor(process.stdout, "columns");
+		const previousRows = Object.getOwnPropertyDescriptor(process.stdout, "rows");
+
+		Object.defineProperty(process.stdout, "columns", { value: columns, configurable: true });
+		Object.defineProperty(process.stdout, "rows", { value: rows, configurable: true });
+
+		return () => {
+			if (previousColumns) {
+				Object.defineProperty(process.stdout, "columns", previousColumns);
+			} else {
+				Reflect.deleteProperty(process.stdout, "columns");
+			}
+			if (previousRows) {
+				Object.defineProperty(process.stdout, "rows", previousRows);
+			} else {
+				Reflect.deleteProperty(process.stdout, "rows");
+			}
+		};
+	}
+
+	it("ignores non-positive or non-finite reported and environment dimensions", () => {
+		const previousColumns = process.env.COLUMNS;
+		const previousLines = process.env.LINES;
+		const restoreDimensions = overrideDimensions(-5, Number.NaN);
+
+		try {
+			process.env.COLUMNS = "0";
+			process.env.LINES = "not-a-number";
+
+			const terminal = new ProcessTerminal();
+
+			assert.equal(terminal.columns, 80);
+			assert.equal(terminal.rows, 24);
+		} finally {
+			restoreDimensions();
+			if (previousColumns === undefined) {
+				delete process.env.COLUMNS;
+			} else {
+				process.env.COLUMNS = previousColumns;
+			}
+			if (previousLines === undefined) {
+				delete process.env.LINES;
+			} else {
+				process.env.LINES = previousLines;
+			}
+		}
+	});
+
 	it("falls back to COLUMNS and LINES before default dimensions", () => {
 		const previousColumnsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "columns");
 		const previousRowsDescriptor = Object.getOwnPropertyDescriptor(process.stdout, "rows");

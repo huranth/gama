@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
-import type { Component, TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class StaticLines implements Component {
@@ -51,14 +51,14 @@ async function renderAndFlush(tui: TUI, terminal: VirtualTerminal): Promise<void
 
 describe("TUI overlay compositing", () => {
 	it(
-		"should not leak styles when a trailing reset sits beyond the last " +
+		"nott leak styles when a trailing reset sits beyond the last " +
 			"visible column (no overlay)",
 		async () => {
 			const width = 20;
 			const baseLine = `\x1b[3m${"X".repeat(width)}\x1b[23m`;
 
 			const terminal = new VirtualTerminal(width, 6);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			tui.addChild(new StaticLines([baseLine, "INPUT"]));
 			tui.start();
 			await renderAndFlush(tui, terminal);
@@ -67,12 +67,12 @@ describe("TUI overlay compositing", () => {
 		},
 	);
 
-	it("should not leak styles when overlay slicing drops trailing SGR resets", async () => {
+	it("not leak styles when overlay slicing drops trailing SGR resets", async () => {
 		const width = 20;
 		const baseLine = `\x1b[3m${"X".repeat(width)}\x1b[23m`;
 
 		const terminal = new VirtualTerminal(width, 6);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.addChild(new StaticLines([baseLine, "INPUT"]));
 
 		tui.showOverlay(new StaticOverlay("OVR"), { row: 0, col: 5, width: 3 });

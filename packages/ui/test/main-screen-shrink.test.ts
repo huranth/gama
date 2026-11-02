@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import type { Component, TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class Lines implements Component {
@@ -21,7 +21,7 @@ class Lines implements Component {
 describe("TUI shrinking content", () => {
 	it("clears all rendered lines when content shrinks to zero", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const content = new Lines(["first", "second", "third"]);
 		tui.addChild(content);
 		tui.start();

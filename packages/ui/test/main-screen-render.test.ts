@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
-import { Image } from "../src/parts/image.ts";
+import { Image } from "../src/view/image.ts";
 import type { Terminal } from "../src/terminal.ts";
 import {
 	deleteKittyImage,
@@ -13,8 +13,8 @@ import {
 	setCapabilities,
 	setCellDimensions,
 } from "../src/terminal-image.ts";
-import type { Component, TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class TestComponent implements Component {
@@ -119,7 +119,7 @@ function getCellItalic(terminal: VirtualTerminal, row: number, col: number): num
 describe("TUI render scheduling", () => {
 	it("renders keyboard input without waiting for a throttled frame", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new InputComponent();
 		component.lines = ["initial"];
 		tui.addChild(component);
@@ -147,7 +147,7 @@ describe("TUI debug logging", () => {
 		try {
 			await withEnv({ GAMA_TUI_DEBUG_REDRAW: "1" }, async () => {
 				const terminal = new VirtualTerminal(40, 10);
-				const tui: TUI = new TuiMainScreen(terminal, undefined, logDir);
+				const tui: TUI = new MainScreen(terminal, undefined, logDir);
 				const component = new TestComponent();
 				tui.addChild(component);
 				component.lines = ["test"];
@@ -169,11 +169,13 @@ describe("TUI debug logging", () => {
 describe("TUI bounded render output", () => {
 	it("splits a large full render without changing its output", () => {
 		const terminal = new BoundedWriteTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new MainScreen(terminal);
 		const component = new TestComponent();
 		const kittyLine = `\x1b_Ga=T,f=100;${"A".repeat(1_200_000)}\x1b\\`;
 		component.lines = [kittyLine, kittyLine];
 		tui.addChild(component);
+		tui.start();
+		terminal.writes.length = 0;
 
 		tui.renderNow();
 
@@ -187,13 +189,15 @@ describe("TUI bounded render output", () => {
 			`\x1b[?2026h${kittyLine}\r\n${kittyLine}\x1b[?2026l`,
 			"chunking must preserve the synchronized render output",
 		);
+		tui.stop();
 	});
 
 	it("splits large differential updates without a full redraw", () => {
 		const terminal = new BoundedWriteTerminal();
-		const tui = new TuiMainScreen(terminal);
+		const tui = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
+		tui.start();
 		component.lines = ["before"];
 		tui.renderNow();
 		terminal.writes.length = 0;
@@ -211,6 +215,7 @@ describe("TUI bounded render output", () => {
 			!output.includes("\x1b[2J"),
 			"the update should stay on the differential render path",
 		);
+		tui.stop();
 	});
 });
 
@@ -228,13 +233,15 @@ function overrideEnv(names: readonly string[], value: string): () => void {
 }
 
 describe("TUI crash dump without configured log directory", () => {
-	it("writes the crash dump to the OS temp directory instead of a home-directory default", async () => {
+	it(
+		"writes the crash dump to the OS temp directory instead of a home-directory default",
+		async () => {
 		const crashDir = mkdtempSync(join(tmpdir(), "gama-tui-crash-"));
 		const crashLogPath = join(crashDir, "gama-tui-crash.log");
 		const restoreTmpdirEnv = overrideEnv(["TMPDIR", "TEMP", "TMP"], crashDir);
 		try {
 			const terminal = new VirtualTerminal(40, 10);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 			component.lines = ["ok"];
@@ -261,13 +268,37 @@ describe("TUI crash dump without configured log directory", () => {
 	});
 });
 
+describe("TUI full render width guard", () => {
+	it("rejects an over-width line before the first full render writes anything", () => {
+		const crashDir = mkdtempSync(join(tmpdir(), "gama-tui-crash-"));
+		const crashLogPath = join(crashDir, "gama-tui-crash.log");
+		const restoreTmpdirEnv = overrideEnv(["TMPDIR", "TEMP", "TMP"], crashDir);
+		try {
+			const terminal = new BoundedWriteTerminal();
+			const tui = new MainScreen(terminal);
+			const component = new TestComponent();
+			tui.addChild(component);
+			component.lines = ["x".repeat(100)];
+			tui.start();
+			terminal.writes.length = 0;
+
+			assert.throws(() => tui.renderNow(), /exceeds terminal width \(100 > 80\)/);
+			assert.deepStrictEqual(terminal.writes, [], "no partial screen should be written");
+			assert.match(readFileSync(crashLogPath, "utf-8"), /Line 0 visible width: 100/);
+		} finally {
+			restoreTmpdirEnv();
+			rmSync(crashDir, { recursive: true, force: true });
+		}
+	});
+});
+
 describe("TUI Kitty image cleanup", () => {
 	it("clears reserved Kitty image rows before drawing appended image placements", async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
 			const terminal = new LoggingVirtualTerminal(40, 10);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -311,7 +342,7 @@ describe("TUI Kitty image cleanup", () => {
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
 			const terminal = new LoggingVirtualTerminal(40, 2);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -353,7 +384,7 @@ describe("TUI Kitty image cleanup", () => {
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
 			const terminal = new LoggingVirtualTerminal(40, 5);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -402,7 +433,7 @@ describe("TUI Kitty image cleanup", () => {
 		setCellDimensions({ widthPx: 10, heightPx: 10 });
 		try {
 			const terminal = new LoggingVirtualTerminal(40, 5);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -445,7 +476,7 @@ describe("TUI Kitty image cleanup", () => {
 
 	it("deletes changed image ids before drawing moved placements", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -475,7 +506,7 @@ describe("TUI Kitty image cleanup", () => {
 
 	it("redraws image lines when an earlier reserved image row changes", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -508,7 +539,7 @@ describe("TUI Kitty image cleanup", () => {
 
 	it("deletes previously rendered image ids during full redraws", async () => {
 		const terminal = new LoggingVirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -541,7 +572,7 @@ describe("TUI resize handling", () => {
 	it("triggers full re-render when terminal height changes", async () => {
 		await withEnv({ TERMUX_VERSION: undefined }, async () => {
 			const terminal = new VirtualTerminal(40, 10);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -566,7 +597,7 @@ describe("TUI resize handling", () => {
 	it("skips full re-render on height changes in Termux", async () => {
 		await withEnv({ TERMUX_VERSION: "1" }, async () => {
 			const terminal = new LoggingVirtualTerminal(40, 10);
-			const tui: TUI = new TuiMainScreen(terminal);
+			const tui: TUI = new MainScreen(terminal);
 			const component = new TestComponent();
 			tui.addChild(component);
 
@@ -607,7 +638,7 @@ describe("TUI resize handling", () => {
 
 	it("triggers full re-render when terminal width changes", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -629,7 +660,7 @@ describe("TUI resize handling", () => {
 describe("TUI content shrinkage", () => {
 	it("clears empty rows when content shrinks significantly", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.setClearOnShrink(true);
 		const component = new TestComponent();
 		tui.addChild(component);
@@ -657,7 +688,7 @@ describe("TUI content shrinkage", () => {
 
 	it("handles shrink to single line", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.setClearOnShrink(true);
 		const component = new TestComponent();
 		tui.addChild(component);
@@ -679,7 +710,7 @@ describe("TUI content shrinkage", () => {
 
 	it("handles shrink to empty", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.setClearOnShrink(true);
 		const component = new TestComponent();
 		tui.addChild(component);
@@ -703,7 +734,7 @@ describe("TUI content shrinkage", () => {
 describe("TUI differential rendering", () => {
 	it("tracks cursor correctly when content shrinks with unchanged remaining lines", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -730,7 +761,7 @@ describe("TUI differential rendering", () => {
 
 	it("renders correctly when only a middle line changes (spinner case)", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -755,7 +786,7 @@ describe("TUI differential rendering", () => {
 
 	it("resets styles after each rendered line", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -769,7 +800,7 @@ describe("TUI differential rendering", () => {
 
 	it("renders correctly when first line changes but rest stays same", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -792,7 +823,7 @@ describe("TUI differential rendering", () => {
 
 	it("renders correctly when last line changes but rest stays same", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -815,7 +846,7 @@ describe("TUI differential rendering", () => {
 
 	it("renders correctly when multiple non-adjacent lines change", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -839,7 +870,7 @@ describe("TUI differential rendering", () => {
 
 	it("handles transition from content to empty and back to content", async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -867,7 +898,7 @@ describe("TUI differential rendering", () => {
 
 	it("full re-renders when deleted lines move the viewport upward", async () => {
 		const terminal = new VirtualTerminal(20, 5);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -895,7 +926,7 @@ describe("TUI differential rendering", () => {
 
 	it("appends after a shrink without another full redraw once the viewport is reset", async () => {
 		const terminal = new VirtualTerminal(20, 5);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const component = new TestComponent();
 		tui.addChild(component);
 
@@ -929,9 +960,11 @@ describe("TUI differential rendering", () => {
 		tui.stop();
 	});
 
-	it("clears stale content when maxLinesRendered was inflated by a transient component", async () => {
+	it(
+		"clears stale content when maxLinesRendered was inflated by a transient component",
+		async () => {
 		const terminal = new VirtualTerminal(40, 10);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		const chat = new TestComponent();
 		const editor = new TestComponent();
 		tui.addChild(chat);

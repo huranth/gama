@@ -1,8 +1,9 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
-import type { Component, TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
+import { Text } from "../src/view/text.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 function struckColumns(terminal: VirtualTerminal, row: number): number[] {
@@ -29,6 +30,18 @@ function underlinedColumns(terminal: VirtualTerminal, row: number): number[] {
 	return columns;
 }
 
+function inverseColumns(terminal: VirtualTerminal, row: number): number[] {
+	const xterm = (terminal as unknown as { xterm: XtermTerminalType }).xterm;
+	const buffer = xterm.buffer.active;
+	const line = buffer.getLine(buffer.viewportY + row);
+	assert.ok(line, `Missing buffer line at row ${row}`);
+	const columns: number[] = [];
+	for (let column = 0; column < terminal.columns; column++) {
+		if (line.getCell(column)?.isInverse()) columns.push(column);
+	}
+	return columns;
+}
+
 async function renderAndFlush(tui: TUI, terminal: VirtualTerminal): Promise<void> {
 	tui.requestRender(true);
 	await new Promise<void>((resolve) => process.nextTick(resolve));
@@ -43,7 +56,7 @@ describe("TUI line padding", () => {
 		const line = `${bg}\x1b[9m${text}${" ".repeat(width - text.length)}\x1b[49m`;
 
 		const terminal = new VirtualTerminal(width, 6);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.addChild(new StaticLines([line, "next row"]));
 		tui.start();
 		await renderAndFlush(tui, terminal);
@@ -56,13 +69,27 @@ describe("TUI line padding", () => {
 		tui.stop();
 	});
 
+	it("keeps the cursor cell after typed text", async () => {
+		const width = 20;
+		const line = `> a\x1b[7m \x1b[27m${" ".repeat(width - 5)}`;
+
+		const terminal = new VirtualTerminal(width, 6);
+		const tui: TUI = new MainScreen(terminal);
+		tui.addChild(new StaticLines([line]));
+		tui.start();
+		await renderAndFlush(tui, terminal);
+
+		assert.deepStrictEqual(inverseColumns(terminal, 0), [3]);
+		tui.stop();
+	});
+
 	it("keeps an underline out of the padding after a clipped link", async () => {
 		const width = 30;
 		const text = "/tmp/some/file.ts";
 		const line = `\x1b[4m${text}${" ".repeat(width - text.length)}\x1b[24m`;
 
 		const terminal = new VirtualTerminal(width, 6);
-		const tui: TUI = new TuiMainScreen(terminal);
+		const tui: TUI = new MainScreen(terminal);
 		tui.addChild(new StaticLines([line]));
 		tui.start();
 		await renderAndFlush(tui, terminal);
@@ -70,6 +97,25 @@ describe("TUI line padding", () => {
 		assert.deepStrictEqual(
 			underlinedColumns(terminal, 0),
 			Array.from({ length: text.length }, (_, i) => i),
+		);
+		tui.stop();
+	});
+
+	it("keeps an underline out of the fill when a line ends styled", async () => {
+		const width = 30;
+		const text = "styled tail";
+		const line = `\x1b[4m${text}`;
+
+		const terminal = new VirtualTerminal(width, 6);
+		const tui: TUI = new MainScreen(terminal);
+		tui.addChild(new Text(line, 0, 0));
+		tui.start();
+		await renderAndFlush(tui, terminal);
+
+		const columns = underlinedColumns(terminal, 0);
+		assert.ok(
+			columns.every((column) => column < text.length),
+			`underline reached into padding: ${columns.join(",")}`,
 		);
 		tui.stop();
 	});

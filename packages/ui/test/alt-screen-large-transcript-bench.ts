@@ -1,11 +1,11 @@
 import { performance } from "node:perf_hooks";
-import { Markdown, type MarkdownTheme } from "../src/parts/markdown.ts";
-import { ScrollView } from "../src/parts/scroll-view.ts";
-import { Text } from "../src/parts/text.ts";
-import { VStack } from "../src/parts/v-stack.ts";
+import { Markdown, type MarkdownTheme } from "../src/view/markdown.ts";
+import { ScrollView } from "../src/view/scroll-view.ts";
+import { Text } from "../src/view/text.ts";
+import { VStack } from "../src/view/v-stack.ts";
 import type { Terminal } from "../src/terminal.ts";
-import { Container } from "../src/tui.ts";
-import { TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { Container } from "../src/screen.ts";
+import { AltScreen } from "../src/alt-screen.ts";
 
 const COLUMNS = 80;
 const ROWS = 50;
@@ -119,7 +119,7 @@ const root = new VStack([
 	{ component: dock, basis: "auto", minSize: 1 },
 ]);
 const terminal = new NullTerminal();
-const tui = new TuiAltScreen(terminal, false, "/tmp/gama-tui-bench");
+const tui = new AltScreen(terminal, false, "/tmp/gama-tui-bench");
 tui.setLayoutRoot(root);
 tui.start();
 tui.renderNow();

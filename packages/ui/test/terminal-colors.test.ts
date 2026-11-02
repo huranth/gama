@@ -6,7 +6,7 @@ import {
 	type Terminal,
 	type TerminalColors,
 	type TUI,
-	TuiMainScreen,
+	MainScreen,
 } from "../src/index.ts";
 import { parseOscColorResponse } from "../src/terminal-colors.ts";
 
@@ -134,7 +134,7 @@ const WHITE = { r: 255, g: 255, b: 255 };
 
 function setup(): { terminal: TestTerminal; tui: TUI; component: InputRecorder } {
 	const terminal = new TestTerminal();
-	const tui: TUI = new TuiMainScreen(terminal);
+	const tui: TUI = new MainScreen(terminal);
 	const component = new InputRecorder();
 	tui.addChild(component);
 	tui.setFocus(component);
@@ -218,6 +218,38 @@ describe("TUI.queryTerminalColors", () => {
 
 			terminal.sendInput("\x1b]11;#ffffff\x07");
 			assert.deepStrictEqual(component.inputs, ["\x1b]11;#ffffff\x07"]);
+		} finally {
+			tui.stop();
+		}
+	});
+
+	it("settles a timed-out query's late handler when another query starts", async () => {
+		const { terminal, tui, component } = setup();
+		try {
+			const late: TerminalColors[] = [];
+			const first = tui.queryTerminalColors({
+				timeoutMs: 1,
+				onLateReply: (colors) => late.push(colors),
+			});
+			await wait(5);
+			await first;
+
+			const second = tui.queryTerminalColors({ timeoutMs: 1000 });
+			assert.deepStrictEqual(late, [
+				{ foreground: undefined, background: undefined, palette: undefined },
+			]);
+
+			for (const reply of ["\x1b]10;#ffffff\x07", "\x1b]11;#000000\x07", ...PALETTE_REPLIES]) {
+				terminal.sendInput(reply);
+			}
+
+			assert.deepStrictEqual(await second, {
+				foreground: WHITE,
+				background: BLACK,
+				palette: Array.from({ length: 16 }, () => BLACK),
+			});
+			assert.strictEqual(late.length, 1);
+			assert.deepStrictEqual(component.inputs, []);
 		} finally {
 			tui.stop();
 		}
