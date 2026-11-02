@@ -219,20 +219,20 @@ function normalizeKeys(keys: KeyId | KeyId[] | undefined): KeyId[] {
 	return result;
 }
 
-let globalKeybindings: KeybindingsManager | null = null;
+let globalKeybindings: Keymap | null = null;
 
-export function setKeybindings(keybindings: KeybindingsManager): void {
+export function setKeybindings(keybindings: Keymap): void {
 	globalKeybindings = keybindings;
 }
 
-export function getKeybindings(): KeybindingsManager {
+export function getKeybindings(): Keymap {
 	if (!globalKeybindings) {
-		globalKeybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		globalKeybindings = new Keymap(TUI_KEYBINDINGS);
 	}
 	return globalKeybindings;
 }
 
-export class KeybindingsManager {
+export class Keymap {
 	private definitions: KeybindingDefinitions;
 	private userBindings: KeybindingsConfig;
 	private keysById = new Map<Keybinding, KeyId[]>();

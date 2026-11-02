@@ -11,10 +11,20 @@ export type StdinBufferEventMap = {
 };
 
 const ESC = "\x1b";
+
 const DEFAULT_SEQUENCE_TIMEOUT_MS = 50;
+
 const DEFAULT_ESCAPE_TIMEOUT_MS = 10;
+
 const BRACKETED_PASTE_START = "\x1b[200~";
+
 const BRACKETED_PASTE_END = "\x1b[201~";
+
+const PASTE_TIMEOUT_MS = 1000;
+
+const MAX_PASTE_CHARS = 1_000_000;
+
+const PASTE_END_TAIL = BRACKETED_PASTE_END.length - 1;
 
 function parseUnmodifiedKittyPrintableCodepoint(sequence: string): number | undefined {
 	const match = sequence.match(/^\x1b\[(\d+)(?::\d*)?(?::\d+)?u$/);
@@ -84,11 +94,7 @@ function isCompleteCsiSequence(data: string): "complete" | "incomplete" {
 	return "incomplete";
 }
 
-function isCompleteSequence(data: string): "complete" | "incomplete" | "not-escape" {
-	if (!data.startsWith(ESC)) {
-		return "not-escape";
-	}
-
+function isCompleteSequence(data: string): "complete" | "incomplete" {
 	if (data.length === 1) {
 		return "incomplete";
 	}
@@ -133,8 +139,9 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 		const remaining = buffer.slice(pos);
 
 		if (!remaining.startsWith(ESC)) {
-			sequences.push(remaining[0]!);
-			pos++;
+			const char = String.fromCodePoint(remaining.codePointAt(0)!);
+			sequences.push(char);
+			pos += char.length;
 			continue;
 		}
 
@@ -156,14 +163,7 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
 				break;
 			}
 
-			if (status === "incomplete") {
-				seqEnd++;
-				continue;
-			}
-
-			sequences.push(candidate);
-			pos += seqEnd;
-			break;
+			seqEnd++;
 		}
 
 		if (seqEnd > remaining.length) {
@@ -180,7 +180,9 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 	private readonly timeoutMs: number;
 	private readonly escapeTimeoutMs: number;
 	private pasteMode: boolean = false;
+	private pasteDropping: boolean = false;
 	private pasteBuffer: string = "";
+	private pasteTimer: ReturnType<typeof setTimeout> | null = null;
 	private pendingKittyPrintableCodepoint: number | undefined;
 
 	constructor(options: StdinBufferOptions = {}) {
@@ -195,8 +197,10 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 
 	clear(): void {
 		this.clearFlushTimer();
+		this.clearPasteTimer();
 		this.buffer = "";
 		this.pasteMode = false;
+		this.pasteDropping = false;
 		this.pasteBuffer = "";
 		this.pendingKittyPrintableCodepoint = undefined;
 	}
@@ -247,18 +251,102 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		this.emit("data", sequence);
 	}
 
-	private finishPaste(): void {
+	private trimPaste(): { content: string; remaining: string; ended: boolean } {
 		const endIndex = this.pasteBuffer.indexOf(BRACKETED_PASTE_END);
-		if (endIndex === -1) return;
+		if (endIndex === -1) {
+			return { content: this.pasteBuffer, remaining: "", ended: false };
+		}
+		return {
+			content: this.pasteBuffer.slice(0, endIndex),
+			remaining: this.pasteBuffer.slice(endIndex + BRACKETED_PASTE_END.length),
+			ended: true,
+		};
+	}
 
-		const pastedContent = this.pasteBuffer.slice(0, endIndex);
-		const remaining = this.pasteBuffer.slice(endIndex + BRACKETED_PASTE_END.length);
+	private finishPaste(): void {
+		const { content, remaining, ended } = this.trimPaste();
+		if (!ended) return;
 
+		this.clearPasteTimer();
 		this.pasteMode = false;
 		this.pasteBuffer = "";
 		this.pendingKittyPrintableCodepoint = undefined;
 
-		this.emit("paste", pastedContent);
+		this.emit("paste", content);
+
+		if (remaining.length > 0) {
+			this.process(remaining);
+		}
+	}
+
+	private capPaste(): void {
+		const { content, ended } = this.trimPaste();
+
+		if (ended) {
+			this.finishPaste();
+			return;
+		}
+
+		this.clearPasteTimer();
+		this.pasteBuffer = "";
+		this.pendingKittyPrintableCodepoint = undefined;
+
+		if (content.length > 0) this.emit("paste", content);
+
+		this.pasteDropping = true;
+	}
+
+	private handlePasteChunk(): void {
+		if (this.trimPaste().content.length > MAX_PASTE_CHARS) {
+			this.capPaste();
+			return;
+		}
+
+		this.finishPaste();
+	}
+
+	private dropPasteTail(): void {
+		const { remaining, ended } = this.trimPaste();
+
+		if (!ended) {
+			this.pasteBuffer = this.pasteBuffer.slice(-PASTE_END_TAIL);
+			return;
+		}
+
+		this.clearPasteTimer();
+		this.pasteMode = false;
+		this.pasteDropping = false;
+		this.pasteBuffer = "";
+		this.pendingKittyPrintableCodepoint = undefined;
+
+		if (remaining.length > 0) this.process(remaining);
+	}
+
+	private clearPasteTimer(): void {
+		if (this.pasteTimer === null) return;
+		clearTimeout(this.pasteTimer);
+		this.pasteTimer = null;
+	}
+
+	private schedulePasteFlush(): void {
+		this.clearPasteTimer();
+		this.pasteTimer = setTimeout(() => this.flushPaste(), PASTE_TIMEOUT_MS);
+		this.pasteTimer.unref?.();
+	}
+
+	private flushPaste(): void {
+		if (!this.pasteMode) return;
+
+		const dropping = this.pasteDropping;
+		const { content, remaining } = this.trimPaste();
+
+		this.pasteMode = false;
+		this.pasteDropping = false;
+		this.pasteBuffer = "";
+		this.clearPasteTimer();
+		this.pendingKittyPrintableCodepoint = undefined;
+
+		if (!dropping && content.length > 0) this.emit("paste", content);
 
 		if (remaining.length > 0) {
 			this.process(remaining);
@@ -300,7 +388,14 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 		if (this.pasteMode) {
 			this.pasteBuffer += this.buffer;
 			this.buffer = "";
-			this.finishPaste();
+
+			if (this.pasteDropping) {
+				this.dropPasteTail();
+			} else {
+				this.handlePasteChunk();
+			}
+
+			if (this.pasteMode) this.schedulePasteFlush();
 			return;
 		}
 
@@ -312,6 +407,9 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 				for (const sequence of result.sequences) {
 					this.emitDataSequence(sequence);
 				}
+				if (result.remainder) {
+					this.emitDataSequence(result.remainder);
+				}
 			}
 
 			this.pendingKittyPrintableCodepoint = undefined;
@@ -319,7 +417,8 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
 			this.pasteMode = true;
 			this.pasteBuffer = this.buffer;
 			this.buffer = "";
-			this.finishPaste();
+			this.handlePasteChunk();
+			if (this.pasteMode) this.schedulePasteFlush();
 			return;
 		}
 

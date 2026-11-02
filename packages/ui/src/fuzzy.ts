@@ -1,11 +1,19 @@
 const WORD_BOUNDARY_REGEX = /[\s\-_./:]/;
+
 const CONSECUTIVE_PENALTY = 5;
+
 const GAP_PENALTY = 2;
+
 const BOUNDARY_BONUS = 10;
+
 const POSITION_WEIGHT = 0.1;
+
 const EXACT_BONUS = 100;
+
 const SWAP_BONUS = 5;
+
 const LETTERS_THEN_DIGITS = /^(?<letters>[a-z]+)(?<digits>[0-9]+)$/;
+
 const DIGITS_THEN_LETTERS = /^(?<digits>[0-9]+)(?<letters>[a-z]+)$/;
 
 export interface FuzzyMatch {

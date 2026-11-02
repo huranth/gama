@@ -52,10 +52,12 @@ export class WheelScrollAccelerator {
 
 		if (gap < BURST_GAP_MS) return 1;
 
-		this.averageGap = this.averageGap === undefined ? gap : (this.averageGap + gap) / 2;
+		const previousGap = this.averageGap;
+		this.averageGap = previousGap === undefined ? gap : (previousGap + gap) / 2;
 
 		const speed = REFERENCE_GAP_MS / this.averageGap;
-		const lines = Math.min(MAX_AUTO_LINES, Math.max(1, speed)) + this.carry;
+		const speedLines = Math.min(MAX_AUTO_LINES, Math.max(1, speed));
+		const lines = speedLines + this.carry;
 		const whole = Math.floor(lines);
 
 		this.carry = lines - whole;

@@ -2,11 +2,17 @@ import { getNativePlatformHelper, type ModifierKey } from "./native-platform.ts"
 
 export type { ModifierKey } from "./native-platform.ts";
 
+// Probe modifier
 export function isNativeModifierPressed(key: ModifierKey): boolean {
 	const helper = getNativePlatformHelper();
-	if (!helper?.isModifierPressed) return false;
+	const probe = helper?.isModifierPressed;
+	return probe ? pressed(probe, key) : false;
+}
+
+// Safe probe
+function pressed(probe: (key: ModifierKey) => boolean, key: ModifierKey): boolean {
 	try {
-		return helper.isModifierPressed(key) === true;
+		return probe(key) === true;
 	} catch {
 		return false;
 	}

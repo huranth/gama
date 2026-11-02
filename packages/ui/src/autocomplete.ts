@@ -1,9 +1,56 @@
 import { spawn } from "child_process";
 import { readdirSync, statSync } from "fs";
 import { homedir } from "os";
-import { basename, dirname, join } from "path";
+import { basename, dirname, isAbsolute, join } from "path";
 import { fuzzyFilter } from "./fuzzy.ts";
 import { autocompleteBoundaryRegex, autocompleteSeparatorRegex } from "./utils.ts";
+
+const MAX_FILE_SUGGESTIONS = 100;
+
+export interface AutocompleteItem {
+	value: string;
+	label: string;
+	description?: string;
+}
+
+type Awaitable<T> = T | Promise<T>;
+
+export interface SlashCommand {
+	name: string;
+	description?: string;
+	argumentHint?: string;
+	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
+}
+
+export interface AutocompleteSuggestions {
+	items: AutocompleteItem[];
+	prefix: string;
+}
+
+export interface AutocompleteProvider {
+	triggerCharacters?: string[];
+
+	getSuggestions(
+		lines: string[],
+		cursorLine: number,
+		cursorCol: number,
+		options: { signal: AbortSignal; force?: boolean },
+	): Promise<AutocompleteSuggestions | null>;
+
+	applyCompletion(
+		lines: string[],
+		cursorLine: number,
+		cursorCol: number,
+		item: AutocompleteItem,
+		prefix: string,
+	): {
+		lines: string[];
+		cursorLine: number;
+		cursorCol: number;
+	};
+
+	shouldTriggerFileCompletion?(lines: string[], cursorLine: number, cursorCol: number): boolean;
+}
 
 const PATH_DELIMITERS = new Set([" ", "\t", '"', "'", "="]);
 
@@ -13,6 +60,11 @@ const PATH_WRAPPERS: Record<string, string> = { "(": ")", "[": "]", "{": "}", "<
 
 function toDisplayPath(value: string): string {
 	return value.replace(/\\/g, "/");
+}
+
+function isAbsolutePath(value: string): boolean {
+	const normalized = toDisplayPath(value);
+	return isAbsolute(normalized) || /^[A-Za-z]:\//.test(normalized) || normalized.startsWith("//");
 }
 
 function escapeRegex(value: string): string {
@@ -252,51 +304,6 @@ async function walkDirectoryWithFd(
 	});
 }
 
-export interface AutocompleteItem {
-	value: string;
-	label: string;
-	description?: string;
-}
-
-type Awaitable<T> = T | Promise<T>;
-
-export interface SlashCommand {
-	name: string;
-	description?: string;
-	argumentHint?: string;
-	getArgumentCompletions?(argumentPrefix: string): Awaitable<AutocompleteItem[] | null>;
-}
-
-export interface AutocompleteSuggestions {
-	items: AutocompleteItem[];
-	prefix: string;
-}
-
-export interface AutocompleteProvider {
-	triggerCharacters?: string[];
-
-	getSuggestions(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-		options: { signal: AbortSignal; force?: boolean },
-	): Promise<AutocompleteSuggestions | null>;
-
-	applyCompletion(
-		lines: string[],
-		cursorLine: number,
-		cursorCol: number,
-		item: AutocompleteItem,
-		prefix: string,
-	): {
-		lines: string[];
-		cursorLine: number;
-		cursorCol: number;
-	};
-
-	shouldTriggerFileCompletion?(lines: string[], cursorLine: number, cursorCol: number): boolean;
-}
-
 export class CombinedAutocompleteProvider implements AutocompleteProvider {
 	private commands: (SlashCommand | AutocompleteItem)[];
 	private basePath: string;
@@ -347,7 +354,8 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 					const hint =
 						"argumentHint" in cmd && cmd.argumentHint ? cmd.argumentHint : undefined;
 					const desc = cmd.description ?? "";
-					const fullDesc = hint ? (desc ? `${hint}, ${desc}` : hint) : desc;
+					let fullDesc = desc;
+					if (hint) fullDesc = desc ? `${hint}, ${desc}` : hint;
 					return {
 						name,
 						label: name,
@@ -575,7 +583,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 		let baseDir: string;
 		if (displayBase.startsWith("~/")) {
 			baseDir = this.expandHomePath(displayBase);
-		} else if (displayBase.startsWith("/")) {
+		} else if (isAbsolutePath(displayBase)) {
 			baseDir = displayBase;
 		} else {
 			baseDir = join(this.basePath, displayBase);
@@ -622,14 +630,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				(isAtPrefix && rawPrefix === "");
 
 			if (isRootPrefix) {
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePath(expandedPrefix)) {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
 				}
 				searchPrefix = "";
 			} else if (rawPrefix.endsWith("/")) {
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePath(expandedPrefix)) {
 					searchDir = expandedPrefix;
 				} else {
 					searchDir = join(this.basePath, expandedPrefix);
@@ -638,7 +646,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			} else {
 				const dir = dirname(expandedPrefix);
 				const file = basename(expandedPrefix);
-				if (rawPrefix.startsWith("~") || expandedPrefix.startsWith("/")) {
+				if (rawPrefix.startsWith("~") || isAbsolutePath(expandedPrefix)) {
 					searchDir = dir;
 				} else {
 					searchDir = join(this.basePath, dir);
@@ -749,7 +757,14 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 			return [];
 		}
 
-		return await walkDirectoryWithFd(baseDir, this.fdPath, query, 100, signal, 1);
+		return await walkDirectoryWithFd(
+			baseDir,
+			this.fdPath,
+			query,
+			MAX_FILE_SUGGESTIONS,
+			signal,
+			1,
+		);
 	}
 
 	private async getFuzzyFileSuggestions(
@@ -773,7 +788,7 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				fdBaseDir,
 				this.fdPath,
 				fdQuery,
-				100,
+				MAX_FILE_SUGGESTIONS,
 				options.signal,
 			);
 			const seenPaths = new Set(baseDirEntries.map((entry) => entry.path));
