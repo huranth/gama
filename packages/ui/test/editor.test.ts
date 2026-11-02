@@ -4,16 +4,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import { stripVTControlCharacters } from "node:util";
-import { type AutocompleteProvider, CombinedAutocompleteProvider } from "../src/autocomplete.ts";
-import { Editor, wordWrapLine } from "../src/parts/editor.ts";
-import type { TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import {
+	type AutocompleteProvider,
+	type AutocompleteSuggestions,
+	CombinedAutocompleteProvider,
+} from "../src/autocomplete.ts";
+import { Editor, wordWrapLine } from "../src/view/editor.ts";
+import type { TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { visibleWidth } from "../src/utils.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 function createTestTUI(cols = 80, rows = 24): TUI {
-	return new TuiMainScreen(new VirtualTerminal(cols, rows));
+	return new MainScreen(new VirtualTerminal(cols, rows));
 }
 
 function applyCompletion(
@@ -660,15 +664,17 @@ describe("Editor component", () => {
 			const lines = editor.render(width);
 			assert.strictEqual(
 				stripVTControlCharacters(lines[0]!),
-				`${"─".repeat(15)} ↑ 9 more ${"─".repeat(15)}`,
+				`${"─".repeat(13)} above 9 more ${"─".repeat(13)}`,
 			);
 			assert.strictEqual(
 				stripVTControlCharacters(lines.at(-1)!),
-				`${"─".repeat(15)} ↓ 4 more ${"─".repeat(15)}`,
+				`${"─".repeat(13)} below 4 more ${"─".repeat(13)}`,
 			);
 		});
 
-		it("keeps truncated scroll indicators within width and preserves their color (issue #6962)", () => {
+		it(
+			"keeps truncated scroll indicators within width and preserves their color (issue #6962)",
+			() => {
 			const width = 10;
 			const borderColor = (text: string) => `\x1b[35m${text}\x1b[39m`;
 			const editor = new Editor(createTestTUI(width), { ...defaultEditorTheme, borderColor });
@@ -683,8 +689,8 @@ describe("Editor component", () => {
 			const topBorder = lines[0]!;
 			const bottomBorder = lines.at(-1)!;
 
-			assert.match(stripVTControlCharacters(topBorder), /^─── ↑/);
-			assert.match(stripVTControlCharacters(bottomBorder), /^─── ↓/);
+			assert.match(stripVTControlCharacters(topBorder), /^─── up/);
+			assert.match(stripVTControlCharacters(bottomBorder), /^─── dow/);
 			assert.strictEqual(topBorder, borderColor(stripVTControlCharacters(topBorder)));
 			assert.strictEqual(bottomBorder, borderColor(stripVTControlCharacters(bottomBorder)));
 			for (const line of lines) {
@@ -2143,6 +2149,40 @@ describe("Editor component", () => {
 			assert.deepStrictEqual(requests, [{ text, force: true }]);
 		});
 
+		it("does not let a stuck suggestion run block later ones", async (t) => {
+			t.mock.timers.enable({ apis: ["setTimeout"] });
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			let calls = 0;
+			editor.setAutocompleteProvider({
+				getSuggestions: async () => {
+					calls++;
+					if (calls === 1) {
+						return await new Promise<AutocompleteSuggestions | null>(() => {});
+					}
+					return {
+						prefix: "@a",
+						items: [{ value: "@a.txt", label: "a.txt" }],
+					};
+				},
+				applyCompletion,
+			});
+
+			editor.handleInput("@");
+			t.mock.timers.tick(20);
+			await flushAutocomplete();
+			assert.strictEqual(calls, 1);
+
+			editor.handleInput("a");
+			t.mock.timers.tick(20);
+			await flushAutocomplete();
+			assert.strictEqual(calls, 1);
+
+			t.mock.timers.tick(2000);
+			await flushAutocomplete();
+			assert.strictEqual(calls, 2);
+			assert.strictEqual(editor.isShowingAutocomplete(), true);
+		});
+
 		it("survives a throwing autocomplete provider and keeps autocomplete working", async () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			let calls = 0;
@@ -2480,7 +2520,9 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.isShowingAutocomplete(), true);
 		});
 
-		it("re-queries the autocomplete picker when the cursor moves back into the command name", async () => {
+		it(
+			"re-queries the autocomplete picker when the cursor moves back into the command name",
+			async () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			const mockProvider: AutocompleteProvider = {
@@ -2694,7 +2736,9 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
 
-		it("applies exact typed slash-argument value on Enter even when first item is highlighted", async () => {
+		it(
+			"applies exact typed slash-argument value on Enter even when first item is highlighted",
+			async () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			const mockProvider: AutocompleteProvider = {
@@ -3817,7 +3861,9 @@ describe("Editor component", () => {
 			assert.strictEqual(submitted, pasteA + pasteB);
 		});
 
-		it("renumbers the paste registry in ascending id order when markers are out of order in text", () => {
+		it(
+			"renumbers the paste registry in ascending id order when markers are out of order in text",
+			() => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			let submitted = "";
 			editor.onSubmit = (t) => {
@@ -3836,6 +3882,23 @@ describe("Editor component", () => {
 			editor.handleInput("\x7f");
 			editor.handleInput("\r");
 			assert.strictEqual(submitted, pasteC + pasteB);
+		});
+
+		it("keeps the cursor on the marker boundary when renumbering shortens a marker", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			const paste = bigPaste("alpha");
+
+			for (let index = 0; index < 10; index++) {
+				editor.handleInput(`\x1b[200~${paste}\x1b[201~`);
+				editor.handleInput("\x01");
+			}
+			assert.match(editor.getText(), /^\[paste #10 /);
+
+			editor.handleInput("\x05");
+			editor.handleInput("\x7f");
+
+			assert.match(editor.getText(), /^\[paste #9 /);
+			assert.strictEqual(editor.getCursor().col, editor.getText().length);
 		});
 
 		it("undo after setText restores paste markers and registry", () => {
@@ -3890,6 +3953,17 @@ describe("Editor component", () => {
 			editor.handleInput("\x01");
 			editor.handleInput("\x1b[C");
 			assert.deepStrictEqual(editor.getCursor(), { line: 0, col: 1 });
+		});
+
+		it("leaves typed marker-like text untouched when deleting a real paste", () => {
+			const editor = new Editor(createTestTUI(), defaultEditorTheme);
+			for (const ch of "[paste #99]") {
+				editor.handleInput(ch);
+			}
+			editor.handleInput(`\x1b[200~${bigPaste("beta")}\x1b[201~`);
+
+			editor.handleInput("\x7f");
+			assert.strictEqual(editor.getText(), "[paste #99]");
 		});
 
 		it("does not crash when paste marker is wider than terminal width", () => {

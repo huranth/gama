@@ -1,10 +1,10 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { KeybindingsManager, TUI_KEYBINDINGS } from "../src/keybindings.ts";
+import { Keymap, TUI_KEYBINDINGS } from "../src/keybindings.ts";
 
-describe("KeybindingsManager", () => {
+describe("Keymap", () => {
 	it("binds Ctrl+J as a default newline alias", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		const keybindings = new Keymap(TUI_KEYBINDINGS);
 
 		assert.deepStrictEqual(keybindings.getKeys("tui.input.newLine"), ["shift+enter", "ctrl+j"]);
 		assert.strictEqual(keybindings.matches("\n", "tui.input.newLine"), true);
@@ -12,7 +12,7 @@ describe("KeybindingsManager", () => {
 	});
 
 	it("binds modified and unmodified editor viewport navigation", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		const keybindings = new Keymap(TUI_KEYBINDINGS);
 
 		assert.deepStrictEqual(keybindings.getKeys("tui.editor.cursorLineStart"), [
 			"home",
@@ -32,14 +32,14 @@ describe("KeybindingsManager", () => {
 	});
 
 	it("leaves dedicated prompt history navigation unbound by default", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		const keybindings = new Keymap(TUI_KEYBINDINGS);
 
 		assert.deepStrictEqual(keybindings.getKeys("tui.editor.historyPrevious"), []);
 		assert.deepStrictEqual(keybindings.getKeys("tui.editor.historyNext"), []);
 	});
 
 	it("binds unmodified terminal viewport shortcuts to alternate-screen navigation", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS);
+		const keybindings = new Keymap(TUI_KEYBINDINGS);
 
 		assert.deepStrictEqual(keybindings.getKeys("tui.altScreen.pageUp"), ["pageUp"]);
 		assert.deepStrictEqual(keybindings.getKeys("tui.altScreen.pageDown"), ["pageDown"]);
@@ -67,7 +67,7 @@ describe("KeybindingsManager", () => {
 	});
 
 	it("does not evict selector confirm when input submit is rebound", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		const keybindings = new Keymap(TUI_KEYBINDINGS, {
 			"tui.input.submit": ["enter", "ctrl+enter"],
 		});
 
@@ -76,7 +76,7 @@ describe("KeybindingsManager", () => {
 	});
 
 	it("does not evict cursor bindings when another action reuses the same key", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		const keybindings = new Keymap(TUI_KEYBINDINGS, {
 			"tui.select.up": ["up", "ctrl+p"],
 		});
 
@@ -85,7 +85,7 @@ describe("KeybindingsManager", () => {
 	});
 
 	it("still reports direct user binding conflicts without evicting defaults", () => {
-		const keybindings = new KeybindingsManager(TUI_KEYBINDINGS, {
+		const keybindings = new Keymap(TUI_KEYBINDINGS, {
 			"tui.input.submit": "ctrl+x",
 			"tui.select.confirm": "ctrl+x",
 		});

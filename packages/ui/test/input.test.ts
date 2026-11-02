@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { Input } from "../src/parts/input.ts";
+import { Input } from "../src/view/input.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
 
 describe("Input component", () => {
@@ -50,13 +50,13 @@ describe("Input component", () => {
 			assert.strictEqual(stripTerminalSequences(populated ?? "").trimEnd(), "n");
 		});
 
-		it("renders bullets instead of the value when masked", () => {
+		it("renders stars instead of the value when masked", () => {
 			const input = new Input({ prompt: "", mask: true });
 			input.setValue("sk-secret");
 
 			const [line] = input.render(20);
 			const text = stripTerminalSequences(line ?? "");
-			assert.strictEqual(text.trimEnd(), "•".repeat(9));
+			assert.strictEqual(text.trimEnd(), "*".repeat(9));
 			assert.ok(!text.includes("secret"));
 			assert.strictEqual(input.getValue(), "sk-secret");
 
@@ -68,10 +68,14 @@ describe("Input component", () => {
 		it("does not overflow with wide CJK and fullwidth text", () => {
 			const width = 93;
 			const cases = [
-				"가나다라마바사아자차카타파하 한글 텍스트가 터미널 너비를 초과하면 크래시가 발생합니다 이것은 재현용 테스트입니다",
-				"これはテスト文章です。日本語のテキストが正しく表示されるかどうかを確認するためのサンプルテキストです。あいうえお",
-				"这是一段测试文本，用于验证中文字符在终端中的显示宽度是否被正确计算，如果不正确就会导致用户界面崩溃的问题",
-				"ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸＹＺ０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍ",
+				"가나다라마바사아자차카타파하 한글 텍스트가 터미널 너비를" +
+					" 초과하면 크래시가 발생합니다 이것은 재현용 테스트입니다",
+				"これはテスト文章です。日本語のテキストが正しく表示される" +
+					"かどうかを確認するためのサンプルテキストです。あいうえお",
+				"这是一段测试文本，用于验证中文字符在终端中的显示宽度" +
+					"是否被正确计算，如果不正确就会导致用户界面崩溃的问题",
+				"ＡＢＣＤＥＦＧＨＩＪＫＬＭＮＯＰＱＲＳＴＵＶＷＸ" +
+					"ＹＺ０１２３４５６７８９ａｂｃｄｅｆｇｈｉｊｋｌｍ",
 			];
 			const cursorPositions = [
 				{ label: "start", move: (_input: Input) => {} },

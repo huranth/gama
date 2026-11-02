@@ -1,24 +1,24 @@
 import assert from "node:assert";
 import { afterEach, describe, it } from "node:test";
-import { KeybindingsManager, setKeybindings, TUI_KEYBINDINGS } from "../src/keybindings.ts";
-import { Editor } from "../src/parts/editor.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import { Keymap, setKeybindings, TUI_KEYBINDINGS } from "../src/keybindings.ts";
+import { Editor } from "../src/view/editor.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 afterEach(() => {
-	setKeybindings(new KeybindingsManager(TUI_KEYBINDINGS));
+	setKeybindings(new Keymap(TUI_KEYBINDINGS));
 });
 
 describe("Editor prompt history keybindings", () => {
 	it("browses history directly without first moving the cursor", () => {
 		setKeybindings(
-			new KeybindingsManager(TUI_KEYBINDINGS, {
+			new Keymap(TUI_KEYBINDINGS, {
 				"tui.editor.historyPrevious": "ctrl+p",
 				"tui.editor.historyNext": "ctrl+n",
 			}),
 		);
-		const editor = new Editor(new TuiMainScreen(new VirtualTerminal()), defaultEditorTheme);
+		const editor = new Editor(new MainScreen(new VirtualTerminal()), defaultEditorTheme);
 		editor.addToHistory("older prompt");
 		editor.addToHistory("newer\nmultiline prompt");
 		editor.setText("draft");
