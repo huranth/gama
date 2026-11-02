@@ -1,17 +1,17 @@
 import chalk from "chalk";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.ts";
-import { Editor } from "../src/parts/editor.ts";
-import { Loader } from "../src/parts/loader.ts";
-import { Markdown } from "../src/parts/markdown.ts";
-import { Text } from "../src/parts/text.ts";
+import { Editor } from "../src/view/editor.ts";
+import { Loader } from "../src/view/loader.ts";
+import { Markdown } from "../src/view/markdown.ts";
+import { Text } from "../src/view/text.ts";
 import { ProcessTerminal } from "../src/terminal.ts";
-import type { TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 import { defaultEditorTheme, defaultMarkdownTheme } from "./test-themes.ts";
 
 const terminal = new ProcessTerminal();
 
-const tui: TUI = new TuiMainScreen(terminal);
+const tui: TUI = new MainScreen(terminal);
 
 tui.addChild(
 	new Text(

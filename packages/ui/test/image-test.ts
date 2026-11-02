@@ -1,11 +1,11 @@
 import { readFileSync } from "fs";
-import { Image } from "../src/parts/image.ts";
-import { Spacer } from "../src/parts/spacer.ts";
-import { Text } from "../src/parts/text.ts";
+import { Image } from "../src/view/image.ts";
+import { Spacer } from "../src/view/spacer.ts";
+import { Text } from "../src/view/text.ts";
 import { ProcessTerminal } from "../src/terminal.ts";
 import { getCapabilities, getImageDimensions } from "../src/terminal-image.ts";
-import type { TUI } from "../src/tui.ts";
-import { TuiMainScreen } from "../src/tui-main-screen.ts";
+import type { TUI } from "../src/screen.ts";
+import { MainScreen } from "../src/main-screen.ts";
 
 const testImagePath = process.argv[2] || "/tmp/test-image.png";
 
@@ -28,7 +28,7 @@ console.log("Image dimensions:", dims);
 console.log("");
 
 const terminal = new ProcessTerminal();
-const tui: TUI = new TuiMainScreen(terminal);
+const tui: TUI = new MainScreen(terminal);
 
 tui.addChild(new Text("Image Rendering Test", 1, 1));
 tui.addChild(new Spacer(1));

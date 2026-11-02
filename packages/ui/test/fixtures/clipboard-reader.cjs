@@ -29,4 +29,7 @@ try {
 	assert.equal(readFileSync(`/proc/self/task/${process.pid}/children`, "utf8").trim(), "");
 }
 
-})().catch((error) => { console.error(error); process.exitCode = 1; });
+})().catch((error) => {
+	console.error(error);
+	process.exitCode = 1;
+});

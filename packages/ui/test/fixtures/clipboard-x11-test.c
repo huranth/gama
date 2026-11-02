@@ -83,7 +83,7 @@ int main(int argc, char** argv) {
         close_clipboard(&clipboard);
         assert(!received);
         assert(!result.data && !result.length);
-        assert(peak_bytes >= 8192); // Both the received chunk and accumulated data were allocated.
+        assert(peak_bytes >= 8192); // Peak bytes
         assert(allocated_bytes == 0);
         puts("clean");
         return 0;
@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
                 } else if (strcmp(argv[1], "invalid") == 0) {
                     xcb_change_property(connection, XCB_PROP_MODE_REPLACE, requestor, property,
                                         XCB_ATOM_ATOM, 32, 0, 0);
-                } // Otherwise never finish the transfer; the reader must time out.
+                } // Timeout path
                 xcb_flush(connection);
             }
         }

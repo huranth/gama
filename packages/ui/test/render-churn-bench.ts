@@ -1,11 +1,11 @@
 import { Session } from "node:inspector/promises";
 import { performance } from "node:perf_hooks";
-import { ScrollView } from "../src/parts/scroll-view.ts";
-import { Text } from "../src/parts/text.ts";
-import { VStack } from "../src/parts/v-stack.ts";
+import { ScrollView } from "../src/view/scroll-view.ts";
+import { Text } from "../src/view/text.ts";
+import { VStack } from "../src/view/v-stack.ts";
 import type { Terminal } from "../src/terminal.ts";
-import { type Component, Container, CURSOR_MARKER } from "../src/tui.ts";
-import { TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { type Component, Container, CURSOR_MARKER } from "../src/screen.ts";
+import { AltScreen } from "../src/alt-screen.ts";
 
 const COLUMNS = 100;
 const ROWS = 30;
@@ -105,7 +105,7 @@ interface ScenarioResult {
 async function runScenario(
 	session: Session,
 	terminal: NullTerminal,
-	tui: TuiAltScreen,
+	tui: AltScreen,
 	frame: (index: number) => void,
 ): Promise<ScenarioResult> {
 	const writtenBefore = terminal.bytesWritten;
@@ -142,7 +142,7 @@ function report(name: string, result: ScenarioResult): void {
 
 async function main(): Promise<void> {
 	const terminal = new NullTerminal();
-	const tui = new TuiAltScreen(terminal, false, "/tmp/gama-tui-bench");
+	const tui = new AltScreen(terminal, false, "/tmp/gama-tui-bench");
 
 	const transcript = buildTranscript();
 	const editor = new EditorSim();

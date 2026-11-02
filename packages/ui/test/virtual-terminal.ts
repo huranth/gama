@@ -41,6 +41,10 @@ export class VirtualTerminal implements Terminal {
 		this.xterm.write(data);
 	}
 
+	writeSync(data: string): void {
+		this.xterm.write(data);
+	}
+
 	get columns(): number {
 		return this._columns;
 	}

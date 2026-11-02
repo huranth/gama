@@ -38,7 +38,10 @@ describe("regional indicator width regression", () => {
 	});
 
 	it("keeps common streaming emoji intermediates at stable width", () => {
-		const samples = ["👍", "👍🏻", "✅", "⚡", "⚡️", "👨", "👨‍💻", "🏳️‍🌈"];
+		const samples = [
+			"👍", "👍🏻", "✅", "⚡",
+			"⚡️", "👨", "👨‍💻", "🏳️‍🌈",
+		];
 		for (const sample of samples) {
 			assert.strictEqual(visibleWidth(sample), 2, `Expected ${sample} to be width 2`);
 		}
