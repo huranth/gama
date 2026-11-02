@@ -1,10 +1,10 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { renderLayoutFrame } from "../src/layout.ts";
-import { HStack } from "../src/parts/h-stack.ts";
-import { ScrollView } from "../src/parts/scroll-view.ts";
-import { Text } from "../src/parts/text.ts";
-import { VStack } from "../src/parts/v-stack.ts";
+import { HStack } from "../src/view/h-stack.ts";
+import { ScrollView } from "../src/view/scroll-view.ts";
+import { Text } from "../src/view/text.ts";
+import { VStack } from "../src/view/v-stack.ts";
 import { encodeKitty, registerKittyImageMetadata } from "../src/terminal-image.ts";
 import { stripTerminalSequences } from "../src/utils.ts";
 
@@ -173,6 +173,16 @@ describe("viewport layout", () => {
 			() => {},
 		);
 		assert.deepStrictEqual(visibleLines(frame.lines), ["shown"]);
+	});
+
+	it("aligns short content to the end when asked", () => {
+		const scrollView = new ScrollView(new Text("one\ntwo", 0, 0), { align: "end" });
+		const frame = renderLayoutFrame(scrollView, 10, 4, () => {});
+		assert.deepStrictEqual(visibleLines(frame.lines), ["", "", "one", "two"]);
+
+		scrollView.setAlign("start");
+		const next = renderLayoutFrame(scrollView, 10, 4, () => {});
+		assert.deepStrictEqual(visibleLines(next.lines), ["one", "two", "", ""]);
 	});
 
 	it("tracks follow-end state and returns unused scroll delta", () => {

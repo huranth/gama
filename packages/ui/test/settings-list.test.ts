@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { SettingsList, type SettingsListTheme } from "../src/parts/settings-list.ts";
+import { SettingsList, type SettingsListTheme } from "../src/view/settings-list.ts";
 
 const testTheme: SettingsListTheme = {
 	label: (text) => text,

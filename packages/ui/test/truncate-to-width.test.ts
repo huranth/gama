@@ -71,7 +71,13 @@ describe("visibleWidth", () => {
 	it("counts Indic conjunct spacing code points within grapheme clusters", () => {
 		assert.strictEqual(visibleWidth("र्क"), 2);
 		assert.strictEqual(visibleWidth("नेटवर्क"), 5);
-		assert.strictEqual(visibleWidth("सर्वाधिकार सुरक्षित। ऑर्डर पर क्लिक करें"), 33);
+		assert.strictEqual(
+			visibleWidth(
+				"सर्वाधिकार सुरक्षित" +
+					"। ऑर्डर पर क्लिक करें"
+			),
+			33,
+		);
 		assert.strictEqual(visibleWidth("র্ক"), 2);
 		assert.strictEqual(visibleWidth("ર્ક"), 2);
 		assert.strictEqual(visibleWidth("ର୍କ"), 2);

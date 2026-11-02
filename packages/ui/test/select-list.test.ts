@@ -1,6 +1,6 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { SelectList } from "../src/parts/select-list.ts";
+import { SelectList } from "../src/view/select-list.ts";
 import { visibleWidth } from "../src/utils.ts";
 
 const testTheme = {

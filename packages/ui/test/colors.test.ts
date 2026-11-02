@@ -21,8 +21,8 @@ describe("colors", () => {
 			c: 0.1,
 			h: 200,
 		});
-		assert.throws(() => parseColor(""), /Invalid color value/);
-		assert.throws(() => parseColor("red"), /Invalid color value/);
+		assert.throws(() => parseColor(""), /Bad color/);
+		assert.throws(() => parseColor("red"), /Bad color/);
 	});
 
 	it("gamut-maps OKLCH to sRGB, including the lightness limits", () => {
@@ -38,11 +38,18 @@ describe("colors", () => {
 	it("parses OKHSL colors and round-trips them", () => {
 		assert.deepStrictEqual(parseColor("okhsl(29.23 100% 56.8%)"), rgbColor(255, 0, 0));
 		assert.deepStrictEqual(parseColor("OKHSL(250deg 60% 55%)"), okhslColor(250, 0.6, 0.55));
-		assert.throws(() => parseColor("okhsl(250 160% 55%)"), /s must be between 0 and 1/);
+		assert.throws(() => parseColor("okhsl(250 160% 55%)"), /Bad value/);
 		for (const hex of ["#4f8eb3", "#20242a", "#f8f9fa"]) {
 			const { h, s, l } = colorToOkhsl(parseColor(hex));
 			assert.strictEqual(colorToHex(okhslColor(h, s, l)), hex);
 		}
+	});
+
+	it("names the offending channel when a value is not finite", () => {
+		assert.throws(() => rgbColor(Number.NaN, 0, 0), /Bad value for r: NaN/);
+		assert.throws(() => rgbColor(0, Number.POSITIVE_INFINITY, 0), /Bad value for g: Infinity/);
+		assert.throws(() => oklchColor(0.5, Number.NaN, 0), /Bad value for c: NaN/);
+		assert.throws(() => okhslColor(0, Number.NaN, 0.5), /Bad value for s: NaN/);
 	});
 
 	it("styles text and closes sequences in reverse order", () => {

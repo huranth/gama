@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { Chalk } from "chalk";
-import { TruncatedText } from "../src/parts/truncated-text.ts";
+import { TruncatedText } from "../src/view/truncated-text.ts";
 import { visibleWidth } from "../src/utils.ts";
 
 const chalk = new Chalk({ level: 3 });
@@ -97,6 +97,26 @@ describe("TruncatedText component", () => {
 		assert.ok(stripped.includes("First line"));
 		assert.ok(!stripped.includes("Second line"));
 		assert.ok(!stripped.includes("Third line"));
+	});
+
+	it("splits bare CR and CRLF at the first line break", () => {
+		for (const text of ["First\rSecond", "First\r\nSecond", "First\nSecond"]) {
+			const lines = new TruncatedText(text, 0, 0).render(20);
+			const stripped = lines[0]?.replace(/\x1b\[[0-9;]*m/g, "") ?? "";
+
+			assert.strictEqual(visibleWidth(lines[0] ?? ""), 20);
+			assert.ok(stripped.includes("First"));
+			assert.ok(!stripped.includes("Second"));
+			assert.ok(!stripped.includes("\r"));
+		}
+	});
+
+	it("returns no lines for zero, negative, or non-finite widths", () => {
+		const text = new TruncatedText("Hello", 0, 0);
+
+		for (const width of [0, -10, Number.NaN, Number.POSITIVE_INFINITY]) {
+			assert.deepStrictEqual(text.render(width), []);
+		}
 	});
 
 	it("truncates first line even with newlines in text", () => {

@@ -128,11 +128,18 @@ F(-1,\tfrac32,\tfrac{13}2)&=(-\tfrac14,0,0).
 	describe("Jacobian matrix session using dollar delimiters", () => {
 		defineCases([
 			[
-				String.raw`J = \begin{pmatrix}
-\frac{\partial f_1}{\partial x} & \frac{\partial f_1}{\partial y} & \frac{\partial f_1}{\partial z} \\
-\frac{\partial f_2}{\partial x} & \frac{\partial f_2}{\partial y} & \frac{\partial f_2}{\partial z} \\
-\frac{\partial f_3}{\partial x} & \frac{\partial f_3}{\partial y} & \frac{\partial f_3}{\partial z}
-\end{pmatrix}`,
+				String.raw`J = \begin{pmatrix}` +
+					"\n" +
+					String.raw`\frac{\partial f_1}{\partial x} & \frac{\partial f_` +
+					String.raw`1}{\partial y} & \frac{\partial f_1}{\partial z} \\` +
+					"\n" +
+					String.raw`\frac{\partial f_2}{\partial x} & \frac{\partial f_` +
+					String.raw`2}{\partial y} & \frac{\partial f_2}{\partial z} \\` +
+					"\n" +
+					String.raw`\frac{\partial f_3}{\partial x} & \frac{\partial ` +
+					String.raw`f_3}{\partial y} & \frac{\partial f_3}{\partial z}` +
+					"\n" +
+					String.raw`\end{pmatrix}`,
 				"J = ⎛ (∂ f₁)/(∂ x) │ (∂ f₁)/(∂ y) │ (∂ f₁)/(∂ z) ⎞\n" +
 					"    ⎜ (∂ f₂)/(∂ x) │ (∂ f₂)/(∂ y) │ (∂ f₂)/(∂ z) ⎟\n" +
 					"    ⎝ (∂ f₃)/(∂ x) │ (∂ f₃)/(∂ y) │ (∂ f₃)/(∂ z) ⎠",
@@ -143,7 +150,9 @@ f_1 &= (1+xy)^3 z + y^2(1+xy)(4+3xy) \\
 f_2 &= y + 3x(1+xy)^2 z + 3xy^2(4+3xy) \\
 f_3 &= 2x - 3x^2y - x^3z
 \end{aligned}`,
-				"f₁ = (1+xy)³ z + y²(1+xy)(4+3xy)\nf₂ = y + 3x(1+xy)² z + 3xy²(4+3xy)\nf₃ = 2x - 3x²y - x³z",
+				"f₁ = (1+xy)³ z + y²(1+xy)(4+3xy)\n" +
+					"f₂ = y + 3x(1+xy)² z + 3xy²(4+3xy)\n" +
+					"f₃ = 2x - 3x²y - x³z",
 			],
 			["x, y, z", "x, y, z"],
 			["(x, y, z)", "(x, y, z)"],
@@ -255,9 +264,15 @@ c_n
 					`${" ".repeat(97)}⎩ 0    otherwise.`,
 			],
 			[String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}`, "x = (-b±√(b²-4ac))/(2a)"],
-			[String.raw`\int_0^\infty e^{-x^2}\,dx=\frac{\sqrt{\pi}}{2}`, "∫₀^∞ e^(-x²) dx = (√π)/2"],
+			[
+				String.raw`\int_0^\infty e^{-x^2}\,dx=\frac{\sqrt{\pi}}{2}`,
+				"∫₀^∞ e^(-x²) dx = (√π)/2",
+			],
 			[String.raw`e^{i\theta}=\cos\theta+i\sin\theta`, "e^(iθ) = cos θ+i sin θ"],
-			[String.raw`\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}`, "∑ₙ₌₁^∞1/(n²) = π²/6"],
+			[
+				String.raw`\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}`,
+				"∑ₙ₌₁^∞1/(n²) = π²/6",
+			],
 			[String.raw`\lim_{x\to 0}\frac{\sin x}{x}=1`, "lim[x→0] (sin x)/x = 1"],
 			[
 				String.raw`\lim_{n\to\infty}
@@ -538,7 +553,9 @@ R\left(\frac{\pi}{4}\right)
 		const cases: Array<[string, string]> = [
 			[
 				String.raw`\frac{\frac{x^2+1}{x-1}-\frac{2x}{x+1}}{\frac{x}{x^2-1}}`,
-				"(x²+1)/(x-1)-2x/(x+1)\n─────────────────────\n      x/(x²-1)",
+				"(x²+1)/(x-1)-2x/(x+1)\n" +
+					"─────────────────────\n" +
+					"      x/(x²-1)",
 			],
 			[
 				String.raw`\lim_{x\to 0}\frac{\frac{\sin x}{x}-1}{\frac{e^x-1}{x}-1}=0`,

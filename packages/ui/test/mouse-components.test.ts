@@ -1,11 +1,13 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { Editor, type EditorTheme } from "../src/parts/editor.ts";
-import { Input } from "../src/parts/input.ts";
-import { SelectList, type SelectListTheme } from "../src/parts/select-list.ts";
-import { SettingsList, type SettingsListTheme } from "../src/parts/settings-list.ts";
-import { Container, type TuiMouseEvent, type TuiMouseEventType } from "../src/tui.ts";
-import { TuiAltScreen } from "../src/tui-alt-screen.ts";
+import { Editor, type EditorTheme } from "../src/view/editor.ts";
+import { Input } from "../src/view/input.ts";
+import { MouseRegion } from "../src/view/mouse-region.ts";
+import { SelectList, type SelectListTheme } from "../src/view/select-list.ts";
+import { SettingsList, type SettingsListTheme } from "../src/view/settings-list.ts";
+import { Text } from "../src/view/text.ts";
+import { Container, type TuiMouseEvent, type TuiMouseEventType } from "../src/screen.ts";
+import { AltScreen } from "../src/alt-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 function mouse(
@@ -217,9 +219,52 @@ describe("mouse-aware components", () => {
 		});
 	}
 
+	it("clicks a region that only handles click", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new AltScreen(terminal);
+		let clicks = 0;
+		const region = new MouseRegion(new Text("toggle", 0, 0), (event) => {
+			if (event.type !== "click" || event.button !== "left") return undefined;
+			clicks += 1;
+			return { handled: true };
+		});
+		tui.addChild(region);
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;2;1M");
+		terminal.sendInput("\x1b[<0;2;1m");
+		await terminal.waitForRender();
+
+		assert.strictEqual(clicks, 1);
+		tui.stop();
+	});
+
+	it("does not click after a selection drag", async () => {
+		const terminal = new VirtualTerminal(20, 4);
+		const tui = new AltScreen(terminal);
+		let clicks = 0;
+		const region = new MouseRegion(new Text("toggle", 0, 0), (event) => {
+			if (event.type !== "click") return undefined;
+			clicks += 1;
+			return { handled: true };
+		});
+		tui.addChild(region);
+		tui.start();
+		await terminal.waitForRender();
+
+		terminal.sendInput("\x1b[<0;1;1M");
+		terminal.sendInput("\x1b[<32;6;1M");
+		terminal.sendInput("\x1b[<0;6;1m");
+		await terminal.waitForRender();
+
+		assert.strictEqual(clicks, 0);
+		tui.stop();
+	});
+
 	it("keeps a delegating overlay focused when its nested input is clicked", async () => {
 		const terminal = new VirtualTerminal(20, 4);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const overlay = new InputOverlay();
 		overlay.input.setValue("hi");
 		tui.start();
@@ -238,7 +283,7 @@ describe("mouse-aware components", () => {
 
 	it("keeps a settings list focused when a click in its submenu closes the submenu", async () => {
 		const terminal = new VirtualTerminal(30, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const changes: Array<{ id: string; value: string }> = [];
 		const list = new SettingsList(
 			[
@@ -280,7 +325,7 @@ describe("mouse-aware components", () => {
 
 	it("positions and focuses the multiline editor through alternate-screen dispatch", async () => {
 		const terminal = new VirtualTerminal(20, 6);
-		const tui = new TuiAltScreen(terminal);
+		const tui = new AltScreen(terminal);
 		const editor = new Editor(tui, editorTheme);
 		editor.setText("hello");
 		tui.addChild(editor);
@@ -300,7 +345,7 @@ describe("mouse-aware components", () => {
 	it("selects and copies editor text on drag instead of moving the cursor", async () => {
 		const terminal = new VirtualTerminal(20, 6);
 		const copied: string[] = [];
-		const tui = new TuiAltScreen(terminal, undefined, undefined, {
+		const tui = new AltScreen(terminal, undefined, undefined, {
 			copySelection: async (text) => {
 				copied.push(text);
 				return true;

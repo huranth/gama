@@ -4,7 +4,7 @@ import { visibleWidth, wrapTextWithAnsi } from "../src/utils.ts";
 
 describe("wrapTextWithAnsi", () => {
 	describe("underline styling", () => {
-		it("should not apply underline style before the styled text", () => {
+		it("not apply underline style before the styled text", () => {
 			const underlineOn = "\x1b[4m";
 			const underlineOff = "\x1b[24m";
 			const url = "https://example.com/very/long/path/that/will/wrap";
@@ -18,7 +18,7 @@ describe("wrapTextWithAnsi", () => {
 			assert.ok(wrapped[1].includes("https://"));
 		});
 
-		it("should not have whitespace before underline reset code", () => {
+		it("not have whitespace before underline reset code", () => {
 			const underlineOn = "\x1b[4m";
 			const underlineOff = "\x1b[24m";
 			const textWithUnderlinedTrailingSpace = `${underlineOn}underlined text here ${underlineOff}more`;
@@ -28,7 +28,7 @@ describe("wrapTextWithAnsi", () => {
 			assert.ok(!wrapped[0].includes(` ${underlineOff}`));
 		});
 
-		it("should not bleed underline to padding - each line should end with reset for underline only", () => {
+		it("not bleed underline to padding - each line ends with a reset for underline only", () => {
 			const underlineOn = "\x1b[4m";
 			const underlineOff = "\x1b[24m";
 			const url = "https://example.com/very/long/path/that/will/definitely/wrap";
@@ -47,7 +47,7 @@ describe("wrapTextWithAnsi", () => {
 	});
 
 	describe("background color preservation", () => {
-		it("should preserve background color across wrapped lines without full reset", () => {
+		it("preserve background color across wrapped lines without full reset", () => {
 			const bgBlue = "\x1b[44m";
 			const reset = "\x1b[0m";
 			const text = `${bgBlue}hello world this is blue background text${reset}`;
@@ -63,7 +63,9 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
-		it("should reset underline but preserve background when wrapping underlined text inside background", () => {
+		it(
+			"reset underline but preserve background when wrapping underlined text inside background",
+			() => {
 			const underlineOn = "\x1b[4m";
 			const underlineOff = "\x1b[24m";
 			const reset = "\x1b[0m";
@@ -93,7 +95,7 @@ describe("wrapTextWithAnsi", () => {
 	});
 
 	describe("basic wrapping", () => {
-		it("should handle LF, CRLF, and CR line endings", () => {
+		it("handle LF, CRLF, and CR line endings", () => {
 			assert.deepStrictEqual(wrapTextWithAnsi("first\nsecond\r\nthird\rfourth", 80), [
 				"first",
 				"second",
@@ -102,7 +104,7 @@ describe("wrapTextWithAnsi", () => {
 			]);
 		});
 
-		it("should preserve ANSI state across CRLF and CR line endings", () => {
+		it("preserve ANSI state across CRLF and CR line endings", () => {
 			const red = "\x1b[31m";
 			const reset = "\x1b[0m";
 
@@ -113,7 +115,7 @@ describe("wrapTextWithAnsi", () => {
 			]);
 		});
 
-		it("should wrap plain text correctly", () => {
+		it("wrap plain text correctly", () => {
 			const text = "hello world this is a test";
 			const wrapped = wrapTextWithAnsi(text, 10);
 
@@ -123,7 +125,7 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
-		it("should break CJK runs at grapheme boundaries after Latin text", () => {
+		it("break CJK runs at grapheme boundaries after Latin text", () => {
 			const text = "This is an example 中文汉字测试段落内容中文汉字测试段落内容.";
 			const wrapped = wrapTextWithAnsi(text, 40);
 
@@ -136,10 +138,12 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
-		it("should preserve color codes when wrapping CJK runs", () => {
+		it("preserve color codes when wrapping CJK runs", () => {
 			const red = "\x1b[31m";
 			const reset = "\x1b[0m";
-			const text = `${red}This is an example 中文汉字测试段落内容中文汉字测试段落内容.${reset}`;
+			const text =
+				`${red}This is an example 中文汉字测试段` +
+				`落内容中文汉字测试段落内容.${reset}`;
 			const wrapped = wrapTextWithAnsi(text, 40);
 
 			assert.strictEqual(wrapped.length, 2);
@@ -150,27 +154,27 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
-		it("should ignore OSC 133 semantic markers in visible width", () => {
+		it("ignore OSC 133 semantic markers in visible width", () => {
 			const text = "\x1b]133;A\x07hello\x1b]133;B\x07";
 			assert.strictEqual(visibleWidth(text), 5);
 		});
 
-		it("should ignore OSC sequences terminated with ST in visible width", () => {
+		it("ignore OSC sequences terminated with ST in visible width", () => {
 			const text = "\x1b]133;A\x1b\\hello\x1b]133;B\x1b\\";
 			assert.strictEqual(visibleWidth(text), 5);
 		});
 
-		it("should treat isolated regional indicators as width 2", () => {
+		it("treat isolated regional indicators as width 2", () => {
 			assert.strictEqual(visibleWidth("🇨"), 2);
 			assert.strictEqual(visibleWidth("🇨🇳"), 2);
 		});
 
-		it("should truncate trailing whitespace that exceeds width", () => {
+		it("truncate trailing whitespace that exceeds width", () => {
 			const twoSpacesWrappedToWidth1 = wrapTextWithAnsi("  ", 1);
 			assert.ok(visibleWidth(twoSpacesWrappedToWidth1[0]) <= 1);
 		});
 
-		it("should preserve color codes across wraps", () => {
+		it("preserve color codes across wraps", () => {
 			const red = "\x1b[31m";
 			const reset = "\x1b[0m";
 			const text = `${red}hello world this is red${reset}`;
