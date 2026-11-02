@@ -19,28 +19,10 @@ export interface AuthResolutionOverrides {
 	signal?: AbortSignal;
 }
 
-export function resolveProviderAuth(
-	provider: { id: string; auth: ProviderAuth },
-	credentials: CredentialStore,
-	authContext: AuthContext,
-	overrides?: AuthResolutionOverrides,
-): Promise<AuthResult | undefined> {
-	const signal = operationSignal(overrides?.signal);
-
-	const resolution = resolveProviderAuthWithSignal(
-		provider,
-		credentials,
-		authContext,
-		overrides,
-		signal,
-	);
-
-	return raceWithAbortSignal(resolution, signal);
-}
-
 function overlayEnvAuthContext(base: AuthContext, env: ProviderEnv): AuthContext {
 	return {
-		env: async (name) => env[name] || (await base.env(name)),
+		env: async (name) =>
+			env[name] !== undefined ? env[name] : await base.env(name),
 		fileExists: (path) => base.fileExists(path),
 	};
 }
@@ -73,6 +55,25 @@ async function readCredential(
 			cause: error,
 		});
 	}
+}
+
+export function resolveProviderAuth(
+	provider: { id: string; auth: ProviderAuth },
+	credentials: CredentialStore,
+	authContext: AuthContext,
+	overrides?: AuthResolutionOverrides,
+): Promise<AuthResult | undefined> {
+	const signal = operationSignal(overrides?.signal);
+
+	const resolution = resolveProviderAuthWithSignal(
+		provider,
+		credentials,
+		authContext,
+		overrides,
+		signal,
+	);
+
+	return raceWithAbortSignal(resolution, signal);
 }
 
 async function resolveProviderAuthWithSignal(

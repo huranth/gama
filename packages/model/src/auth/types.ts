@@ -62,7 +62,7 @@ export type AuthPrompt = { signal?: AbortSignal } & (
 			type: "select";
 			message: string;
 			options: readonly { id: string; label: string; description?: string }[];
-	  }
+		}
 	| { type: "manual_code"; message: string; placeholder?: string }
 );
 
