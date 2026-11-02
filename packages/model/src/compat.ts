@@ -1,31 +1,31 @@
-import { anthropicMessagesApi } from "./api/anthropic-messages.lazy.ts";
-import { azureOpenAIResponsesApi } from "./api/azure-openai-responses.lazy.ts";
-import { bedrockConverseStreamApi } from "./api/bedrock-converse-stream.lazy.ts";
-import { gamaMessagesApi } from "./api/gama-messages.lazy.ts";
-import { googleGenerativeAIApi } from "./api/google-generative-ai.lazy.ts";
-import { googleVertexApi } from "./api/google-vertex.lazy.ts";
-import { mistralConversationsApi } from "./api/mistral-conversations.lazy.ts";
-import { openAICodexResponsesApi } from "./api/openai-codex-responses.lazy.ts";
-import { openAICompletionsApi } from "./api/openai-completions.lazy.ts";
-import { openAIResponsesApi } from "./api/openai-responses.lazy.ts";
+import { anthropicMessagesApi } from "./wire/anthropic-messages.lazy.ts";
+import { azureOpenAIResponsesApi } from "./wire/azure-openai-responses.lazy.ts";
+import { bedrockConverseStreamApi } from "./wire/bedrock-converse-stream.lazy.ts";
+import { gamaMessagesApi } from "./wire/gama-messages.lazy.ts";
+import { googleGenerativeAIApi } from "./wire/google-generative-ai.lazy.ts";
+import { googleVertexApi } from "./wire/google-vertex.lazy.ts";
+import { mistralConversationsApi } from "./wire/mistral-conversations.lazy.ts";
+import { openAICodexResponsesApi } from "./wire/openai-codex-responses.lazy.ts";
+import { openAICompletionsApi } from "./wire/openai-completions.lazy.ts";
+import { openAIResponsesApi } from "./wire/openai-responses.lazy.ts";
 import { getEnvApiKey } from "./env-api-keys.ts";
-import type { ModelsApiStreamOptions } from "./models.ts";
+import type { ModelsApiStreamOptions } from "./registry.ts";
 import {
 	builtinModels,
 	getBuiltinModel,
 	getBuiltinModels,
 	getBuiltinProviders,
-} from "./providers/all.ts";
+} from "./catalog/all.ts";
 import {
 	createFauxCore,
 	type FauxProviderRegistration,
 	type RegisterFauxProviderOptions,
-} from "./providers/faux.ts";
+} from "./catalog/faux.ts";
 import type {
 	Api,
 	ApiStreamOptions,
 	AssistantMessage,
-	AssistantMessageEventStream,
+	ReplyStream,
 	Context,
 	Model,
 	ProviderStreamOptions,
@@ -37,35 +37,49 @@ import type {
 } from "./types.ts";
 import { normalizeContext } from "./utils/transcript.ts";
 
-export * from "./api/anthropic-messages.lazy.ts";
-export * from "./api/azure-openai-responses.lazy.ts";
-export * from "./api/bedrock-converse-stream.lazy.ts";
-export * from "./api/gama-messages.lazy.ts";
-export * from "./api/google-generative-ai.lazy.ts";
-export * from "./api/google-vertex.lazy.ts";
-export * from "./api/mistral-conversations.lazy.ts";
-export * from "./api/openai-codex-responses.lazy.ts";
-export * from "./api/openai-completions.lazy.ts";
-export * from "./api/openai-responses.lazy.ts";
+export * from "./wire/anthropic-messages.lazy.ts";
+
+export * from "./wire/azure-openai-responses.lazy.ts";
+
+export * from "./wire/bedrock-converse-stream.lazy.ts";
+
+export * from "./wire/gama-messages.lazy.ts";
+
+export * from "./wire/google-generative-ai.lazy.ts";
+
+export * from "./wire/google-vertex.lazy.ts";
+
+export * from "./wire/mistral-conversations.lazy.ts";
+
+export * from "./wire/openai-codex-responses.lazy.ts";
+
+export * from "./wire/openai-completions.lazy.ts";
+
+export * from "./wire/openai-responses.lazy.ts";
+
 export * from "./env-api-keys.ts";
+
 export * from "./images.ts";
+
 export * from "./images-api-registry.ts";
+
 export * from "./index.ts";
+
 export * from "./legacy-api-aliases.ts";
 
-export type { BuiltinProvider } from "./providers/all.ts";
+export type { BuiltinProvider } from "./catalog/all.ts";
 
 export type ApiStreamFunction = (
 	model: Model<Api>,
 	context: TranscriptContext,
 	options?: StreamOptions,
-) => AssistantMessageEventStream;
+) => ReplyStream;
 
 export type ApiStreamSimpleFunction = (
 	model: Model<Api>,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-) => AssistantMessageEventStream;
+) => ReplyStream;
 
 export interface ApiProvider<
 	TApi extends Api = Api,
@@ -94,13 +108,15 @@ export const getModels = getBuiltinModels;
 export const getProviders = getBuiltinProviders;
 
 const apiProviderRegistry = new Map<string, RegisteredApiProvider>();
+
 const compatModels = builtinModels();
+
 const AMBIENT_AUTH_MARKER = "<authenticated>";
 
 function assertApiMatch(actual: Api, expected: Api): void {
 	if (actual === expected) return;
 
-	throw new Error(`Mismatched api: ${actual} expected ${expected}`);
+	throw new Error(`API mismatch: ${actual}`);
 }
 
 function wrapStream<TApi extends Api, TOptions extends StreamOptions>(
@@ -123,6 +139,10 @@ function wrapStreamSimple<TApi extends Api>(
 
 		return streamSimple(model as Model<TApi>, context, options);
 	};
+}
+
+function hasExplicitApiKey(apiKey: string | undefined): apiKey is string {
+	return typeof apiKey === "string" && apiKey.trim().length > 0;
 }
 
 export function registerApiProvider<TApi extends Api, TOptions extends StreamOptions>(
@@ -164,6 +184,7 @@ export function registerFauxProvider(
 		{ api: core.api, stream: core.stream, streamSimple: core.streamSimple },
 		sourceId,
 	);
+
 	return {
 		api: core.api,
 		models: core.models,
@@ -214,10 +235,6 @@ export function resetApiProviders(): void {
 
 registerBuiltInApiProviders();
 
-function hasExplicitApiKey(apiKey: string | undefined): apiKey is string {
-	return typeof apiKey === "string" && apiKey.trim().length > 0;
-}
-
 function withEnvApiKey<TOptions extends StreamOptions>(
 	model: Model<Api>,
 	options: TOptions | undefined,
@@ -251,8 +268,9 @@ function getBuiltinProviderForModel(model: Model<Api>) {
 
 function resolveApiProvider(api: Api) {
 	const provider = getApiProvider(api);
+
 	if (!provider) {
-		throw new Error(`No API provider registered for api: ${api}`);
+		throw new Error(`No API provider: ${api}`);
 	}
 	return provider;
 }
@@ -261,7 +279,7 @@ export function stream<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
 	options?: ProviderStreamOptions,
-): AssistantMessageEventStream {
+): ReplyStream {
 	const transcript = normalizeContext(context);
 	const builtinProvider = getBuiltinProviderForModel(model);
 	if (builtinProvider) {
@@ -298,7 +316,7 @@ export function streamSimple<TApi extends Api>(
 	model: Model<TApi>,
 	context: Context,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream {
+): ReplyStream {
 	const transcript = normalizeContext(context);
 	const builtinProvider = getBuiltinProviderForModel(model);
 	if (builtinProvider) {

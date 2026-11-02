@@ -1,19 +1,19 @@
 import type { TelemetryContext } from "@huranth/gama-telemetry";
 import type { TSchema } from "typebox";
-import type { AnthropicOptions } from "./api/anthropic-messages.ts";
-import type { AzureOpenAIResponsesOptions } from "./api/azure-openai-responses.ts";
-import type { BedrockOptions } from "./api/bedrock-converse-stream.ts";
-import type { GamaMessagesOptions } from "./api/gama-messages.ts";
-import type { GoogleOptions } from "./api/google-generative-ai.ts";
-import type { GoogleVertexOptions } from "./api/google-vertex.ts";
-import type { MistralOptions } from "./api/mistral-conversations.ts";
-import type { OpenAICodexResponsesOptions } from "./api/openai-codex-responses.ts";
-import type { OpenAICompletionsOptions } from "./api/openai-completions.ts";
-import type { OpenAIResponsesOptions } from "./api/openai-responses.ts";
+import type { AnthropicOptions } from "./wire/anthropic-messages.ts";
+import type { AzureOpenAIResponsesOptions } from "./wire/azure-openai-responses.ts";
+import type { BedrockOptions } from "./wire/bedrock-converse-stream.ts";
+import type { GamaMessagesOptions } from "./wire/gama-messages.ts";
+import type { GoogleOptions } from "./wire/google-generative-ai.ts";
+import type { GoogleVertexOptions } from "./wire/google-vertex.ts";
+import type { MistralOptions } from "./wire/mistral-conversations.ts";
+import type { OpenAICodexResponsesOptions } from "./wire/openai-codex-responses.ts";
+import type { OpenAICompletionsOptions } from "./wire/openai-completions.ts";
+import type { OpenAIResponsesOptions } from "./wire/openai-responses.ts";
 import type { AssistantMessageDiagnostic } from "./utils/diagnostics.ts";
-import type { AssistantMessageEventStream } from "./utils/event-stream.ts";
+import type { ReplyStream } from "./utils/event-stream.ts";
 
-export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
+export type { ReplyStream } from "./utils/event-stream.ts";
 
 export type KnownApi =
 	| "openai-completions"
@@ -205,17 +205,17 @@ export interface ProviderStreams {
 		model: Model<Api>,
 		context: TranscriptContext,
 		options?: StreamOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	streamSimple(
 		model: Model<Api>,
 		context: TranscriptContext,
 		options?: SimpleStreamOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	fetchDeferred?(
 		model: Model<Api>,
 		handle: DeferredHandle,
 		options?: DeferredFetchOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	cancelDeferred?(
 		model: Model<Api>,
 		handle: DeferredHandle,
@@ -269,7 +269,7 @@ export type StreamFunction<
 	model: Model<TApi>,
 	context: TranscriptContext,
 	options?: TOptions,
-) => AssistantMessageEventStream;
+) => ReplyStream;
 
 export type ImagesFunction<TOptions extends ImagesOptions = ImagesOptions> = (
 	model: ImageModel<ImageApi>,
@@ -426,7 +426,7 @@ export interface UserMessage {
 	role: "user";
 	content: string | (TextContent | ImageContent)[];
 	timestamp: number;
-	// Mid-turn steer
+	// Steer
 	steering?: boolean;
 }
 
@@ -668,6 +668,7 @@ export interface OpenAICompletionsCompat {
 }
 
 export interface OpenAIResponsesCompat {
+	priorityServiceTierMultiplier?: number;
 	supportsDeveloperRole?: boolean;
 	supportsMidConvoSystemMessages?: boolean;
 	sessionAffinityFormat?: SessionAffinityFormat;
