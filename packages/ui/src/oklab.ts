@@ -1,6 +1,7 @@
 import type { RgbColor } from "./terminal-colors.ts";
 
 type Vector = [number, number, number];
+
 type Matrix = [Vector, Vector, Vector];
 
 const multiply = (m: Matrix, [x, y, z]: Vector): Vector =>
@@ -11,21 +12,25 @@ const LINEAR_SRGB_TO_LMS: Matrix = [
 	[0.2119034958178251, 0.6806995506452344, 0.1073969535369405],
 	[0.0883024591900564, 0.2817188391361215, 0.6299787016738222],
 ];
+
 const LMS_TO_LAB: Matrix = [
 	[0.210454268309314, 0.793617774702305, -0.0040720430116193],
 	[1.9779985324311684, -2.42859224204858, 0.450593709617411],
 	[0.0259040424655478, 0.7827717124575296, -0.8086757549230774],
 ];
+
 const LAB_TO_LMS: Matrix = [
 	[1, 0.3963377773761749, 0.2158037573099136],
 	[1, -0.1055613458156586, -0.0638541728258133],
 	[1, -0.0894841775298119, -1.2914855480194092],
 ];
+
 const LMS_TO_LINEAR_SRGB: Matrix = [
 	[4.0767416360759583, -3.3077115392580629, 0.2309699031821043],
 	[-1.2684379732850315, 2.6097573492876882, -0.341319376002657],
 	[-0.0041960761386756, -0.7034186179359362, 1.7076146940746117],
 ];
+
 const SATURATION_FIT: [[number, number], number[]][] = [
 	[
 		[-1.8817031, -0.80936501],
@@ -40,16 +45,21 @@ const SATURATION_FIT: [[number, number], number[]][] = [
 		[1.35733652, -0.00915799, -1.1513021, -0.50559606, 0.00692167],
 	],
 ];
+
 const K1 = 0.206;
+
 const K2 = 0.03;
+
 const K3 = (1 + K1) / (1 + K2);
 
 export const oklabToOkhslLightness = (x: number): number =>
 	0.5 * (K3 * x - K1 + Math.sqrt((K3 * x - K1) ** 2 + 4 * K2 * K3 * x));
+
 const okhslToOklabLightness = (x: number): number => (x * x + K1 * x) / (K3 * (x + K2));
 
 const linearToSrgb = (value: number): number =>
 	value > 0.0031308 ? 1.055 * value ** (1 / 2.4) - 0.055 : 12.92 * value;
+
 const srgbToLinear = (value: number): number =>
 	value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
 

@@ -1,6 +1,17 @@
 import { linearSrgbToRgb, okhslToRgb, oklabToLinearSrgb, rgbToOkhsl, rgbToOklab } from "./oklab.ts";
 import type { RgbColor } from "./terminal-colors.ts";
 
+// Basics
+export const ANSI_RESET = "\x1b[0m";
+
+export const ANSI_FOREGROUND_RESET = "\x1b[39m";
+
+export const ANSI_CELL_RESET = "\x1b[22;23;24;25;27;28;29;39m";
+
+export const ANSI_BRIGHT_BLACK = "\x1b[90m";
+
+export const ANSI_WHITE = "\x1b[37m";
+
 const NUMBER_PATTERN = String.raw`[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[+-]?\d+)?`;
 
 const OKLCH_PATTERN = new RegExp(
@@ -120,7 +131,7 @@ function isInSrgbGamut(linear: number[]): boolean {
 }
 
 function requireFinite(value: number, name: string): void {
-	if (!Number.isFinite(value)) throw new Error(`${name} must be finite`);
+	if (!Number.isFinite(value)) throw new Error(`Bad value for ${name}: ${value}`);
 }
 
 export function colorToRgb(color: Color): RgbColor {
@@ -177,7 +188,7 @@ function rgbToAnsi256(color: RgbColor): number {
 
 export function indexedColor(index: number): IndexedColor {
 	if (!Number.isInteger(index) || index < 0 || index > 255) {
-		throw new Error(`ANSI color index must be an integer from 0 to 255: ${index}`);
+		throw new Error(`Bad color index`);
 	}
 	return Object.freeze({ kind: "indexed", index });
 }
@@ -233,7 +244,7 @@ export function rgbColor(r: number, g: number, b: number): RgbColorValue {
 	] as const) {
 		requireFinite(value, name);
 		if (value < 0 || value > 255) {
-			throw new Error(`${name} must be between 0 and 255: ${value}`);
+			throw new Error(`Bad value: ${value}`);
 		}
 	}
 	return Object.freeze({ kind: "rgb", r, g, b });
@@ -243,8 +254,8 @@ export function oklchColor(l: number, c: number, h: number): OklchColorValue {
 	requireFinite(l, "l");
 	requireFinite(c, "c");
 	requireFinite(h, "h");
-	if (l < 0 || l > 1) throw new Error(`l must be between 0 and 1: ${l}`);
-	if (c < 0) throw new Error(`c must not be negative: ${c}`);
+	if (l < 0 || l > 1) throw new Error(`Bad value: ${l}`);
+	if (c < 0) throw new Error(`Bad value: ${c}`);
 	return Object.freeze({ kind: "oklch", l, c, h: ((h % 360) + 360) % 360 });
 }
 
@@ -255,7 +266,7 @@ export function mixColors(
 	space: ColorMixSpace = "oklch",
 ): Color {
 	requireFinite(amount, "amount");
-	if (amount < 0 || amount > 1) throw new Error(`amount must be between 0 and 1: ${amount}`);
+	if (amount < 0 || amount > 1) throw new Error(`Bad value: ${amount}`);
 
 	if (space === "srgb") {
 		const a = colorToRgb(first);
@@ -283,8 +294,8 @@ export function okhslColor(h: number, s: number, l: number): RgbColorValue {
 	requireFinite(h, "h");
 	requireFinite(s, "s");
 	requireFinite(l, "l");
-	if (s < 0 || s > 1) throw new Error(`s must be between 0 and 1: ${s}`);
-	if (l < 0 || l > 1) throw new Error(`l must be between 0 and 1: ${l}`);
+	if (s < 0 || s > 1) throw new Error(`Bad value: ${s}`);
+	if (l < 0 || l > 1) throw new Error(`Bad value: ${l}`);
 	const { r, g, b } = okhslToRgb(h, s, l);
 	return rgbColor(r, g, b);
 }
@@ -342,7 +353,7 @@ export function parseColor(value: string | number): Color {
 		return okhslColor(Number.parseFloat(okhsl[1]), saturation, lightness);
 	}
 
-	throw new Error(`Invalid color value: ${value}`);
+	throw new Error(`Bad color`);
 }
 
 export function styleTextWithAnsi(
@@ -355,7 +366,7 @@ export function styleTextWithAnsi(
 	let suffix = "";
 	if (fgAnsi) {
 		prefix += fgAnsi;
-		suffix = "\x1b[39m";
+		suffix = ANSI_FOREGROUND_RESET;
 	}
 	if (bgAnsi) {
 		prefix += bgAnsi;

@@ -15,13 +15,31 @@ export interface TerminalColors {
 export type OscColorTarget = "foreground" | "background" | number;
 
 const OSC_COLOR_RESPONSE_PATTERN = /^\x1b\](?:(1[01])|4;(\d{1,3}));([^\x07\x1b]*)(?:\x07|\x1b\\)$/i;
+
 const COLOR_SCHEME_REPORT_PATTERN = /^(?:\x1b\[\?997;(1|2)n)+$/;
+
+const hexRadix = 16;
+
+const decimalRadix = 10;
+
+const foregroundSelector = "10";
+
+const backgroundSelector = "11";
+
+const lightReportValue = "2";
+
+const maxChannelValue = 255;
+
+const hexByteDigits = 2;
+
+const wideChannelDigits = 4;
 
 function hexToRgb(hex: string): RgbColor {
 	const normalized = hex.startsWith("#") ? hex.slice(1) : hex;
-	const r = parseInt(normalized.slice(0, 2), 16);
-	const g = parseInt(normalized.slice(2, 4), 16);
-	const b = parseInt(normalized.slice(4, 6), 16);
+	const r = parseInt(normalized.slice(0, hexByteDigits), hexRadix);
+	const g = parseInt(normalized.slice(hexByteDigits, hexByteDigits * 2), hexRadix);
+	const b = parseInt(normalized.slice(hexByteDigits * 2, hexByteDigits * 3), hexRadix);
+
 	return { r, g, b };
 }
 
@@ -29,10 +47,10 @@ function parseColorTarget(
 	selector: string | undefined,
 	paletteIndex: string | undefined,
 ): OscColorTarget {
-	if (selector === "10") return "foreground";
-	if (selector === "11") return "background";
+	if (selector === foregroundSelector) return "foreground";
+	if (selector === backgroundSelector) return "background";
 
-	return Number.parseInt(paletteIndex ?? "", 10);
+	return Number.parseInt(paletteIndex ?? "", decimalRadix);
 }
 
 export function parseOscColorResponse(
@@ -44,6 +62,7 @@ export function parseOscColorResponse(
 	}
 
 	const target = parseColorTarget(match[1], match[2]);
+
 	return { target, rgb: parseOscColorValue(match[3]!) };
 }
 
@@ -53,7 +72,7 @@ export function parseTerminalColorSchemeReport(data: string): TerminalColorSchem
 		return undefined;
 	}
 
-	return match[1] === "2" ? "light" : "dark";
+	return match[1] === lightReportValue ? "light" : "dark";
 }
 
 function parseOscHexChannel(channel: string): number | undefined {
@@ -61,12 +80,12 @@ function parseOscHexChannel(channel: string): number | undefined {
 		return undefined;
 	}
 
-	const max = 16 ** channel.length - 1;
+	const max = hexRadix ** channel.length - 1;
 	if (max <= 0) {
 		return undefined;
 	}
 
-	return Math.round((parseInt(channel, 16) / max) * 255);
+	return Math.round((parseInt(channel, hexRadix) / max) * maxChannelValue);
 }
 
 function channelsToRgb(
@@ -92,9 +111,9 @@ function parseHexColorValue(value: string): RgbColor | undefined {
 	}
 
 	return channelsToRgb(
-		parseOscHexChannel(hex.slice(0, 4)),
-		parseOscHexChannel(hex.slice(4, 8)),
-		parseOscHexChannel(hex.slice(8, 12)),
+		parseOscHexChannel(hex.slice(0, wideChannelDigits)),
+		parseOscHexChannel(hex.slice(wideChannelDigits, wideChannelDigits * 2)),
+		parseOscHexChannel(hex.slice(wideChannelDigits * 2, wideChannelDigits * 3)),
 	);
 }
 
