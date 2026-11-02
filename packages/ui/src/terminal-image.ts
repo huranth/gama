@@ -5,6 +5,20 @@ import { pathToFileURL } from "node:url";
 import type { TerminalColorMode } from "./colors.ts";
 import { stripControlChars } from "./utils.ts";
 
+const TMUX_PROBE_TIMEOUT_MS = 250;
+
+const MAX_KITTY_IMAGES = 1000;
+
+const MAX_IMAGE_ID = 0xfffffffe;
+
+const DEFAULT_RENDER_WIDTH = 80;
+
+const KITTY_CHUNK_SIZE = 4096;
+
+const KITTY_PREFIX = "\x1b_G";
+
+const ITERM2_PREFIX = "\x1b]1337;File=";
+
 export type ImageProtocol = "kitty" | "iterm2" | null;
 
 export interface TerminalCapabilities {
@@ -57,6 +71,7 @@ export interface KittyImagePlacement {
 }
 
 let cachedCapabilities: TerminalCapabilities | null = null;
+
 let capabilityOverrides: Partial<TerminalCapabilities> = {};
 
 const DEFAULT_CELL_DIMENSIONS: CellDimensions = { widthPx: 9, heightPx: 18 };
@@ -75,7 +90,7 @@ function probeTmuxHyperlinks(): boolean {
 	try {
 		const termfeatures = execSync("tmux display-message -p '#{client_termfeatures}'", {
 			encoding: "utf8",
-			timeout: 250,
+			timeout: TMUX_PROBE_TIMEOUT_MS,
 			stdio: ["ignore", "pipe", "ignore"],
 		});
 		return termfeatures
@@ -215,9 +230,6 @@ export function setCapabilities(caps: TerminalCapabilities): void {
 	cachedCapabilities = caps;
 }
 
-const KITTY_PREFIX = "\x1b_G";
-const ITERM2_PREFIX = "\x1b]1337;File=";
-
 export function isImageLine(line: string): boolean {
 	if (line.startsWith(KITTY_PREFIX) || line.startsWith(ITERM2_PREFIX)) {
 		return true;
@@ -226,7 +238,7 @@ export function isImageLine(line: string): boolean {
 }
 
 export function allocateImageId(): number {
-	return Math.floor(Math.random() * 0xfffffffe) + 1;
+	return Math.floor(Math.random() * MAX_IMAGE_ID) + 1;
 }
 
 export function encodeKitty(
@@ -238,8 +250,6 @@ export function encodeKitty(
 		moveCursor?: boolean;
 	} = {},
 ): string {
-	const CHUNK_SIZE = 4096;
-
 	const params: string[] = ["a=T", "f=100", "q=2"];
 
 	if (options.moveCursor === false) params.push("C=1");
@@ -247,7 +257,7 @@ export function encodeKitty(
 	if (options.rows) params.push(`r=${options.rows}`);
 	if (options.imageId) params.push(`i=${options.imageId}`);
 
-	if (base64Data.length <= CHUNK_SIZE) {
+	if (base64Data.length <= KITTY_CHUNK_SIZE) {
 		return `\x1b_G${params.join(",")};${base64Data}\x1b\\`;
 	}
 
@@ -256,8 +266,8 @@ export function encodeKitty(
 	let isFirst = true;
 
 	while (offset < base64Data.length) {
-		const chunk = base64Data.slice(offset, offset + CHUNK_SIZE);
-		const isLast = offset + CHUNK_SIZE >= base64Data.length;
+		const chunk = base64Data.slice(offset, offset + KITTY_CHUNK_SIZE);
+		const isLast = offset + KITTY_CHUNK_SIZE >= base64Data.length;
 
 		if (isFirst) {
 			chunks.push(`\x1b_G${params.join(",")},m=1;${chunk}\x1b\\`);
@@ -268,7 +278,7 @@ export function encodeKitty(
 			chunks.push(`\x1b_Gm=1;${chunk}\x1b\\`);
 		}
 
-		offset += CHUNK_SIZE;
+		offset += KITTY_CHUNK_SIZE;
 	}
 
 	return chunks.join("");
@@ -315,6 +325,7 @@ export function encodeITerm2(
 }
 
 const kittyImageMetadata = new Map<number, RegisteredKittyImageMetadata>();
+
 let kittyTransmissionGeneration = 0;
 
 export function registerKittyImageMetadata(metadata: KittyImageMetadata): void {
@@ -324,7 +335,7 @@ export function registerKittyImageMetadata(metadata: KittyImageMetadata): void {
 		...metadata,
 		transmissionGeneration: kittyTransmissionGeneration,
 	});
-	if (kittyImageMetadata.size > 1000) {
+	if (kittyImageMetadata.size > MAX_KITTY_IMAGES) {
 		const oldestImageId = kittyImageMetadata.keys().next().value;
 		if (oldestImageId !== undefined) kittyImageMetadata.delete(oldestImageId);
 	}
@@ -661,7 +672,7 @@ export function renderImage(
 		return null;
 	}
 
-	const maxWidth = options.maxWidthCells ?? 80;
+	const maxWidth = options.maxWidthCells ?? DEFAULT_RENDER_WIDTH;
 	const size = calculateImageCellSize(
 		imageDimensions,
 		maxWidth,
