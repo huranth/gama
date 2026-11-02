@@ -11,7 +11,6 @@
 #define GAMA_NAPI_CALL
 #endif
 
-
 typedef void* napi_env;
 typedef void* napi_value;
 typedef void* napi_callback_info;

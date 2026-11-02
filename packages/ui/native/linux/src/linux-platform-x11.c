@@ -6,7 +6,6 @@
 #include <time.h>
 #include "clipboard-worker.h"
 
-
 static const char* const text_types[] = {
     "text/plain;charset=utf-8", "text/plain;charset=UTF-8", "UTF8_STRING", "text/plain", "STRING",
 };
