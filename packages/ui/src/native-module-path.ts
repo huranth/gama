@@ -9,6 +9,7 @@ export interface NativeModuleCandidateOptions {
 }
 
 const moduleRequire = createRequire(import.meta.url);
+
 const TUI_PACKAGE_NAME = "@huranth/gama-tui";
 
 export function getNativeModuleCandidates(

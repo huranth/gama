@@ -2,9 +2,10 @@
 	"name": "@huranth/gama-tui",
 	"version": "1.0.3",
 	"private": true,
-	"description": "Terminal User Interface library with differential rendering for efficient text-based applications",
+	"description": "Terminal interface toolkit for Gama",
 	"type": "module",
 	"main": "dist/index.js",
+	"types": "./dist/index.d.ts",
 	"scripts": {
 		"clean": "shx rm -rf dist",
 		"build": "tsc -p tsconfig.build.json",
@@ -21,15 +22,12 @@
 		"native/win32/prebuilds/**/*.node",
 		"native/win32/src/**/*.c",
 		"native/win32/build.mjs",
-		"native/win32/README.md",
 		"native/darwin/prebuilds/**/*.node",
 		"native/darwin/src/**/*.m",
 		"native/darwin/build.sh",
-		"native/darwin/README.md",
 		"native/linux/prebuilds/**/*.node",
 		"native/linux/src/**/*.{c,h}",
 		"native/linux/build.sh",
-		"native/linux/README.md",
 		"README.md"
 	],
 	"keywords": [
@@ -46,12 +44,11 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/huranth/gama.git",
-		"directory": "packages/tui"
+		"directory": "packages/ui"
 	},
 	"engines": {
 		"node": ">=22.19.0"
 	},
-	"types": "./dist/index.d.ts",
 	"dependencies": {
 		"get-east-asian-width": "1.6.0",
 		"marked": "18.0.11"

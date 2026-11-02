@@ -1,4 +1,5 @@
 export { Marked, type Token, type Tokens } from "marked";
+
 export {
 	type AutocompleteItem,
 	type AutocompleteProvider,
@@ -6,6 +7,7 @@ export {
 	CombinedAutocompleteProvider,
 	type SlashCommand,
 } from "./autocomplete.ts";
+
 export {
 	backgroundAnsi,
 	type Color,
@@ -32,8 +34,11 @@ export {
 	type TextAttributes,
 	type TextStyle,
 } from "./colors.ts";
+
 export type { EditorComponent } from "./editor-component.ts";
+
 export { type FuzzyMatch, fuzzyFilter, fuzzyMatch } from "./fuzzy.ts";
+
 export {
 	getKeybindings,
 	type Keybinding,
@@ -42,10 +47,11 @@ export {
 	type KeybindingDefinitions,
 	type Keybindings,
 	type KeybindingsConfig,
-	KeybindingsManager,
+	Keymap,
 	setKeybindings,
 	TUI_KEYBINDINGS,
 } from "./keybindings.ts";
+
 export {
 	decodeKittyPrintable,
 	isKeyRelease,
@@ -58,61 +64,84 @@ export {
 	parseKey,
 	setKittyProtocolActive,
 } from "./keys.ts";
+
 export { type RenderLatexOptions, renderLatex } from "./latex.ts";
+
 export { getNativeClipboard, type NativeClipboard } from "./native-platform.ts";
+
 export { oklabToOkhslLightness } from "./oklab.ts";
-export { Box } from "./parts/box.ts";
-export { CancellableLoader } from "./parts/cancellable-loader.ts";
-export { Editor, type EditorOptions, type EditorTheme } from "./parts/editor.ts";
-export { HStack } from "./parts/h-stack.ts";
+
+export { Box } from "./view/box.ts";
+
+export { CancellableLoader } from "./view/cancellable-loader.ts";
+
+export { Editor, type EditorOptions, type EditorTheme } from "./view/editor.ts";
+
+export { HStack } from "./view/h-stack.ts";
+
 export {
 	Image,
 	type ImageOptions,
 	type ImageTheme,
 	type ImageTranscoder,
 	setImageTranscoder,
-} from "./parts/image.ts";
-export { Input } from "./parts/input.ts";
-export { Loader, type LoaderIndicatorOptions } from "./parts/loader.ts";
+} from "./view/image.ts";
+
+export { Input } from "./view/input.ts";
+
+export { Loader, type LoaderIndicatorOptions } from "./view/loader.ts";
+
 export {
 	type DefaultTextStyle,
 	Markdown,
 	type MarkdownOptions,
 	type MarkdownTheme,
-} from "./parts/markdown.ts";
-export { MouseRegion, type MouseRegionHandler } from "./parts/mouse-region.ts";
+} from "./view/markdown.ts";
+
+export { MouseRegion, type MouseRegionHandler } from "./view/mouse-region.ts";
+
 export {
 	ScrollView,
 	type ScrollViewOptions,
 	type ScrollViewScrollbar,
 	type ScrollViewScrollToOptions,
-} from "./parts/scroll-view.ts";
+} from "./view/scroll-view.ts";
+
 export {
 	type SelectItem,
 	SelectList,
 	type SelectListLayoutOptions,
 	type SelectListTheme,
 	type SelectListTruncatePrimaryContext,
-} from "./parts/select-list.ts";
-export { type SettingItem, SettingsList, type SettingsListTheme } from "./parts/settings-list.ts";
-export { Spacer } from "./parts/spacer.ts";
-export { Text } from "./parts/text.ts";
-export { TruncatedText } from "./parts/truncated-text.ts";
+} from "./view/select-list.ts";
+
+export { type SettingItem, SettingsList, type SettingsListTheme } from "./view/settings-list.ts";
+
+export { Spacer } from "./view/spacer.ts";
+
+export { Text } from "./view/text.ts";
+
+export { TruncatedText } from "./view/truncated-text.ts";
+
 export {
 	type StackChild,
 	type StackEntry,
 	type StackEntryOptions,
 	type StackOptions,
 	VStack,
-} from "./parts/v-stack.ts";
+} from "./view/v-stack.ts";
+
 export { StdinBuffer, type StdinBufferEventMap, type StdinBufferOptions } from "./stdin-buffer.ts";
+
 export { isAppleTerminalSession, ProcessTerminal, type Terminal } from "./terminal.ts";
+
 export {
 	parseTerminalColorSchemeReport,
 	type RgbColor,
 	type TerminalColorScheme,
 	type TerminalColors,
 } from "./terminal-colors.ts";
+
 export {
 	allocateImageId,
 	type CellDimensions,
@@ -142,6 +171,7 @@ export {
 	setCellDimensions,
 	type TerminalCapabilities,
 } from "./terminal-image.ts";
+
 export {
 	type Component,
 	Container,
@@ -167,15 +197,21 @@ export {
 	type TuiMouseEventType,
 	type TuiStopOptions,
 	type ViewportTUI,
-} from "./tui.ts";
-export { TuiAltScreen, type TuiAltScreenOptions } from "./tui-alt-screen.ts";
-export { TuiMainScreen, type TuiMainScreenRenderState } from "./tui-main-screen.ts";
+} from "./screen.ts";
+
+export { AltScreen, type AltScreenOptions } from "./alt-screen.ts";
+
+export { MainScreen, type MainScreenRenderState } from "./main-screen.ts";
+
 export {
+	closeBeforePadding,
 	getOsc8LinkAtColumn,
+	padLine,
 	sliceByColumn,
 	stripTerminalSequences,
 	truncateToWidth,
 	visibleWidth,
 	wrapTextWithAnsi,
 } from "./utils.ts";
+
 export type { WheelScrollLines } from "./wheel-scroll.ts";
