@@ -24,6 +24,10 @@ export interface ModelsStore {
 	delete(providerId: string, options?: ModelsStoreOperationOptions): Promise<void>;
 }
 
+function checkAbort(options?: ModelsStoreOperationOptions): void {
+	options?.signal?.throwIfAborted();
+}
+
 export class InMemoryModelsStore implements ModelsStore {
 	private readonly entries = new Map<string, ModelsStoreEntry>();
 
@@ -31,7 +35,7 @@ export class InMemoryModelsStore implements ModelsStore {
 		providerId: string,
 		options?: ModelsStoreOperationOptions,
 	): Promise<ModelsStoreEntry | undefined> {
-		options?.signal?.throwIfAborted();
+		checkAbort(options);
 
 		const entry = this.entries.get(providerId);
 
@@ -43,13 +47,13 @@ export class InMemoryModelsStore implements ModelsStore {
 		entry: ModelsStoreEntry,
 		options?: ModelsStoreOperationOptions,
 	): Promise<void> {
-		options?.signal?.throwIfAborted();
+		checkAbort(options);
 
 		this.entries.set(providerId, structuredClone(entry));
 	}
 
 	async delete(providerId: string, options?: ModelsStoreOperationOptions): Promise<void> {
-		options?.signal?.throwIfAborted();
+		checkAbort(options);
 
 		this.entries.delete(providerId);
 	}

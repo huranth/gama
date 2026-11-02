@@ -1,4 +1,4 @@
-import { lazyStream } from "./api/lazy.ts";
+import { lazyStream } from "./wire/lazy.ts";
 import { defaultProviderAuthContext as defaultAuthContext } from "./auth/context.ts";
 import { InMemoryCredentialStore } from "./auth/credential-store.ts";
 import { type AuthResolutionOverrides, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
@@ -11,14 +11,14 @@ import type {
 	CredentialStore,
 	ProviderAuth,
 } from "./auth/types.ts";
-import { InMemoryModelsStore, type ModelsStore, type ModelsStoreEntry } from "./models-store.ts";
+import { InMemoryModelsStore, type ModelsStore, type ModelsStoreEntry } from "./registry-store.ts";
 import type {
 	AnyModel,
 	Api,
 	ApiStreamOptions,
 	AssistantImages,
 	AssistantMessage,
-	AssistantMessageEventStream,
+	ReplyStream,
 	ClassifierApi,
 	ClassifierContext,
 	ClassifierModel,
@@ -58,6 +58,7 @@ import {
 import { normalizeContext } from "./utils/transcript.ts";
 
 export { ModelsError, type ModelsErrorCode } from "./auth/resolve.ts";
+
 export { getModelType, isModelType } from "./utils/model-operations.ts";
 
 export interface ModelsPublication {
@@ -137,18 +138,18 @@ export interface Provider<TApi extends Api = Api> {
 		model: Model<T>,
 		context: TranscriptContext,
 		options?: ApiStreamOptions<T>,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 
 	streamSimple(
 		model: Model<TApi>,
 		context: TranscriptContext,
 		options?: SimpleStreamOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	fetchDeferred?(
 		model: Model<TApi>,
 		handle: DeferredHandle,
 		options?: DeferredFetchOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	cancelDeferred?(
 		model: Model<TApi>,
 		handle: DeferredHandle,
@@ -219,7 +220,7 @@ export interface Models {
 		model: Model<TApi>,
 		context: Context,
 		options?: ModelsApiStreamOptions<TApi>,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 
 	complete<TApi extends Api>(
 		model: Model<TApi>,
@@ -231,7 +232,7 @@ export interface Models {
 		model: Model<Api>,
 		context: Context,
 		options?: ModelsSimpleStreamOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	completeSimple(
 		model: Model<Api>,
 		context: Context,
@@ -241,7 +242,7 @@ export interface Models {
 		model: Model<Api>,
 		handle: DeferredHandle,
 		options?: ModelsDeferredFetchOptions,
-	): AssistantMessageEventStream;
+	): ReplyStream;
 	fetchDeferred(
 		model: Model<Api>,
 		handle: DeferredHandle,
@@ -276,6 +277,7 @@ export interface CreateModelsOptions {
 	credentials?: CredentialStore;
 	modelsStore?: ModelsStore;
 	authContext?: AuthContext;
+	onModelError?: (providerId: string, error: Error) => void;
 }
 
 export interface CreateProviderOptions<TApi extends Api = Api> {
@@ -300,6 +302,8 @@ export interface CreateProviderOptions<TApi extends Api = Api> {
 }
 
 const KNOWN_MODEL_TYPES: Record<ModelType, true> = { chat: true, image: true, classifier: true };
+
+const PER_MILLION = 1_000_000;
 
 const EXTENDED_THINKING_LEVELS: ModelThinkingLevel[] = [
 	"off",
@@ -346,15 +350,20 @@ export function calculateCost(model: AnyModel, usage: Usage): Usage["cost"] {
 		}
 	}
 
-	// Clamp writes.
+	// Clamp writes
 	const longWrite = Math.min(usage.cacheWrite, usage.cacheWrite1h ?? 0);
 	const shortWrite = usage.cacheWrite - longWrite;
-	usage.cost.input = (rates.input / 1000000) * usage.input;
-	usage.cost.output = (rates.output / 1000000) * usage.output;
-	usage.cost.cacheRead = (rates.cacheRead / 1000000) * usage.cacheRead;
-	usage.cost.cacheWrite = (rates.cacheWrite * shortWrite + rates.input * 2 * longWrite) / 1000000;
+
+	usage.cost.input = (rates.input / PER_MILLION) * usage.input;
+	usage.cost.output = (rates.output / PER_MILLION) * usage.output;
+	usage.cost.cacheRead = (rates.cacheRead / PER_MILLION) * usage.cacheRead;
+
+	usage.cost.cacheWrite =
+		(rates.cacheWrite * shortWrite + rates.input * 2 * longWrite) / PER_MILLION;
+
 	usage.cost.total =
 		usage.cost.input + usage.cost.output + usage.cost.cacheRead + usage.cost.cacheWrite;
+
 	return usage.cost;
 }
 
@@ -435,9 +444,7 @@ export function createProvider<TApi extends Api = Api>(
 		imageImplementations.length === 0 &&
 		classifierImplementations.length === 0
 	) {
-		throw new Error(
-			`Provider ${input.id}: at least one of "api", "images", or "classifiers" is required.`,
-		);
+		throw new Error(`Missing provider api: ${input.id}`);
 	}
 
 	const baselineModels = input.models;
@@ -461,8 +468,8 @@ export function createProvider<TApi extends Api = Api>(
 
 	const dispatch = (
 		model: Model<Api>,
-		run: (streams: ProviderStreams) => AssistantMessageEventStream,
-	): AssistantMessageEventStream => {
+		run: (streams: ProviderStreams) => ReplyStream,
+	): ReplyStream => {
 		const streams = apiFor(model);
 		if (!streams) {
 			return lazyStream(model, async () => {
@@ -595,6 +602,7 @@ class ModelsImpl implements MutableModels {
 	private credentials: CredentialStore;
 	private modelsStore: ModelsStore;
 	private authContext: AuthContext;
+	private onModelError?: (providerId: string, error: Error) => void;
 	private refreshGenerations = new Map<string, number>();
 	private refreshControllers = new Map<string, AbortController>();
 	private publicationChains = new Map<string, Promise<unknown>>();
@@ -603,6 +611,7 @@ class ModelsImpl implements MutableModels {
 		this.credentials = options?.credentials ?? new InMemoryCredentialStore();
 		this.modelsStore = options?.modelsStore ?? new InMemoryModelsStore();
 		this.authContext = options?.authContext ?? defaultAuthContext();
+		this.onModelError = options?.onModelError;
 	}
 
 	setProvider(provider: Provider): void {
@@ -631,43 +640,45 @@ class ModelsImpl implements MutableModels {
 	}
 
 	getModels(provider?: string): readonly Model<Api>[] {
-		if (provider !== undefined) {
-			const entry = this.providers.get(provider);
-			if (!entry) return [];
-			try {
-				return entry.getModels();
-			} catch {
-				return [];
-			}
-		}
-
-		const models: Model<Api>[] = [];
-		for (const entry of this.providers.values()) {
-			try {
-				models.push(...entry.getModels());
-			} catch {}
-		}
-		return models;
+		return this.listModels(provider, (entry) => entry.getModels());
 	}
 
 	getAllModels(provider?: string): readonly AnyModel[] {
+		return this.listModels(provider, (entry) => entry.getAllModels?.() ?? entry.getModels());
+	}
+
+	private listModels<TModel>(
+		provider: string | undefined,
+		read: (entry: Provider) => readonly TModel[],
+	): readonly TModel[] {
 		if (provider !== undefined) {
 			const entry = this.providers.get(provider);
 			if (!entry) return [];
+
 			try {
-				return entry.getAllModels?.() ?? entry.getModels();
-			} catch {
+				return read(entry);
+			} catch (error) {
+				this.reportModelError(provider, error);
 				return [];
 			}
 		}
 
-		const models: AnyModel[] = [];
+		const models: TModel[] = [];
+
 		for (const entry of this.providers.values()) {
 			try {
-				models.push(...(entry.getAllModels?.() ?? entry.getModels()));
-			} catch {}
+				models.push(...read(entry));
+			} catch (error) {
+				this.reportModelError(entry.id, error);
+			}
 		}
+
 		return models;
+	}
+
+	private reportModelError(providerId: string, error: unknown): void {
+		const normalized = error instanceof Error ? error : new Error(String(error));
+		this.onModelError?.(providerId, normalized);
 	}
 
 	getModelsOfType<TType extends ModelType>(
@@ -1076,7 +1087,7 @@ class ModelsImpl implements MutableModels {
 		model: Model<TApi>,
 		context: Context,
 		options?: ModelsApiStreamOptions<TApi>,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		const transcript = normalizeContext(context);
 		return lazyStream(model, async () => {
 			const provider = this.requireChatProvider(model);
@@ -1100,7 +1111,7 @@ class ModelsImpl implements MutableModels {
 		model: Model<Api>,
 		context: Context,
 		options?: ModelsSimpleStreamOptions,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		const transcript = normalizeContext(context);
 		return lazyStream(model, async () => {
 			const provider = this.requireChatProvider(model);
@@ -1125,7 +1136,7 @@ class ModelsImpl implements MutableModels {
 		model: Model<Api>,
 		handle: DeferredHandle,
 		options?: ModelsDeferredFetchOptions,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		return lazyStream(model, async () => {
 			const provider = this.requireChatProvider(model);
 			if (!provider.fetchDeferred) {
