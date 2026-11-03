@@ -1,4 +1,4 @@
-import { calculateCost } from "../models.ts";
+import { calculateCost } from "../registry.ts";
 import type {
 	ClassifierAnswer,
 	ClassifierApi,
@@ -13,6 +13,9 @@ import type {
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
+import { isRecord } from "../utils/record.ts";
+
+export { isRecord };
 
 export interface SystemOneWireRequest {
 	state: ClassifierContext["state"];
@@ -33,12 +36,8 @@ type SystemOneError = Error & {
 	body?: string;
 };
 
-export function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function httpError(label: string, response: Response, body: string): SystemOneError {
-	const error = new Error(`${label} returned ${response.status}`) as SystemOneError;
+function httpError(response: Response, body: string): SystemOneError {
+	const error = new Error(`HTTP error: ${response.status}`) as SystemOneError;
 
 	error.status = response.status;
 	error.headers = response.headers;
@@ -48,7 +47,7 @@ function httpError(label: string, response: Response, body: string): SystemOneEr
 }
 
 function timeoutError(timeoutMs: number): SystemOneError {
-	const error = new Error(`Request timed out after ${timeoutMs}ms`) as SystemOneError;
+	const error = new Error(`Request timed out: ${timeoutMs}ms`) as SystemOneError;
 
 	error.name = "TimeoutError";
 	error.status = undefined;
@@ -101,7 +100,7 @@ function requestHeaders(
 
 function requiredNumber(label: string, value: unknown, field: string): number {
 	if (typeof value !== "number" || !Number.isFinite(value)) {
-		throw new Error(`${label} returned an invalid ${field}`);
+		throw new Error(`Invalid field: ${field} (${label})`);
 	}
 
 	return value;
@@ -114,7 +113,7 @@ function tokenCount(value: unknown): number {
 }
 
 function probabilities(label: string, value: unknown, id: string): Record<string, number> {
-	if (!isRecord(value)) throw new Error(`${label} returned invalid probabilities for ${id}`);
+	if (!isRecord(value)) throw new Error(`Invalid probabilities: ${id}`);
 
 	const entries = Object.entries(value).map(([key, probability]) => [
 		key,
@@ -152,11 +151,11 @@ function parseAnswer(
 	question: ClassifierQuestion,
 	answer: unknown,
 ): ClassifierAnswer {
-	if (!isRecord(answer)) throw new Error(`${label} did not return an answer for ${id}`);
+	if (!isRecord(answer)) throw new Error(`Missing answer: ${id}`);
 
 	if (question.type === "choice") {
 		if (answer.type !== "choice" || typeof answer.choice !== "string") {
-			throw new Error(`${label} did not return a choice answer for ${id}`);
+			throw new Error(`Missing choice: ${id}`);
 		}
 
 		return {
@@ -169,7 +168,7 @@ function parseAnswer(
 
 	if (question.type === "score") {
 		if (answer.type !== "score") {
-			throw new Error(`${label} did not return a score answer for ${id}`);
+			throw new Error(`Missing score: ${id}`);
 		}
 
 		return {
@@ -180,7 +179,7 @@ function parseAnswer(
 	}
 
 	if (answer.type !== "noul") {
-		throw new Error(`${label} did not return a bool answer for ${id}`);
+		throw new Error(`Missing bool: ${id}`);
 	}
 
 	return {
@@ -194,7 +193,7 @@ function parseAnswers(
 	value: unknown,
 	context: ClassifierContext,
 ): Record<string, ClassifierAnswer> {
-	if (!isRecord(value)) throw new Error(`${label} returned an unexpected response`);
+	if (!isRecord(value)) throw new Error(`Unexpected response: ${label}`);
 
 	const answers: Array<[string, ClassifierAnswer]> = [];
 
@@ -213,7 +212,10 @@ async function sendRequest(
 	options: ClassifierOptions | undefined,
 ): Promise<{ response: Response; body: unknown }> {
 	const timeoutMs = options?.timeoutMs;
-	const timeoutSignal = timeoutMs !== undefined ? AbortSignal.timeout(timeoutMs) : undefined;
+	const timeoutSignal =
+		timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0
+			? AbortSignal.timeout(Math.floor(timeoutMs))
+			: undefined;
 	const signal = combineSignals(options?.signal, timeoutSignal);
 	const requestFetch = options?.fetch ?? globalThis.fetch;
 
@@ -225,7 +227,7 @@ async function sendRequest(
 			signal,
 		});
 
-		if (!response.ok) throw httpError(transport.label, response, await response.text());
+		if (!response.ok) throw httpError(response, await response.text());
 
 		const body = (await response.json()) as unknown;
 
@@ -285,7 +287,7 @@ export async function classifySystemOne(
 		if (model.api !== transport.api) throw new Error(`Unsupported classifier API: ${model.api}`);
 
 		const apiKey = options?.apiKey;
-		if (!apiKey) throw new Error(`No API key for provider: ${model.provider}`);
+		if (!apiKey) throw new Error(`No API key: ${model.provider}`);
 
 		const result = await requestClassifier(transport, model, context, apiKey, options);
 		const usage = parseUsage(result.usage, model);

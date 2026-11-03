@@ -20,19 +20,19 @@ function errorMessage(errors: unknown): string {
 }
 
 function readResult(body: unknown): Record<string, unknown> {
-	if (!isRecord(body)) throw new Error(`${LABEL} returned an unexpected response`);
+	if (!isRecord(body)) throw new Error(`Unexpected response: ${LABEL}`);
 	if (body.success === false) throw new Error(errorMessage(body.errors));
 
 	const result = body.result;
-	if (!isRecord(result)) throw new Error(`${LABEL} returned an unexpected response`);
+	if (!isRecord(result)) throw new Error(`Unexpected response: ${LABEL}`);
 
 	if ("answers" in result) return result;
 
 	if (result.state !== "Completed") {
-		throw new Error(`${LABEL} run did not complete (state: ${String(result.state)})`);
+		throw new Error(`Run incomplete: ${String(result.state)}`);
 	}
 
-	if (!isRecord(result.result)) throw new Error(`${LABEL} returned an unexpected response`);
+	if (!isRecord(result.result)) throw new Error(`Unexpected response: ${LABEL}`);
 
 	return result.result;
 }
