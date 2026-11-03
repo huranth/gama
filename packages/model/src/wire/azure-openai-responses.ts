@@ -1,6 +1,6 @@
 import { AzureOpenAI } from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-import { clampThinkingLevel } from "../models.ts";
+import { clampThinkingLevel } from "../registry.ts";
 import type {
 	Api,
 	AssistantMessage,
@@ -11,7 +11,7 @@ import type {
 	TranscriptContext,
 } from "../types.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
@@ -41,12 +41,14 @@ export interface AzureOpenAIResponsesOptions extends StreamOptions {
 }
 
 const DEFAULT_AZURE_API_VERSION = "v1";
+
 const AZURE_TOOL_CALL_PROVIDERS = new Set([
 	"openai",
 	"openai-codex",
 	"opencode",
 	"azure-openai-responses",
 ]);
+
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
 
 function formatAzureOpenAIError(error: unknown): string {
@@ -100,7 +102,7 @@ function normalizeAzureBaseUrl(baseUrl: string): string {
 	try {
 		url = new URL(trimmed);
 	} catch {
-		throw new Error(`Invalid Azure OpenAI base URL: ${baseUrl}`);
+		throw new Error(`Invalid base URL: ${baseUrl}`);
 	}
 
 	const isAzureHost =
@@ -152,10 +154,7 @@ function resolveBaseUrl(
 
 	if (model.baseUrl) return model.baseUrl;
 
-	throw new Error(
-		"Azure OpenAI base URL is required. Set AZURE_OPENAI_BASE_URL or " +
-			"AZURE_OPENAI_RESOURCE_NAME, or pass azureBaseUrl, azureResourceName, or model.baseUrl.",
-	);
+	throw new Error("Missing base URL");
 }
 
 function resolveAzureConfig(
@@ -177,8 +176,8 @@ export const stream: StreamFunction<"azure-openai-responses", AzureOpenAIRespons
 	model: Model<"azure-openai-responses">,
 	context: TranscriptContext,
 	options?: AzureOpenAIResponsesOptions,
-): AssistantMessageEventStream => {
-	const stream = new AssistantMessageEventStream();
+): ReplyStream => {
+	const stream = new ReplyStream();
 	const normalizedContext = resolveTranscript(
 		context,
 		model.compat?.supportsMidConvoSystemMessages,
@@ -208,7 +207,7 @@ export const stream: StreamFunction<"azure-openai-responses", AzureOpenAIRespons
 		try {
 			const apiKey = options?.apiKey;
 			if (!apiKey) {
-				throw new Error(`No API key for provider: ${model.provider}`);
+				throw new Error(`No API key: ${model.provider}`);
 			}
 			const client = createClient(model, apiKey, options);
 			const grammarToolInputProperties = createGrammarToolInputProperties(
@@ -255,10 +254,10 @@ export const stream: StreamFunction<"azure-openai-responses", AzureOpenAIRespons
 			}
 
 			if (output.stopReason === "pending") {
-				throw new Error("Azure OpenAI Responses stream ended without a stop reason");
+				throw new Error("No stop reason");
 			}
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error(output.errorMessage || "An unknown error occurred");
+				throw new Error(output.errorMessage || "Unknown error");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -283,10 +282,10 @@ export const streamSimple: StreamFunction<"azure-openai-responses", SimpleStream
 	model: Model<"azure-openai-responses">,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
+): ReplyStream => {
 	const apiKey = options?.apiKey;
 	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
+		throw new Error(`No API key: ${model.provider}`);
 	}
 
 	const base = {
@@ -331,11 +330,15 @@ function buildParams(
 		},
 	});
 
+	const promptCacheKey =
+		options?.cacheRetention === "none"
+			? undefined
+			: clampOpenAIPromptCacheKey(options?.promptCacheKey ?? options?.sessionId);
 	const params: ResponseCreateParamsStreaming = {
 		model: deploymentName,
 		input: messages,
 		stream: true,
-		prompt_cache_key: clampOpenAIPromptCacheKey(options?.promptCacheKey ?? options?.sessionId),
+		prompt_cache_key: promptCacheKey,
 		store: false,
 	};
 
