@@ -11,7 +11,7 @@ import type {
 	ChatCompletionToolMessageParam,
 } from "openai/resources/chat/completions.js";
 import { requiresExplicitCache } from "../cache/family.ts";
-import { calculateCost, clampThinkingLevel } from "../models.ts";
+import { calculateCost, clampThinkingLevel } from "../registry.ts";
 import type {
 	AssistantMessage,
 	CacheRetention,
@@ -21,7 +21,6 @@ import type {
 	Message,
 	Model,
 	OpenAICompletionsCompat,
-	ProviderEnv,
 	ProviderHeaders,
 	SimpleStreamOptions,
 	StopReason,
@@ -37,12 +36,12 @@ import type {
 	Usage,
 } from "../types.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
-import { getProviderEnvValue } from "../utils/provider-env.ts";
+import { isRecord } from "../utils/record.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
@@ -62,6 +61,7 @@ import {
 	resolveJsonSchemaStrictSampling,
 } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
+import { matchesHost } from "./openai-compat.ts";
 import {
 	clampOpenAIPromptCacheKey,
 	supportsExplicitOpenAIPromptCache,
@@ -69,6 +69,8 @@ import {
 import {
 	buildBaseOptions,
 	clampThinkingBudgetToAnswerRoom,
+	getClientApiKey,
+	resolveCacheRetention,
 	thinkingBudgetForLevel,
 } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
@@ -81,6 +83,7 @@ export interface OpenAICompletionsOptions extends StreamOptions {
 
 export interface ConvertCompletionsMessagesOptions {
 	grammarToolInputProperties?: ReadonlyMap<string, string>;
+	stripReasoningFields?: boolean;
 }
 
 interface OpenAICompatCacheControl {
@@ -200,15 +203,6 @@ const STREAM_REASONING_FIELDS = ["reasoning_content", "reasoning", "reasoning_te
 
 const LAYERED_CACHE_LOOKBACK = 12;
 
-const OPENROUTER_EXPLICIT_CACHE_MODEL_IDS = new Set([
-	"deepseek/deepseek-v3.2",
-	"qwen/qwen3-max",
-	"qwen/qwen-plus",
-	"qwen/qwen3.6-plus",
-	"qwen/qwen3-coder-plus",
-	"qwen/qwen3-coder-flash",
-]);
-
 function isTextContentBlock(block: { type: string }): block is TextContent {
 	return block.type === "text";
 }
@@ -236,14 +230,6 @@ function addCacheControlToInstructionMessage(
 	cacheControl: OpenAICompatCacheControl,
 ): boolean {
 	return addCacheControlToTextContent(message, cacheControl);
-}
-
-function isReasoningDetailObject(detail: unknown): detail is Record<string, unknown> {
-	return typeof detail === "object" && detail !== null && !Array.isArray(detail);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function markAnthropicCloserBreakpoints(
@@ -304,16 +290,6 @@ function parseOpenAIReasoningDetails(
 	} catch {
 		return undefined;
 	}
-}
-
-function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-	if (getProviderEnvValue("GAMA_CACHE_RETENTION", env) === "long") {
-		return "long";
-	}
-	return "short";
 }
 
 function resolveThinkingTokenBudgetField(
@@ -422,17 +398,6 @@ function mapStopReason(reason: string | null): { stopReason: StopReason; errorMe
 	}
 }
 
-function getClientApiKey(
-	provider: string,
-	apiKey: string | undefined,
-	headers: ProviderHeaders | undefined,
-): string {
-	if (apiKey) return apiKey;
-	if (hasHeader(headers, "authorization") || hasHeader(headers, "cf-aig-authorization"))
-		return "unused";
-	throw new Error(`No API key for provider: ${provider}`);
-}
-
 function resolveClampedThinkingBudget(
 	model: Model<"openai-completions">,
 	options: OpenAICompletionsOptions | undefined,
@@ -457,7 +422,7 @@ function applyAnthropicCacheControl(
 	addCacheControlToLastTool(tools, cacheControl);
 
 	if (closers.length > 0 && messages.at(-1) === (closers.at(-1) as ChatCompletionMessageParam)) {
-		// Loop anchors.
+		// Loop anchors
 		markAnthropicCloserBreakpoints(closers, 2, cacheControl);
 		return;
 	}
@@ -465,7 +430,7 @@ function applyAnthropicCacheControl(
 	addCacheControlToLastConversationMessage(messages, cacheControl);
 
 	if (closers.length > 0) {
-		// Turn anchors.
+		// Turn anchors
 		markAnthropicCloserBreakpoints(closers, 1, cacheControl);
 		return;
 	}
@@ -556,17 +521,8 @@ function insertToolBatchClosers(messages: ChatCompletionMessageParam[]): CacheCo
 	return closers;
 }
 
-function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
-	if (!headers) return false;
-	const expected = name.toLowerCase();
-	for (const [key, value] of Object.entries(headers)) {
-		if (key.toLowerCase() === expected && value !== null && value.trim().length > 0) return true;
-	}
-	return false;
-}
-
 function isOpenAIReasoningDetail(detail: unknown): detail is OpenAIReasoningDetail {
-	if (!isReasoningDetailObject(detail) || !hasValidCommonReasoningDetailFields(detail)) {
+	if (!isRecord(detail) || !hasValidCommonReasoningDetailFields(detail)) {
 		return false;
 	}
 	switch (detail.type) {
@@ -614,7 +570,7 @@ function addCacheControlToLastConversationMessage(
 	}
 }
 
-// Second breakpoint.
+// Cache breakpoint
 function addCacheControlToLayeredMessage(
 	messages: ChatCompletionMessageParam[],
 	cacheControl: OpenAICompatCacheControl,
@@ -711,8 +667,8 @@ function addCacheControlToTextContent(
 }
 
 function parseChunkUsage(rawUsage: ChunkUsage, model: Model<"openai-completions">): Usage {
-	// Cache accounting.
-	const usesOpenAIShape = rawUsage.prompt_tokens !== undefined;
+	// Cache accounting
+	const usesOpenAIShape = typeof rawUsage.prompt_tokens === "number";
 	const promptTokens = rawUsage.prompt_tokens ?? rawUsage.input_tokens ?? 0;
 	const cachedCandidates = [
 		rawUsage.prompt_cache_hit_tokens,
@@ -723,7 +679,7 @@ function parseChunkUsage(rawUsage: ChunkUsage, model: Model<"openai-completions"
 
 	let cacheReadTokens = 0;
 	for (const candidate of cachedCandidates) {
-		if (typeof candidate === "number") {
+		if (typeof candidate === "number" && candidate > 0) {
 			cacheReadTokens = candidate;
 			break;
 		}
@@ -735,7 +691,7 @@ function parseChunkUsage(rawUsage: ChunkUsage, model: Model<"openai-completions"
 	const input = usesOpenAIShape
 		? Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens)
 		: promptTokens;
-	const outputTokens = rawUsage.completion_tokens || rawUsage.output_tokens || 0;
+	const outputTokens = rawUsage.completion_tokens ?? rawUsage.output_tokens ?? 0;
 	const usage: Usage = {
 		input,
 		output: outputTokens,
@@ -786,6 +742,7 @@ function createClient(
 		baseURL: model.baseUrl,
 		dangerouslyAllowBrowser: true,
 		fetch,
+		// Null headers
 		defaultHeaders: headers,
 	});
 }
@@ -816,7 +773,7 @@ function markCompletionsBreakpoint(
 	return false;
 }
 
-// Cache breakpoints.
+// Cache breakpoints
 function applyExplicitPromptCacheBreakpoints(
 	messages: ChatCompletionMessageParam[],
 	compat: ResolvedOpenAICompletionsCompat,
@@ -842,7 +799,7 @@ function applyExplicitPromptCacheBreakpoints(
 	}
 }
 
-// Gateway closers.
+// Gateway closers
 function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletionsCompat {
 	const detected = detectCompat(model);
 	if (!model.compat) return detected;
@@ -900,55 +857,43 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 	const baseUrl = model.baseUrl;
 
 	// Hosts
-	const isZai =
-		provider === "zai" ||
-		provider === "zai-coding-cn" ||
-		baseUrl.includes("api.z.ai") ||
-		baseUrl.includes("open.bigmodel.cn");
-	const isTogether =
-		provider === "together" ||
-		baseUrl.includes("api.together.ai") ||
-		baseUrl.includes("api.together.xyz");
-	const isMoonshot =
-		provider === "moonshotai" ||
-		provider === "moonshotai-cn" ||
-		baseUrl.includes("api.moonshot.");
-	const isOpenRouter = provider === "openrouter" || baseUrl.includes("openrouter.ai");
+	const isZai = matchesHost("zai", provider, baseUrl);
+	const isTogether = matchesHost("together", provider, baseUrl);
+	const isMoonshot = matchesHost("moonshot", provider, baseUrl);
+	const isOpenRouter = matchesHost("openrouter", provider, baseUrl);
 	const isOpenRouterExplicitCacheModel =
-		isOpenRouter && OPENROUTER_EXPLICIT_CACHE_MODEL_IDS.has(model.id);
-	const isCloudflareWorkersAI =
-		provider === "cloudflare-workers-ai" || baseUrl.includes("api.cloudflare.com");
-	const isCloudflareAiGateway =
-		provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
-	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
-	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
-	const isCerebras = provider === "cerebras" || baseUrl.includes("cerebras.ai");
+		isOpenRouter && model.compat?.cacheControlFormat === "anthropic";
+	const isCloudflareWorkersAI = matchesHost("cloudflareWorkersAI", provider, baseUrl);
+	const isCloudflareAiGateway = matchesHost("cloudflareGateway", provider, baseUrl);
+	const isNvidia = matchesHost("nvidia", provider, baseUrl);
+	const isAntLing = matchesHost("antLing", provider, baseUrl);
+	const isCerebras = matchesHost("cerebras", provider, baseUrl);
 
-	// DeepSeek match.
+	// DeepSeek match
 	const isDeepSeek =
-		provider === "deepseek" ||
-		baseUrl.toLowerCase().includes("deepseek.com") ||
+		matchesHost("deepseek", provider, baseUrl) ||
 		model.id.toLowerCase().includes("deepseek");
 
-	// Flags
+	const isXai = matchesHost("xai", provider, baseUrl);
+	const isChutes = matchesHost("chutes", provider, baseUrl);
+	const isOpencode = matchesHost("opencode", provider, baseUrl);
+
 	const isNonStandard =
 		isNvidia ||
 		isCerebras ||
-		provider === "xai" ||
-		baseUrl.includes("api.x.ai") ||
+		isXai ||
 		isTogether ||
-		baseUrl.includes("chutes.ai") ||
+		isChutes ||
 		isDeepSeek ||
 		isZai ||
 		isMoonshot ||
-		provider === "opencode" ||
-		baseUrl.includes("opencode.ai") ||
+		isOpencode ||
 		isCloudflareWorkersAI ||
 		isCloudflareAiGateway ||
 		isAntLing;
 
 	const useMaxTokens =
-		baseUrl.includes("chutes.ai") ||
+		isChutes ||
 		isDeepSeek ||
 		isMoonshot ||
 		isCloudflareAiGateway ||
@@ -957,16 +902,14 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		isAntLing ||
 		isZai;
 
-	const isGrok = provider === "xai" || baseUrl.includes("api.x.ai");
+	const isGrok = isXai;
 	const isOpenRouterDeveloperRoleModel =
 		isOpenRouter && (model.id.startsWith("anthropic/") || model.id.startsWith("openai/"));
 
-	// Cache format.
+	// Cache format
 	const cacheControlFormat =
-		requiresExplicitCache({ id: model.id, provider, baseUrl }) ||
-		(isOpenRouter && isOpenRouterExplicitCacheModel)
-			? "anthropic"
-			: undefined;
+		model.compat?.cacheControlFormat ??
+		(requiresExplicitCache({ id: model.id, provider, baseUrl }) ? "anthropic" : undefined);
 
 	let thinkingFormat: OpenAICompletionsCompat["thinkingFormat"] = "openai";
 	if (isOpenRouter) thinkingFormat = "openrouter";
@@ -978,7 +921,12 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 	return {
 		supportsExplicitPromptCacheMode:
 			model.compat?.supportsExplicitPromptCacheMode ??
-			supportsExplicitOpenAIPromptCache({ id: model.id, provider, baseUrl }),
+			supportsExplicitOpenAIPromptCache({
+				id: model.id,
+				provider,
+				baseUrl,
+				explicit: model.compat?.supportsExplicitPromptCacheMode,
+			}),
 		supportsStore: !isNonStandard,
 		supportsDeveloperRole: isOpenRouterDeveloperRoleModel || (!isNonStandard && !isOpenRouter),
 		supportsReasoningEffort:
@@ -1012,7 +960,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		sendSessionAffinityHeaders: isOpenRouter,
 		sessionAffinityFormat: isOpenRouter ? "openrouter" : "openai",
 		supportsLongCacheRetention: !(
-			// Auto cache.
+			// Auto cache
 			(
 				isDeepSeek ||
 				isOpenRouterExplicitCacheModel ||
@@ -1139,7 +1087,7 @@ export function convertMessages(
 					type: "text",
 					text: sanitizeSurrogates(block.text),
 				}));
-			// Keep paragraphs.
+			// Keep paragraphs
 			const assistantText = assistantTextParts.map((part) => part.text).join("\n\n");
 			const thinkingBlocks = msg.content.filter(isThinkingContentBlock);
 			const toolCalls = msg.content.filter(isToolCallBlock);
@@ -1174,7 +1122,11 @@ export function convertMessages(
 						if (model.provider === "opencode-go" && signature === "reasoning") {
 							signature = "reasoning_content";
 						}
-						if (signature && isOpenAICompletionsReasoningField(signature)) {
+						if (
+							signature &&
+							!options?.stripReasoningFields &&
+							isOpenAICompletionsReasoningField(signature)
+						) {
 							(assistantMsg as unknown as Record<string, unknown>)[signature] =
 								nonEmptyThinkingBlocks.map((block) => block.thinking).join("\n");
 						}
@@ -1210,12 +1162,13 @@ export function convertMessages(
 				}) as unknown as ChatCompletionMessageToolCall[];
 			}
 
-			if (preservedReasoningDetails) {
+			if (preservedReasoningDetails && !options?.stripReasoningFields) {
 				assistantMsg.reasoning_details = preservedReasoningDetails as JsonValue[];
 			}
 
 			if (
 				compat.requiresReasoningContentOnAssistantMessages &&
+				!options?.stripReasoningFields &&
 				model.reasoning &&
 				assistantMsg.reasoning_content === undefined
 			) {
@@ -1305,12 +1258,26 @@ export function convertMessages(
 	return params;
 }
 
+const UNSUPPORTED_REASONING_PATTERN =
+	/reasoning_content|reasoning_text|unsupported[:\s_-]*reasoning/i;
+
+// Reasoning fallback
+function isUnsupportedReasoningFieldError(error: unknown): boolean {
+	const normalized = normalizeProviderError(error);
+	if (normalized.status !== undefined && normalized.status !== 400 && normalized.status !== 422) {
+		return false;
+	}
+
+	const text = `${normalized.message}\n${normalized.body ?? ""}`;
+	return UNSUPPORTED_REASONING_PATTERN.test(text);
+}
+
 export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptions> = (
 	model: Model<"openai-completions">,
 	context: TranscriptContext,
 	options?: OpenAICompletionsOptions,
-): AssistantMessageEventStream => {
-	const stream = new AssistantMessageEventStream();
+): ReplyStream => {
+	const stream = new ReplyStream();
 	const normalizedContext = resolveTranscript(
 		context,
 		getCompat(model).supportsMidConvoSystemMessages,
@@ -1377,14 +1344,40 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
 				maxRetries: 0,
 			};
-			const { data: openaiStream, response } = await retryProviderRequest(
-				() => client.chat.completions.create(params, requestOptions).withResponse(),
-				{
-					maxRetries: options?.maxRetries,
-					maxRetryDelayMs: options?.maxRetryDelayMs,
-					signal: options?.signal,
-				},
-			);
+			const sendRequest = () =>
+				retryProviderRequest(
+					() => client.chat.completions.create(params, requestOptions).withResponse(),
+					{
+						maxRetries: options?.maxRetries,
+						maxRetryDelayMs: options?.maxRetryDelayMs,
+						signal: options?.signal,
+					},
+				);
+
+			let requestResult: Awaited<ReturnType<typeof sendRequest>>;
+			try {
+				requestResult = await sendRequest();
+			} catch (error) {
+				// Reasoning retry
+				if (!isUnsupportedReasoningFieldError(error)) throw error;
+				let stripped = buildParams(
+					model,
+					normalizedContext,
+					options,
+					compat,
+					cacheRetention,
+					grammarToolInputProperties,
+					true,
+				);
+				const nextStripped = await options?.onPayload?.(stripped, model);
+				if (nextStripped !== undefined) {
+					stripped =
+						nextStripped as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+				}
+				params = stripped;
+				requestResult = await sendRequest();
+			}
+			const { data: openaiStream, response } = requestResult;
 			await options?.onResponse?.(
 				{ status: response.status, headers: headersToRecord(response.headers) },
 				model,
@@ -1523,12 +1516,30 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				if (!block && toolCall.id) {
 					block = toolCallBlocksById.get(toolCall.id);
 				}
-				// Missing index.
+				// Index fallback
+				const matchesLastToolCall =
+					lastToolCallBlock !== undefined &&
+					lastToolCallBlock.streamIndex === undefined &&
+					(!toolCall.id || !lastToolCallBlock.id || toolCall.id === lastToolCallBlock.id) &&
+					(!name || name === lastToolCallBlock.name);
+				if (!block && streamIndex !== undefined && matchesLastToolCall) {
+					block = lastToolCallBlock;
+				}
 				if (
 					!block &&
 					streamIndex === undefined &&
 					!toolCall.id &&
 					(!name || name === lastToolCallBlock?.name)
+				) {
+					block = lastToolCallBlock;
+				}
+				if (
+					!block &&
+					streamIndex === undefined &&
+					toolCall.id &&
+					lastToolCallBlock !== undefined &&
+					!lastToolCallBlock.id &&
+					(!name || name === lastToolCallBlock.name)
 				) {
 					block = lastToolCallBlock;
 				}
@@ -1589,7 +1600,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				return block;
 			};
 
-			// Chunk loop.
+			// Chunk loop
 			for await (const chunk of openaiStream) {
 				await options?.onProviderStreamEvent?.(chunk, model);
 				if (!chunk || typeof chunk !== "object") continue;
@@ -1712,7 +1723,7 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 				}
 			}
 
-			// Finish blocks.
+			// Finish blocks
 			for (const block of blocks) {
 				finishBlock(block);
 			}
@@ -1728,16 +1739,23 @@ export const stream: StreamFunction<"openai-completions", OpenAICompletionsOptio
 					: "stop";
 			}
 			if (output.stopReason === "error") {
-				throw new Error(output.errorMessage || "Provider returned an error stop reason");
+				throw new Error(output.errorMessage || "Error stop reason");
 			}
 			if ((compat.supportsFinishReason && !hasFinishReason) || output.stopReason === "pending") {
-				throw new Error("Stream ended without finish_reason");
+				throw new Error("No finish reason");
+			}
+			if (
+				output.stopReason === "stop" &&
+				output.content.some((block) => block.type === "toolCall")
+			) {
+				// Stop override
+				output.stopReason = "toolUse";
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
 			stream.end();
 		} catch (error) {
-			// Error cleanup.
+			// Error cleanup
 			for (const block of output.content) {
 				if (block.type === "thinking") {
 					applyStreamedReasoningDetails(block);
@@ -1766,7 +1784,7 @@ export const streamSimple: StreamFunction<"openai-completions", SimpleStreamOpti
 	model: Model<"openai-completions">,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
+): ReplyStream => {
 	getClientApiKey(model.provider, options?.apiKey, options?.headers);
 
 	const base = {
@@ -1794,6 +1812,7 @@ function buildParams(
 		getDeclaredTools(context.messages),
 		compat.supportsOpenAIGrammarTools,
 	),
+	stripReasoningFields = false,
 ) {
 	const transcriptTools = resolveTranscriptTools(
 		context.messages,
@@ -1802,6 +1821,7 @@ function buildParams(
 	);
 	const messages = convertMessages(model, context, compat, {
 		grammarToolInputProperties,
+		...(stripReasoningFields ? { stripReasoningFields: true } : {}),
 	});
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
@@ -1876,7 +1896,7 @@ function buildParams(
 	const thinkingTokenBudgetField = resolveThinkingTokenBudgetField(compat);
 	const thinkingBudget = resolveClampedThinkingBudget(model, options, params);
 
-	// Thinking format.
+	// Thinking format
 	if (compat.thinkingFormat === "zai" && model.reasoning) {
 		const zaiParams = params as Omit<typeof params, "reasoning_effort"> & {
 			thinking?: { type: "enabled" | "disabled"; clear_thinking?: boolean };
