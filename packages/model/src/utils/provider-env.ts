@@ -3,10 +3,10 @@ import type { ProviderEnv } from "../types.ts";
 let procEnvCache: Map<string, string> | null = null;
 
 export function getProviderEnvValue(name: string, env?: ProviderEnv): string | undefined {
+	if (env && Object.hasOwn(env, name)) return env[name];
 	return (
-		env?.[name] ||
-		(typeof process !== "undefined" ? process.env[name] : undefined) ||
-		getBunSandboxEnvValue(name) ||
+		(typeof process !== "undefined" ? process.env[name] : undefined) ??
+		getBunSandboxEnvValue(name) ??
 		undefined
 	);
 }

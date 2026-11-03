@@ -1,7 +1,9 @@
 const MAX_UUID_V7_TIMESTAMP = 0xffffffffffff;
+
 const MAX_SEQUENCE = (1n << 41n) - 1n;
 
 let lastOrdinaryTimestamp = -1;
+
 let sequence: bigint | undefined;
 
 export function uuidv7(timestampMs?: number): string {

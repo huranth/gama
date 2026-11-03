@@ -10,9 +10,7 @@ const DEFAULT_PROXY_PORTS: Record<string, number> = {
 	wss: 443,
 };
 
-export const UNSUPPORTED_PROXY_PROTOCOL_MESSAGE =
-	"Unsupported proxy protocol. SOCKS and PAC proxy URLs are not supported; " +
-	"use an HTTP or HTTPS proxy URL.";
+export const UNSUPPORTED_PROXY_PROTOCOL_MESSAGE = "Unsupported proxy protocol";
 
 function stripBrackets(host: string): string {
 	return host.startsWith("[") && host.endsWith("]") ? host.slice(1, -1) : host;
@@ -56,11 +54,11 @@ export function resolveHttpProxyUrlForTarget(
 		proxyUrl = new URL(proxy);
 	} catch (error) {
 		const reason = error instanceof Error ? error.message : String(error);
-		throw new Error(`Invalid proxy URL ${JSON.stringify(proxy)}: ${reason}`);
+		throw new Error(`Invalid proxy: ${reason}`);
 	}
 
 	if (proxyUrl.protocol !== "http:" && proxyUrl.protocol !== "https:") {
-		throw new Error(`${UNSUPPORTED_PROXY_PROTOCOL_MESSAGE} Got ${proxyUrl.protocol}`);
+		throw new Error(`${UNSUPPORTED_PROXY_PROTOCOL_MESSAGE}: ${proxyUrl.protocol}`);
 	}
 
 	return proxyUrl;
@@ -132,13 +130,12 @@ function shouldProxyHostname(hostname: string, port: number, env?: ProviderEnv):
 		return true;
 	}
 
-	if (noProxy === "*") {
-		return false;
-	}
+	const entries = noProxy.split(/[,\s]/).filter(Boolean);
+	if (entries.includes("*")) return false;
 
 	const normalizedTargetHost = stripBrackets(hostname.toLowerCase());
 
-	return noProxy.split(/[,\s]/).every((entry) => {
+	return entries.every((entry) => {
 		const parsed = parseNoProxyEntry(entry);
 		if (!parsed) {
 			return true;
