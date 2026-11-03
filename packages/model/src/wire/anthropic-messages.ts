@@ -19,7 +19,7 @@ import {
 	ANTHROPIC_SERVICE_ACCOUNT_ID_ENV,
 	ANTHROPIC_WORKSPACE_ID_ENV,
 } from "../env-api-keys.ts";
-import { calculateCost } from "../models.ts";
+import { calculateCost } from "../registry.ts";
 import type {
 	AssistantMessage,
 	CacheRetention,
@@ -41,8 +41,10 @@ import type {
 	ToolCall,
 	ToolResultMessage,
 } from "../types.ts";
+import { raceWithAbortSignal } from "../utils/abort.ts";
 import { appendAssistantMessageDiagnostic } from "../utils/diagnostics.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
@@ -50,12 +52,15 @@ import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
+import { normalizeToolCallId } from "../utils/tool-call-id.ts";
 import {
 	getCurrentTools,
 	getInitialSystemMessage,
 	resolveTranscript,
 	type TranscriptContext,
 } from "../utils/transcript.ts";
+import { claudeCodeVersion, toClaudeCodeName } from "./claude-code.ts";
+import { matchesHost } from "./openai-compat.ts";
 import {
 	getJsonSchemaToolParameters,
 	resolveJsonSchemaStrictSampling,
@@ -66,6 +71,8 @@ import {
 	adjustMaxTokensForThinking,
 	buildBaseOptions,
 	clampMaxTokensToContext,
+	hasHeader,
+	resolveCacheRetention,
 } from "./simple-options.ts";
 import { transformMessages } from "./transform-messages.ts";
 
@@ -116,30 +123,6 @@ interface ConvertedAnthropicMessages {
 	assistantLevels: Map<number, AnthropicEffort>;
 }
 
-const claudeCodeVersion = "2.1.280";
-
-const claudeCodeTools = [
-	"Read",
-	"Write",
-	"Edit",
-	"Bash",
-	"Grep",
-	"Glob",
-	"AskUserQuestion",
-	"EnterPlanMode",
-	"ExitPlanMode",
-	"KillShell",
-	"NotebookEdit",
-	"Skill",
-	"Task",
-	"TaskOutput",
-	"TodoWrite",
-	"WebFetch",
-	"WebSearch",
-];
-
-const ccToolLookup = new Map(claudeCodeTools.map((t) => [t.toLowerCase(), t] as const));
-
 const FINE_GRAINED_TOOL_STREAMING_BETA = "fine-grained-tool-streaming-2025-05-14";
 
 const INTERLEAVED_THINKING_BETA = "interleaved-thinking-2025-05-14";
@@ -172,7 +155,7 @@ const ANTHROPIC_MESSAGE_EVENTS = new Set<string>([
 	"content_block_stop",
 ]);
 
-// Default for aborting a response body that goes silent. options.timeoutMs overrides it; 0 disables it.
+// Idle timeout
 const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 120_000;
 
 const LAYERED_BREAKPOINT_LOOKBACK = 12;
@@ -227,10 +210,6 @@ function isOAuthToken(apiKey: string): boolean {
 	return apiKey.includes("sk-ant-oat");
 }
 
-function normalizeToolCallId(id: string): string {
-	return id.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 64);
-}
-
 function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
 	return {
 		type: "tool_result",
@@ -239,8 +218,6 @@ function convertToolResult(msg: ToolResultMessage): ContentBlockParam {
 		is_error: msg.isError,
 	};
 }
-
-const toClaudeCodeName = (name: string) => ccToolLookup.get(name.toLowerCase()) ?? name;
 
 function getBetaHeader(
 	model: Model<"anthropic-messages">,
@@ -275,7 +252,7 @@ function assertRequestAuth(
 	apiKey: string | undefined,
 	headers: ProviderHeaders | undefined,
 ): void {
-	if (!hasRequestAuth(apiKey, headers)) throw new Error(`No API key for provider: ${provider}`);
+	if (!hasRequestAuth(apiKey, headers)) throw new Error(`No API key: ${provider}`);
 }
 
 function hasRequestAuth(apiKey: string | undefined, headers: ProviderHeaders | undefined): boolean {
@@ -327,7 +304,7 @@ function mapStopReason(
 		case "sensitive":
 			return { stopReason: "error", errorMessage: "Provider stopped with: sensitive" };
 		default:
-			throw new Error(`Unhandled stop reason: ${reason}`);
+			return { stopReason: "stop" };
 	}
 }
 
@@ -395,18 +372,6 @@ function mapThinkingLevelToEffort(
 	}
 }
 
-function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-
-	if (getProviderEnvValue("GAMA_CACHE_RETENTION", env) === "long") {
-		return "long";
-	}
-
-	return "short";
-}
-
 function isAnthropicEffort(value: unknown): value is AnthropicEffort {
 	return (
 		value === "low" ||
@@ -453,9 +418,17 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
-function consumeLine(text: string): { line: string; rest: string } | null {
+function consumeLine(
+	text: string,
+	final = false,
+): { line: string; rest: string } | null {
 	const lineBreakIndex = nextLineBreakIndex(text);
 	if (lineBreakIndex === -1) {
+		return null;
+	}
+
+	// CRLF split
+	if (text[lineBreakIndex] === "\r" && lineBreakIndex === text.length - 1 && !final) {
 		return null;
 	}
 
@@ -587,16 +560,6 @@ function convertTools(
 	});
 }
 
-function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
-	if (!headers) return false;
-	const expected = name.toLowerCase();
-	for (const [key, value] of Object.entries(headers)) {
-		if (key.toLowerCase() === expected && value !== null && value.trim().length > 0) return true;
-	}
-
-	return false;
-}
-
 function cacheableTail(
 	anchor: MessageParam,
 ): (ContentBlockParam & { cache_control?: CacheControlEphemeral }) | undefined {
@@ -635,7 +598,7 @@ function decodeSseLine(line: string, state: SseDecoderState): ServerSentEvent | 
 }
 
 function getAnthropicCompat(model: Model<"anthropic-messages">) {
-	const isOpenRouter = model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai");
+	const isOpenRouter = matchesHost("openrouter", model.provider, model.baseUrl);
 	return {
 		supportsEagerToolInputStreaming: model.compat?.supportsEagerToolInputStreaming ?? true,
 		supportsLongCacheRetention: model.compat?.supportsLongCacheRetention ?? true,
@@ -792,6 +755,46 @@ function getBetaFeatures(
 	return [...new Set(features)];
 }
 
+function applyThinkingConfig(
+	params: MessageCreateParamsStreaming,
+	model: Model<"anthropic-messages">,
+	options: AnthropicOptions | undefined,
+): void {
+	if (model.compat?.supportsMidConvoEffort === true) {
+		params.thinking = {
+			type: "adaptive",
+			display: options?.thinkingDisplay ?? "summarized",
+			block_binding: { prefix_mismatch_behavior: "drop_block" },
+		};
+		params.output_config = { effort: "high" };
+		return;
+	}
+
+	if (!model.reasoning) return;
+
+	if (options?.thinkingEnabled) {
+		const display = options.thinkingDisplay ?? "summarized";
+
+		if (model.compat?.forceAdaptiveThinking === true) {
+			params.thinking = { type: "adaptive", display };
+
+			if (options.effort) params.output_config = { effort: options.effort };
+			return;
+		}
+
+		params.thinking = {
+			type: "enabled",
+			budget_tokens: options.thinkingBudgetTokens || 1024,
+			display,
+		};
+		return;
+	}
+
+	if (options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null) {
+		params.thinking = { type: "disabled" };
+	}
+}
+
 function convertMessages(
 	transformedMessages: Message[],
 	isOAuthToken: boolean,
@@ -839,6 +842,7 @@ function convertMessages(
 
 			if (blocks.length > 0) pendingSystemMessages.push({ role: "system", content: blocks });
 		} else if (msg.role === "user") {
+			flushPendingSystemMessages();
 			if (typeof msg.content === "string") {
 				if (msg.content.trim().length > 0) {
 					params.push({
@@ -991,8 +995,8 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 	model: Model<"anthropic-messages">,
 	context: TranscriptContext,
 	options?: AnthropicOptions,
-): AssistantMessageEventStream => {
-	const stream = new AssistantMessageEventStream();
+): ReplyStream => {
+	const stream = new ReplyStream();
 	const normalizedContext = resolveTranscript(
 		context,
 		getAnthropicCompat(model).supportsMidConvoSystemMessages,
@@ -1126,9 +1130,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 				} else if (event.type === "content_block_start") {
 					if (event.content_block.type === "fallback") {
 						if (output.content.length > 0) {
-							throw new Error(
-								"Anthropic performed an unsupported mid-output model fallback",
-							);
+							throw new Error("Unsupported model fallback");
 						}
 
 						continue;
@@ -1257,7 +1259,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 								partial: output,
 							});
 						} else if (block.type === "toolCall") {
-							// Keep eager.
+							// Keep eager
 							if (block.partialJson!.length > 0) {
 								block.arguments = parseStreamingJson(block.partialJson!);
 							}
@@ -1332,11 +1334,11 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			}
 
 			if (output.stopReason === "pending") {
-				throw new Error("Anthropic stream ended without a stop reason");
+				throw new Error("No stop reason");
 			}
 
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error(output.errorMessage || "An unknown error occurred");
+				throw new Error(output.errorMessage || "Unknown error");
 			}
 
 			if (inputTransformations && inputTransformations.length > 0) {
@@ -1362,7 +1364,7 @@ export const stream: StreamFunction<"anthropic-messages", AnthropicOptions> = (
 			}
 
 			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
+			output.errorMessage = formatProviderError(normalizeProviderError(error));
 			stream.push({ type: "error", reason: output.stopReason, error: output });
 			stream.end();
 		}
@@ -1374,7 +1376,7 @@ export const streamSimple: StreamFunction<"anthropic-messages", SimpleStreamOpti
 	model: Model<"anthropic-messages">,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
+): ReplyStream => {
 	if (!getAnthropicFederation(model, options?.apiKey, options?.headers, options?.env)) {
 		assertRequestAuth(model.provider, options?.apiKey, options?.headers);
 	}
@@ -1420,7 +1422,7 @@ async function* iterateAnthropicEvents(
 	idleTimeoutMs?: number,
 ): AsyncGenerator<RawMessageStreamEvent> {
 	if (!response.body) {
-		throw new Error("Attempted to iterate over an Anthropic response with no body");
+		throw new Error("Missing response body");
 	}
 
 	let sawMessageStart = false;
@@ -1430,48 +1432,62 @@ async function* iterateAnthropicEvents(
 			throw new Error(sse.data);
 		}
 
-		if (!ANTHROPIC_MESSAGE_EVENTS.has(sse.event ?? "")) {
+		// Data events
+		if (sse.event && !ANTHROPIC_MESSAGE_EVENTS.has(sse.event)) {
 			continue;
 		}
+		if (sse.data.trim() === "") continue;
 
+		let event: RawMessageStreamEvent;
 		try {
-			const event = parseJsonWithRepair(sse.data) as RawMessageStreamEvent;
-			if (event.type === "message_start") {
-				sawMessageStart = true;
-			} else if (event.type === "message_stop") {
-				sawMessageEnd = true;
-			}
-
-			yield event;
+			event = parseJsonWithRepair(sse.data) as RawMessageStreamEvent;
 		} catch (error) {
+			// DONE sentinel
+			if (!sse.event && !sse.data.trimStart().startsWith("{")) continue;
 			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(
-				`Could not parse Anthropic SSE event ${sse.event}: ${message}; ` +
-					`data=${sse.data}; raw=${sse.raw.join("\\n")}`,
-			);
+			throw new Error(`Invalid SSE event: ${message}`);
 		}
+
+		const errorPayload = event as { type?: string; error?: { message?: string } };
+		if (errorPayload.type === "error") {
+			throw new Error(errorPayload.error?.message ?? sse.data);
+		}
+		if (!ANTHROPIC_MESSAGE_EVENTS.has(event.type)) {
+			continue;
+		}
+		if (event.type === "message_start") {
+			sawMessageStart = true;
+		} else if (event.type === "message_stop") {
+			sawMessageEnd = true;
+		}
+
+		yield event;
 	}
 
 	if (sawMessageStart && !sawMessageEnd) {
-		throw new Error("Anthropic stream ended before message_stop");
+		throw new Error("Missing message_stop");
 	}
 }
 
 function readWithIdleTimeout(
 	reader: ReadableStreamDefaultReader<Uint8Array>,
 	idleTimeoutMs: number = DEFAULT_STREAM_IDLE_TIMEOUT_MS,
+	signal?: AbortSignal,
 ): ReturnType<typeof reader.read> {
-	if (idleTimeoutMs <= 0) return reader.read();
+	if (signal?.aborted) return Promise.reject(new Error("Request was aborted"));
+
+	const read = signal ? raceWithAbortSignal(reader.read(), signal) : reader.read();
+	if (idleTimeoutMs <= 0) return read;
 
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	const idle = new Promise<never>((_, reject) => {
 		timer = setTimeout(
-			() => reject(new Error(`Anthropic stream idle timeout: no data for ${idleTimeoutMs}ms`)),
+			() => reject(new Error(`Idle timeout: ${idleTimeoutMs}ms`)),
 			idleTimeoutMs,
 		);
 	});
 
-	return Promise.race([reader.read(), idle]).finally(() => clearTimeout(timer));
+	return Promise.race([read, idle]).finally(() => clearTimeout(timer));
 }
 
 async function* iterateSseMessages(
@@ -1490,7 +1506,7 @@ async function* iterateSseMessages(
 				throw new Error("Request was aborted");
 			}
 
-			const { value, done } = await readWithIdleTimeout(reader, idleTimeoutMs);
+			const { value, done } = await readWithIdleTimeout(reader, idleTimeoutMs, signal);
 			if (done) {
 				break;
 			}
@@ -1509,7 +1525,7 @@ async function* iterateSseMessages(
 		}
 
 		buffer += decoder.decode();
-		let consumed = consumeLine(buffer);
+		let consumed = consumeLine(buffer, true);
 		while (consumed) {
 			buffer = consumed.rest;
 			const event = decodeSseLine(consumed.line, state);
@@ -1517,7 +1533,7 @@ async function* iterateSseMessages(
 				yield event;
 			}
 
-			consumed = consumeLine(buffer);
+			consumed = consumeLine(buffer, true);
 		}
 
 		if (buffer.length > 0) {
@@ -1532,7 +1548,7 @@ async function* iterateSseMessages(
 			yield trailingEvent;
 		}
 	} finally {
-		// Close body.
+		// Close body
 		await reader.cancel().catch(() => {});
 		reader.releaseLock();
 	}
@@ -1560,7 +1576,7 @@ function buildParams(
 		compat.supportsMidConvoSystemMessages &&
 		compat.supportsMidConvoToolChanges &&
 		initialTools.length > 0;
-	// Layered cache.
+	// Layered cache
 	const addLayeredBreakpoint = cacheControl !== undefined && !isOAuthToken;
 	const converted = convertMessages(
 		conversationMessages,
@@ -1658,44 +1674,4 @@ function buildParams(
 	}
 
 	return params;
-}
-
-function applyThinkingConfig(
-	params: MessageCreateParamsStreaming,
-	model: Model<"anthropic-messages">,
-	options: AnthropicOptions | undefined,
-): void {
-	if (model.compat?.supportsMidConvoEffort === true) {
-		params.thinking = {
-			type: "adaptive",
-			display: options?.thinkingDisplay ?? "summarized",
-			block_binding: { prefix_mismatch_behavior: "drop_block" },
-		};
-		params.output_config = { effort: "high" };
-		return;
-	}
-
-	if (!model.reasoning) return;
-
-	if (options?.thinkingEnabled) {
-		const display = options.thinkingDisplay ?? "summarized";
-
-		if (model.compat?.forceAdaptiveThinking === true) {
-			params.thinking = { type: "adaptive", display };
-
-			if (options.effort) params.output_config = { effort: options.effort };
-			return;
-		}
-
-		params.thinking = {
-			type: "enabled",
-			budget_tokens: options.thinkingBudgetTokens || 1024,
-			display,
-		};
-		return;
-	}
-
-	if (options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null) {
-		params.thinking = { type: "disabled" };
-	}
 }
