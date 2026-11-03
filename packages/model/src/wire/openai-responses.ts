@@ -1,13 +1,12 @@
 import OpenAI from "openai";
 import type { ResponseCreateParamsStreaming } from "openai/resources/responses/responses.js";
-import { clampThinkingLevel } from "../models.ts";
+import { clampThinkingLevel } from "../registry.ts";
 import type {
 	Api,
 	AssistantMessage,
 	CacheRetention,
 	Model,
 	OpenAIResponsesCompat,
-	ProviderEnv,
 	ProviderHeaders,
 	SimpleStreamOptions,
 	StreamFunction,
@@ -16,11 +15,12 @@ import type {
 	Usage,
 } from "../types.ts";
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { getProviderEnvValue } from "../utils/provider-env.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
+import { isRecord } from "../utils/record.ts";
+import { matchesHost } from "./openai-compat.ts";
 import {
 	getDeclaredTools,
 	resolveTranscript,
@@ -37,7 +37,7 @@ import {
 	convertResponsesTools,
 	processResponsesStream,
 } from "./openai-responses-shared.ts";
-import { buildBaseOptions } from "./simple-options.ts";
+import { buildBaseOptions, getClientApiKey, resolveCacheRetention } from "./simple-options.ts";
 
 export interface OpenAIResponsesOptions extends StreamOptions {
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -47,14 +47,17 @@ export interface OpenAIResponsesOptions extends StreamOptions {
 }
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
+
 const OPENAI_RESPONSES_MIN_OUTPUT_TOKENS = 16;
+
 const BREAKPOINT_FIELD = "prompt_cache_breakpoint";
+
 const CHATGPT_USAGE_URL = "https://chatgpt.com/settings/usage";
 
 function detectSessionAffinityFormat(
 	model: Pick<Model<"openai-responses">, "provider" | "baseUrl">,
 ): "openai" | "openrouter" {
-	const isOpenRouter = model.provider === "openrouter" || model.baseUrl.includes("openrouter.ai");
+	const isOpenRouter = matchesHost("openrouter", model.provider, model.baseUrl);
 
 	return isOpenRouter ? "openrouter" : "openai";
 }
@@ -72,12 +75,11 @@ function getPromptCacheRetention(
 
 function getPromptCacheOptions(
 	compat: Required<OpenAIResponsesCompat>,
+	cacheRetention: CacheRetention,
 ): ResponseCreateParamsStreaming["prompt_cache_options"] {
-	return compat.supportsExplicitPromptCacheMode ? { mode: "explicit" } : undefined;
-}
+	if (cacheRetention === "none") return undefined;
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+	return compat.supportsExplicitPromptCacheMode ? { mode: "explicit" } : undefined;
 }
 
 function markBreakpoint(message: unknown, breakpoint: Record<string, unknown>): boolean {
@@ -109,7 +111,7 @@ function markBreakpoint(message: unknown, breakpoint: Record<string, unknown>): 
 	return false;
 }
 
-// Two breakpoints.
+// Two breakpoints
 function applyExplicitPromptCacheBreakpoints(
 	messages: readonly unknown[],
 	compat: Required<OpenAIResponsesCompat>,
@@ -136,7 +138,7 @@ function findInstructionIndex(messages: readonly unknown[]): number {
 	});
 }
 
-// Skips instruction.
+// Skips instruction
 function markTailBreakpoint(messages: readonly unknown[], instructionIndex: number): void {
 	for (let index = messages.length - 2; index >= 0; index--) {
 		if (index === instructionIndex) continue;
@@ -147,7 +149,7 @@ function markTailBreakpoint(messages: readonly unknown[], instructionIndex: numb
 }
 
 function getServiceTierCostMultiplier(
-	model: Pick<Model<"openai-responses">, "id">,
+	model: Model<"openai-responses">,
 	serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
 ): number {
 	switch (serviceTier) {
@@ -155,7 +157,7 @@ function getServiceTierCostMultiplier(
 			return 0.5;
 		case "priority":
 		case "fast":
-			return model.id === "gpt-5.5" ? 2.5 : 2;
+			return model.compat?.priorityServiceTierMultiplier ?? 2;
 		default:
 			return 1;
 	}
@@ -164,8 +166,8 @@ function getServiceTierCostMultiplier(
 function applyServiceTierPricing(
 	usage: Usage,
 	serviceTier: ResponseCreateParamsStreaming["service_tier"] | undefined,
-	model: Pick<Model<"openai-responses">, "id">,
-) {
+	model: Model<"openai-responses">,
+): void {
 	const multiplier = getServiceTierCostMultiplier(model, serviceTier);
 	if (multiplier === 1) return;
 
@@ -178,49 +180,19 @@ function applyServiceTierPricing(
 }
 
 function isChatGPTSignIn(model: Model<"openai-responses">, apiKey: string | undefined): boolean {
+	const baseUrl = model.baseUrl.replace(/\/+$/, "");
+
 	return (
 		model.provider === "openai" &&
-		model.baseUrl === "https://api.openai.com/v1" &&
+		baseUrl === "https://api.openai.com/v1" &&
 		apiKey !== undefined &&
 		!apiKey.startsWith("sk-")
 	);
 }
 
-function resolveCacheRetention(cacheRetention?: CacheRetention, env?: ProviderEnv): CacheRetention {
-	if (cacheRetention) {
-		return cacheRetention;
-	}
-	if (getProviderEnvValue("GAMA_CACHE_RETENTION", env) === "long") {
-		return "long";
-	}
-	return "short";
-}
-
-function getClientApiKey(
-	provider: string,
-	apiKey: string | undefined,
-	headers: ProviderHeaders | undefined,
-): string {
-	if (apiKey) return apiKey;
-
-	const hasAuthHeader =
-		hasHeader(headers, "authorization") || hasHeader(headers, "cf-aig-authorization");
-	if (hasAuthHeader) return "unused";
-
-	throw new Error(`No API key for provider: ${provider}`);
-}
-
-function hasHeader(headers: ProviderHeaders | undefined, name: string): boolean {
-	if (!headers) return false;
-	const expected = name.toLowerCase();
-	for (const [key, value] of Object.entries(headers)) {
-		if (key.toLowerCase() === expected && value !== null && value.trim().length > 0) return true;
-	}
-	return false;
-}
-
 function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCompat> {
 	return {
+		priorityServiceTierMultiplier: model.compat?.priorityServiceTierMultiplier ?? 2,
 		supportsDeveloperRole: model.compat?.supportsDeveloperRole ?? true,
 		supportsMidConvoSystemMessages: model.compat?.supportsMidConvoSystemMessages ?? false,
 		sessionAffinityFormat:
@@ -231,7 +203,13 @@ function getCompat(model: Model<"openai-responses">): Required<OpenAIResponsesCo
 		supportsAdditionalTools: model.compat?.supportsAdditionalTools ?? false,
 		supportsToolSearch: model.compat?.supportsToolSearch ?? false,
 		supportsExplicitPromptCacheMode:
-			model.compat?.supportsExplicitPromptCacheMode ?? supportsExplicitOpenAIPromptCache(model),
+			model.compat?.supportsExplicitPromptCacheMode ??
+			supportsExplicitOpenAIPromptCache({
+				id: model.id,
+				provider: model.provider,
+				baseUrl: model.baseUrl,
+				explicit: model.compat?.supportsExplicitPromptCacheMode,
+			}),
 		supportsMaxOutputTokens: model.compat?.supportsMaxOutputTokens ?? true,
 	};
 }
@@ -272,8 +250,8 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 	model: Model<"openai-responses">,
 	context: TranscriptContext,
 	options?: OpenAIResponsesOptions,
-): AssistantMessageEventStream => {
-	const stream = new AssistantMessageEventStream();
+): ReplyStream => {
+	const stream = new ReplyStream();
 	const normalizedContext = resolveTranscript(
 		context,
 		getCompat(model).supportsMidConvoSystemMessages,
@@ -358,10 +336,10 @@ export const stream: StreamFunction<"openai-responses", OpenAIResponsesOptions> 
 			}
 
 			if (output.stopReason === "pending") {
-				throw new Error("OpenAI Responses stream ended without a stop reason");
+				throw new Error("No stop reason");
 			}
 			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error(output.errorMessage || "An unknown error occurred");
+				throw new Error(output.errorMessage || "Unknown error");
 			}
 
 			stream.push({ type: "done", reason: output.stopReason, message: output });
@@ -386,7 +364,7 @@ export const streamSimple: StreamFunction<"openai-responses", SimpleStreamOption
 	model: Model<"openai-responses">,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
+): ReplyStream => {
 	getClientApiKey(model.provider, options?.apiKey, options?.headers);
 
 	const base = {
@@ -446,7 +424,9 @@ function buildParams(
 		prompt_cache_retention: omitUnsupportedFields
 			? undefined
 			: getPromptCacheRetention(compat, cacheRetention),
-		prompt_cache_options: omitUnsupportedFields ? undefined : getPromptCacheOptions(compat),
+		prompt_cache_options: omitUnsupportedFields
+			? undefined
+			: getPromptCacheOptions(compat, cacheRetention),
 		store: false,
 	};
 

@@ -12,7 +12,7 @@ import type {
 	ResponseStreamEvent,
 	ResponseToolSearchOutputItemParam,
 } from "openai/resources/responses/responses.js";
-import { calculateCost } from "../models.ts";
+import { calculateCost } from "../registry.ts";
 import type {
 	Api,
 	AssistantMessage,
@@ -31,7 +31,7 @@ import type {
 	Usage,
 	UserMessage,
 } from "../types.ts";
-import type { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import type { ReplyStream } from "../utils/event-stream.ts";
 import { shortHash } from "../utils/hash.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
@@ -204,7 +204,7 @@ export function convertResponsesMessages<TApi extends Api>(
 export async function processResponsesStream<TApi extends Api>(
 	openaiStream: AsyncIterable<ResponseStreamEvent>,
 	output: AssistantMessage,
-	stream: AssistantMessageEventStream,
+	stream: ReplyStream,
 	model: Model<TApi>,
 	options?: OpenAIResponsesStreamOptions,
 ): Promise<void> {
@@ -379,7 +379,7 @@ export async function processResponsesStream<TApi extends Api>(
 		}
 
 		if (item.type === "custom_tool_call" && slot?.type === "toolCall" && slot.block.customInput) {
-			const nextInput = item.input ?? getCustomToolCallInput(slot.block);
+			const nextInput = item.input || getCustomToolCallInput(slot.block);
 
 			pushToolCallDelta(slot, appendCustomToolCallInput(slot.block, nextInput, true));
 			if (item.namespace !== undefined) slot.block.namespace = item.namespace;
@@ -402,8 +402,8 @@ export async function processResponsesStream<TApi extends Api>(
 			const block = reasoningBlocksById.get(item.id);
 			if (!block?.thinkingSignature) continue;
 
-			const stored = JSON.parse(block.thinkingSignature) as ResponseReasoningItem;
-			if (stored.encrypted_content) continue;
+			const stored = parseReasoningSignature(block.thinkingSignature);
+			if (!stored || stored.encrypted_content) continue;
 
 			block.thinkingSignature = JSON.stringify({
 				...stored,
@@ -512,11 +512,12 @@ export async function processResponsesStream<TApi extends Api>(
 				if (!slot || slot.block.partialJson === undefined) break;
 
 				const previousJson = slot.block.partialJson;
-				const delta = event.arguments.startsWith(previousJson)
-					? event.arguments.slice(previousJson.length)
+				const finalJson = event.arguments || previousJson || "{}";
+				const delta = finalJson.startsWith(previousJson)
+					? finalJson.slice(previousJson.length)
 					: "";
 
-				slot.block.partialJson = event.arguments;
+				slot.block.partialJson = finalJson;
 				slot.block.arguments = parseStreamingJson(slot.block.partialJson);
 
 				if (delta.length > 0) pushToolCallDelta(slot, delta);
@@ -536,7 +537,8 @@ export async function processResponsesStream<TApi extends Api>(
 				const slot = findSlot(event.output_index, "toolCall");
 				if (!slot?.block.customInput) break;
 
-				pushToolCallDelta(slot, appendCustomToolCallInput(slot.block, event.input, true));
+				const finalInput = event.input || getCustomToolCallInput(slot.block);
+				pushToolCallDelta(slot, appendCustomToolCallInput(slot.block, finalInput, true));
 				break;
 			}
 
@@ -558,13 +560,13 @@ export async function processResponsesStream<TApi extends Api>(
 			}
 
 			case "error": {
-				throw new Error(`Error Code ${event.code}: ${event.message}`);
+				throw new Error(`Provider error: ${event.message}`);
 			}
 		}
 	}
 
 	if (!sawTerminalEvent) {
-		throw new Error("OpenAI Responses stream ended before a terminal response event");
+		throw new Error("No terminal event");
 	}
 
 	if (output.stopReason !== "toolUse") return;
@@ -576,10 +578,7 @@ export async function processResponsesStream<TApi extends Api>(
 		const isUnfinished = toolCall.partialJson !== undefined || toolCall.customInput !== undefined;
 		if (!isUnfinished) continue;
 
-		throw new Error(
-			`OpenAI Responses stream completed with an unfinished tool call: ` +
-				`${toolCall.name} (${toolCall.id})`,
-		);
+		throw new Error(`Unfinished tool call: ${toolCall.name}`);
 	}
 }
 
@@ -638,15 +637,17 @@ function mapStopReason(
 					: "Response incomplete without a provider reason",
 			};
 		case "failed":
+			return { stopReason: "error", errorMessage: "Response failed" };
 		case "cancelled":
-			return { stopReason: "error" };
+			return { stopReason: "error", errorMessage: "Response cancelled" };
 		case "in_progress":
 		case "queued":
-			return { stopReason: "stop" };
-		default: {
-			const _exhaustive = status;
-			throw new Error(`Unhandled stop reason: ${_exhaustive}`);
-		}
+			return {
+				stopReason: "error",
+				errorMessage: `Response ended while ${status}`,
+			};
+		default:
+			return { stopReason: "stop" }; // unknown status
 	}
 }
 
@@ -682,6 +683,16 @@ function convertToolResultOutput<TApi extends Api>(
 	return output;
 }
 
+export function parseReasoningSignature(
+	signature: string,
+): ResponseReasoningItem | undefined {
+	try {
+		return JSON.parse(signature) as ResponseReasoningItem;
+	} catch {
+		return undefined; // malformed
+	}
+}
+
 function parseTextSignature(
 	signature: string | undefined,
 ): { id: string; phase?: TextSignatureV1["phase"] } | undefined {
@@ -708,14 +719,15 @@ function readUsage(response: CompletedResponse | IncompleteResponse): Usage {
 	const cachedTokens = inputDetails?.cached_tokens || 0;
 	const cacheWriteTokens = inputDetails?.cache_write_tokens || 0;
 	const inputTokens = response.usage?.input_tokens || 0;
+	const outputTokens = response.usage?.output_tokens || 0;
 
 	return {
 		input: Math.max(0, inputTokens - cachedTokens - cacheWriteTokens),
-		output: response.usage?.output_tokens || 0,
+		output: outputTokens,
 		cacheRead: cachedTokens,
 		cacheWrite: cacheWriteTokens,
 		reasoning: response.usage?.output_tokens_details?.reasoning_tokens || 0,
-		totalTokens: response.usage?.total_tokens || 0,
+		totalTokens: response.usage?.total_tokens || inputTokens + outputTokens,
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 	};
 }
@@ -749,7 +761,7 @@ function readFailureMessage(
 	const reason = response?.incomplete_details?.reason;
 	if (reason) return `incomplete: ${reason}`;
 
-	return "Unknown error (no error details in response)";
+	return "Unknown error";
 }
 
 function createToolCallIdNormalizer<TApi extends Api>(
@@ -814,7 +826,7 @@ function convertAssistantMessage<TApi extends Api>(
 
 	for (const block of message.content) {
 		if (block.type === "thinking") {
-			pushReasoning(output, block);
+			if (pushReasoning(output, block, turn, textBlockIndex)) textBlockIndex++;
 			continue;
 		}
 
@@ -836,14 +848,21 @@ function convertAssistantMessage<TApi extends Api>(
 function pushReasoning(
 	output: (ResponseInputItem | ResponseOutputItem)[],
 	block: ThinkingContent,
-): void {
-	if (!block.thinkingSignature) return;
-
-	try {
-		output.push(JSON.parse(block.thinkingSignature) as ResponseReasoningItem);
-	} catch {
-		// Replay text.
+	turn: number,
+	textBlockIndex: number,
+): boolean {
+	if (block.thinkingSignature) {
+		const reasoning = parseReasoningSignature(block.thinkingSignature);
+		if (reasoning) {
+			output.push(reasoning);
+			return false;
+		}
 	}
+
+	if (!block.thinking.trim()) return false;
+
+	output.push(convertAssistantText({ type: "text", text: block.thinking }, turn, textBlockIndex));
+	return true;
 }
 
 function convertAssistantText(
