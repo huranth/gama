@@ -22,7 +22,7 @@ export function validateToolCall(tools: Tool[], toolCall: ToolCall): any {
 	const tool = tools.find((candidate) => candidate.name === toolCall.name);
 
 	if (!tool) {
-		throw new Error(`Tool "${toolCall.name}" not found`);
+		throw new Error(`Unknown tool: ${toolCall.name}`);
 	}
 
 	return validateToolArguments(tool, toolCall);
@@ -71,7 +71,7 @@ function formatValidationFailure(
 			.join("\n") || "Unknown validation error";
 
 	const received = JSON.stringify(toolCall.arguments, null, 2);
-	const header = `Validation failed for tool "${toolCall.name}":`;
+	const header = `Validation failed: ${toolCall.name}`;
 	const details = `Received arguments:\n${received}`;
 
 	return new Error(`${header}\n${errors}\n\n${details}`);

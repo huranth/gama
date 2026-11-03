@@ -109,7 +109,7 @@ function eventBlock(event: Exclude<AssistantMessageEvent, { type: "start" | "don
 	assertContentIndex(event.contentIndex);
 	const block = event.partial.content[event.contentIndex];
 	if (!block) {
-		throw new Error(`${event.type} event has no content block at index ${event.contentIndex}`);
+		throw new Error(`No content block: ${event.contentIndex}`);
 	}
 	return block;
 }
@@ -117,7 +117,7 @@ function eventBlock(event: Exclude<AssistantMessageEvent, { type: "start" | "don
 function serializedArguments(argumentsValue: ToolCall["arguments"]): string {
 	const serialized = JSON.stringify(argumentsValue);
 	if (serialized === undefined) {
-		throw new Error("Tool-call arguments are not JSON-serializable");
+		throw new Error("Invalid tool arguments");
 	}
 	return serialized;
 }
@@ -132,7 +132,7 @@ function appendBlock(
 	assertContentIndex(contentIndex);
 	if (contentIndex !== message.content.length) {
 		const reason = contentIndex < message.content.length ? "already exists" : "would leave a gap";
-		throw new Error(`Cannot start assistant message block at index ${contentIndex}: ${reason}`);
+		throw new Error(`Bad block start: ${reason}`);
 	}
 	message.content.push(structuredClone(block));
 	states.set(contentIndex, state);
@@ -140,7 +140,7 @@ function appendBlock(
 
 function assertContentIndex(contentIndex: number): void {
 	if (!Number.isSafeInteger(contentIndex) || contentIndex < 0) {
-		throw new Error(`Invalid assistant message frame contentIndex: ${contentIndex}`);
+		throw new Error(`Invalid block index: ${contentIndex}`);
 	}
 }
 
@@ -155,16 +155,13 @@ function activeBlock(
 	const state = states.get(contentIndex);
 	const block = message.content[contentIndex];
 	if (!state || !block) {
-		throw new Error(`${frameType} frame has no started block at index ${contentIndex}`);
+		throw new Error(`Missing block: ${frameType}`);
 	}
 	if (state.kind !== expectedKind || block.type !== expectedKind) {
-		throw new Error(
-			`${frameType} frame expected ${expectedKind} block at index ${contentIndex}, ` +
-				`found ${block.type}`,
-		);
+		throw new Error(`Wrong block type: ${expectedKind}`);
 	}
 	if (state.ended) {
-		throw new Error(`${frameType} frame follows the end of block at index ${contentIndex}`);
+		throw new Error("Block already ended");
 	}
 	return { block, state };
 }
@@ -204,16 +201,16 @@ export class AssistantMessageFrameEncoder {
 
 	encode(event: AssistantMessageEvent): AssistantMessageFrame | undefined {
 		if (this.terminal)
-			throw new Error(`Assistant message event ${event.type} follows a terminal event`);
+			throw new Error("Stream already ended");
 
 		switch (event.type) {
 			case "start":
 				if (this.started)
-					throw new Error("Assistant message stream contains more than one start event");
+					throw new Error("Duplicate start event");
 				this.started = true;
 				return { type: "start", partial: cloneStartMessage(event.partial) };
 			case "done":
-				if (!this.started) throw new Error("Assistant message done event appears before start");
+				if (!this.started) throw new Error("Done before start");
 				this.terminal = true;
 				return undefined;
 			case "error":
@@ -222,15 +219,13 @@ export class AssistantMessageFrameEncoder {
 		}
 
 		if (!this.started)
-			throw new Error(`Assistant message ${event.type} event appears before start`);
+			throw new Error(`Event before start: ${event.type}`);
 
 		switch (event.type) {
 			case "text_start": {
 				const content = eventBlock(event);
 				if (content.type !== "text") {
-					throw new Error(
-						`text_start event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				this.startBlock(event.contentIndex, {
 					kind: "text",
@@ -248,9 +243,7 @@ export class AssistantMessageFrameEncoder {
 			case "text_end": {
 				const content = eventBlock(event);
 				if (content.type !== "text") {
-					throw new Error(
-						`text_end event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				this.endBlock(event.contentIndex, "text");
 				return {
@@ -265,9 +258,7 @@ export class AssistantMessageFrameEncoder {
 			case "thinking_start": {
 				const content = eventBlock(event);
 				if (content.type !== "thinking") {
-					throw new Error(
-						`thinking_start event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				this.startBlock(event.contentIndex, {
 					kind: "thinking",
@@ -285,9 +276,7 @@ export class AssistantMessageFrameEncoder {
 			case "thinking_end": {
 				const content = eventBlock(event);
 				if (content.type !== "thinking") {
-					throw new Error(
-						`thinking_end event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				this.endBlock(event.contentIndex, "thinking");
 				return {
@@ -303,9 +292,7 @@ export class AssistantMessageFrameEncoder {
 			case "toolcall_start": {
 				const content = eventBlock(event);
 				if (content.type !== "toolCall") {
-					throw new Error(
-						`toolcall_start event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				const snapshotArguments = serializedArguments(content.arguments);
 				const caughtUp = snapshotArguments === EMPTY_PARSED_TOOL_ARGUMENTS;
@@ -323,7 +310,7 @@ export class AssistantMessageFrameEncoder {
 			}
 			case "toolcall_delta": {
 				const state = this.block(event.contentIndex, "toolCall");
-				if (state.kind !== "toolCall") throw new Error("Unreachable tool-call encoder state");
+				if (state.kind !== "toolCall") throw new Error("Invalid encoder state");
 				if (state.caughtUp) {
 					if (event.delta.length === 0) return undefined;
 
@@ -353,14 +340,10 @@ export class AssistantMessageFrameEncoder {
 			case "toolcall_end": {
 				const content = eventBlock(event);
 				if (content.type !== "toolCall") {
-					throw new Error(
-						`toolcall_end event points to ${content.type} block at index ${event.contentIndex}`,
-					);
+					throw new Error(`Wrong content type: ${content.type}`);
 				}
 				if (event.toolCall.type !== "toolCall") {
-					throw new Error(
-						`toolcall_end event has invalid tool call at index ${event.contentIndex}`,
-					);
+					throw new Error("Invalid tool call");
 				}
 				this.endBlock(event.contentIndex, "toolCall");
 				return {
@@ -383,7 +366,7 @@ export class AssistantMessageFrameEncoder {
 	private startBlock(contentIndex: number, state: EncoderBlockState): void {
 		assertContentIndex(contentIndex);
 		if (this.blocks.has(contentIndex)) {
-			throw new Error(`Assistant message block ${contentIndex} starts more than once`);
+			throw new Error(`Duplicate block: ${contentIndex}`);
 		}
 		this.blocks.set(contentIndex, state);
 	}
@@ -392,9 +375,9 @@ export class AssistantMessageFrameEncoder {
 		assertContentIndex(contentIndex);
 		const state = this.blocks.get(contentIndex);
 		if (state === undefined)
-			throw new Error(`Assistant message ${kind} block ${contentIndex} has not started`);
+			throw new Error(`Block not started: ${contentIndex}`);
 		if (state.kind !== kind) {
-			throw new Error(`Assistant message block ${contentIndex} is ${state.kind}, not ${kind}`);
+			throw new Error(`Wrong block kind: ${state.kind}`);
 		}
 		return state;
 	}
@@ -410,7 +393,7 @@ export class AssistantMessageFrameEncoder {
 		kind: "text" | "thinking",
 	): AssistantMessageFrame | undefined {
 		const state = this.block(contentIndex, kind);
-		if (state.kind === "toolCall") throw new Error("Unreachable text encoder state");
+		if (state.kind === "toolCall") throw new Error("Invalid encoder state");
 		const deltaStart = state.deltaChars;
 		state.deltaChars += delta.length;
 		const covered = Math.max(0, state.coveredChars - deltaStart);
@@ -435,9 +418,9 @@ export function reduceAssistantMessageFrames(
 	for (const frame of frames) {
 		if (frame.type === "start") {
 			if (message)
-				throw new Error("Assistant message frame sequence contains more than one start frame");
+				throw new Error("Duplicate start frame");
 			if (frameBeforeStart !== undefined)
-				throw new Error(`${frameBeforeStart} frame appears before the start frame`);
+				throw new Error(`Frame before start: ${frameBeforeStart}`);
 			message = structuredClone(frame.partial);
 			continue;
 		}
@@ -449,7 +432,7 @@ export function reduceAssistantMessageFrames(
 		switch (frame.type) {
 			case "text_start":
 				if (frame.content.type !== "text") {
-					throw new Error(`text_start frame contains ${frame.content.type} content`);
+					throw new Error(`Wrong frame content: ${frame.content.type}`);
 				}
 				appendBlock(message, states, frame.contentIndex, frame.content, {
 					kind: "text",
@@ -458,7 +441,7 @@ export function reduceAssistantMessageFrames(
 				break;
 			case "text_delta": {
 				const { block } = activeBlock(message, states, frame.contentIndex, "text", frame.type);
-				if (block.type !== "text") throw new Error("Unreachable text frame state");
+				if (block.type !== "text") throw new Error("Invalid frame state");
 				block.text += frame.delta;
 				break;
 			}
@@ -470,7 +453,7 @@ export function reduceAssistantMessageFrames(
 					"text",
 					frame.type,
 				);
-				if (block.type !== "text") throw new Error("Unreachable text frame state");
+				if (block.type !== "text") throw new Error("Invalid frame state");
 				block.text = frame.content;
 				delete block.textSignature;
 				if (frame.textSignature !== undefined) block.textSignature = frame.textSignature;
@@ -479,7 +462,7 @@ export function reduceAssistantMessageFrames(
 			}
 			case "thinking_start":
 				if (frame.content.type !== "thinking") {
-					throw new Error(`thinking_start frame contains ${frame.content.type} content`);
+					throw new Error(`Wrong frame content: ${frame.content.type}`);
 				}
 				appendBlock(message, states, frame.contentIndex, frame.content, {
 					kind: "thinking",
@@ -494,7 +477,7 @@ export function reduceAssistantMessageFrames(
 					"thinking",
 					frame.type,
 				);
-				if (block.type !== "thinking") throw new Error("Unreachable thinking frame state");
+				if (block.type !== "thinking") throw new Error("Invalid frame state");
 				block.thinking += frame.delta;
 				break;
 			}
@@ -506,7 +489,7 @@ export function reduceAssistantMessageFrames(
 					"thinking",
 					frame.type,
 				);
-				if (block.type !== "thinking") throw new Error("Unreachable thinking frame state");
+				if (block.type !== "thinking") throw new Error("Invalid frame state");
 				block.thinking = frame.content;
 				delete block.thinkingSignature;
 				delete block.redacted;
@@ -518,7 +501,7 @@ export function reduceAssistantMessageFrames(
 			}
 			case "toolcall_start":
 				if (frame.toolCall.type !== "toolCall") {
-					throw new Error(`toolcall_start frame contains ${frame.toolCall.type} content`);
+					throw new Error(`Wrong frame content: ${frame.toolCall.type}`);
 				}
 				appendBlock(message, states, frame.contentIndex, frame.toolCall, {
 					kind: "toolCall",
@@ -535,7 +518,7 @@ export function reduceAssistantMessageFrames(
 					frame.type,
 				);
 				if (block.type !== "toolCall" || state.kind !== "toolCall") {
-					throw new Error("Unreachable tool-call checkpoint state");
+					throw new Error("Invalid checkpoint");
 				}
 				state.json = frame.json;
 				block.arguments = parseStreamingJson<ToolCall["arguments"]>(frame.json);
@@ -550,7 +533,7 @@ export function reduceAssistantMessageFrames(
 					frame.type,
 				);
 				if (block.type !== "toolCall" || state.kind !== "toolCall") {
-					throw new Error("Unreachable tool-call frame state");
+					throw new Error("Invalid frame state");
 				}
 				state.json += frame.delta;
 				break;
@@ -563,7 +546,7 @@ export function reduceAssistantMessageFrames(
 					"toolCall",
 					frame.type,
 				);
-				if (block.type !== "toolCall") throw new Error("Unreachable tool-call frame state");
+				if (block.type !== "toolCall") throw new Error("Invalid frame state");
 				block.id = frame.id;
 				block.name = frame.name;
 				block.arguments = structuredClone(frame.arguments);
@@ -582,7 +565,7 @@ export function reduceAssistantMessageFrames(
 	for (const [contentIndex, state] of states) {
 		if (state.kind !== "toolCall" || state.ended || state.json.length === 0) continue;
 		const block = message.content[contentIndex];
-		if (block?.type !== "toolCall") throw new Error("Unreachable tool-call frame state");
+		if (block?.type !== "toolCall") throw new Error("Invalid frame state");
 		block.arguments = parseStreamingJson<ToolCall["arguments"]>(state.json);
 	}
 

@@ -6,7 +6,7 @@ import type {
 	ToolReference,
 	TranscriptContext,
 } from "../types.ts";
-import { contentText, getSystemMessageText } from "./text.ts";
+import { contentText, getSystemMessageText, renderSystemMessageUpdate } from "./text.ts";
 
 export type { TranscriptContext } from "../types.ts";
 
@@ -47,11 +47,47 @@ export function collapseSystemMessages(context: TranscriptContext): TranscriptCo
 	return { messages: head ? [head, ...messages] : messages } as TranscriptContext;
 }
 
+export function appendSystemUpdatesAsUser(context: TranscriptContext): TranscriptContext {
+	const [first, ...rest] = context.messages;
+	if (!first || !isSystemMessage(first)) return collapseSystemMessages(context);
+
+	// Rewrite head.
+	if (
+		rest.some(
+			(message) =>
+				isSystemMessage(message) &&
+				(message.toolsAdded?.length || message.toolsRemoved?.length),
+		)
+	) {
+		return collapseSystemMessages(context);
+	}
+
+	const messages: Message[] = [first];
+
+	for (const message of rest) {
+		if (!isSystemMessage(message)) {
+			messages.push(message);
+			continue;
+		}
+
+		const text = renderSystemMessageUpdate(message);
+		if (text.length > 0) {
+			messages.push({
+				role: "user",
+				content: `<system-update>\n${text}\n</system-update>`,
+				timestamp: message.timestamp,
+			});
+		}
+	}
+
+	return { messages } as TranscriptContext;
+}
+
 export function resolveTranscript(
 	context: TranscriptContext,
 	supportsMidConvoSystemMessages: boolean | undefined,
 ): TranscriptContext {
-	return supportsMidConvoSystemMessages ? context : collapseSystemMessages(context);
+	return supportsMidConvoSystemMessages ? context : appendSystemUpdatesAsUser(context);
 }
 
 export function toToolDeclaration(tool: Tool): Tool {
