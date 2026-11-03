@@ -1,4 +1,4 @@
-import { calculateCost, clampThinkingLevel } from "../models.ts";
+import { calculateCost, clampThinkingLevel } from "../registry.ts";
 import type {
 	AssistantMessage,
 	Message,
@@ -13,11 +13,17 @@ import type {
 	ToolCall,
 	TranscriptContext,
 } from "../types.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
+import {
+	formatProviderError,
+	MAX_PROVIDER_ERROR_BODY_CHARS,
+	normalizeProviderError,
+	truncateErrorText,
+} from "../utils/error-body.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
-import { parseStreamingJson } from "../utils/json-parse.ts";
+import { parseJsonWithRepair, parseStreamingJson } from "../utils/json-parse.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
 import { getCurrentTools, resolveTranscript } from "../utils/transcript.ts";
@@ -121,7 +127,7 @@ type MistralCompletionEvent = {
 };
 
 const MISTRAL_TOOL_CALL_ID_LENGTH = 9;
-const MAX_MISTRAL_ERROR_BODY_CHARS = 4000;
+
 const MISTRAL_STREAM_DONE = Symbol("mistral-stream-done");
 
 function createOutput(model: Model<"mistral-conversations">): AssistantMessage {
@@ -142,15 +148,6 @@ function createOutput(model: Model<"mistral-conversations">): AssistantMessage {
 		stopReason: "pending",
 		timestamp: Date.now(),
 	};
-}
-
-function safeJsonStringify(value: unknown): string {
-	try {
-		const serialized = JSON.stringify(value);
-		return serialized === undefined ? String(value) : serialized;
-	} catch {
-		return String(value);
-	}
 }
 
 function findMistralEventBoundary(buffer: string): { index: number; length: number } | undefined {
@@ -238,14 +235,6 @@ function remapMistralProperty(
 
 function isMistralRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function truncateErrorText(text: string, maxChars: number): string {
-	if (text.length <= maxChars) return text;
-	// Surrogate safe.
-	const lastCode = text.charCodeAt(maxChars - 1);
-	const end = lastCode >= 0xd800 && lastCode <= 0xdbff ? maxChars - 1 : maxChars;
-	return `${text.slice(0, end)}... [truncated ${text.length - end} chars]`;
 }
 
 function deriveMistralToolCallId(id: string, attempt: number): string {
@@ -356,10 +345,15 @@ async function requestMistralStream(
 
 	const url = new URL("v1/chat/completions", baseUrl);
 	const headers = buildMistralHeaders(model, apiKey, options);
-	const timeoutSignal = AbortSignal.timeout(options?.timeoutMs ?? 60_000);
-	const signal = options?.signal
-		? AbortSignal.any([options.signal, timeoutSignal])
-		: timeoutSignal;
+	const timeoutMs = options?.timeoutMs;
+	const timeoutSignal =
+		timeoutMs !== undefined && Number.isFinite(timeoutMs) && timeoutMs > 0
+			? AbortSignal.timeout(Math.floor(timeoutMs))
+			: undefined;
+	const signal =
+		options?.signal && timeoutSignal
+			? AbortSignal.any([options.signal, timeoutSignal])
+			: (options?.signal ?? timeoutSignal);
 	const response = await (options?.fetch ?? globalThis.fetch)(url, {
 		method: "POST",
 		headers,
@@ -375,7 +369,7 @@ async function requestMistralStream(
 		throw new MistralHttpError(response.status, body, response.statusText);
 	}
 	if (!response.body) {
-		throw new Error("Mistral response has no body");
+		throw new Error("Missing response body");
 	}
 	return readMistralEvents(response.body, signal);
 }
@@ -405,19 +399,7 @@ function createMistralToolCallIdNormalizer(): (id: string) => string {
 }
 
 function formatMistralError(error: unknown): string {
-	if (error instanceof Error) {
-		const httpError = error as Error & { statusCode?: unknown; body?: unknown };
-		const statusCode =
-			typeof httpError.statusCode === "number" ? httpError.statusCode : undefined;
-		const bodyText = typeof httpError.body === "string" ? httpError.body.trim() : undefined;
-		if (statusCode !== undefined && bodyText) {
-			const body = truncateErrorText(bodyText, MAX_MISTRAL_ERROR_BODY_CHARS);
-			return `Mistral API error (${statusCode}): ${body}`;
-		}
-		if (statusCode !== undefined) return `Mistral API error (${statusCode}): ${error.message}`;
-		return error.message;
-	}
-	return safeJsonStringify(error);
+	return formatProviderError(normalizeProviderError(error), "Mistral API error");
 }
 
 function getMistralCachedPromptTokens(usage: unknown, promptTokens: number): number {
@@ -508,103 +490,6 @@ function mapToolChoice(
 	};
 }
 
-export const stream: StreamFunction<"mistral-conversations", MistralOptions> = (
-	model: Model<"mistral-conversations">,
-	context: TranscriptContext,
-	options?: MistralOptions,
-): AssistantMessageEventStream => {
-	const stream = new AssistantMessageEventStream();
-	const normalizedContext = resolveTranscript(
-		context,
-		model.compat?.supportsMidConvoSystemMessages,
-	);
-	(async () => {
-		const output = createOutput(model);
-		try {
-			const apiKey = options?.apiKey;
-			if (!apiKey) {
-				throw new Error(`No API key for provider: ${model.provider}`);
-			}
-			const normalizeMistralToolCallId = createMistralToolCallIdNormalizer();
-			const transformedMessages = transformMessages(
-				normalizedContext.messages,
-				model,
-				normalizeMistralToolCallId,
-			);
-
-			let payload = buildChatPayload(model, normalizedContext, transformedMessages, options);
-			const nextPayload = await options?.onPayload?.(payload, model);
-			if (nextPayload !== undefined) {
-				payload = nextPayload as MistralChatPayload;
-			}
-			const mistralStream = await requestMistralStream(model, payload, apiKey, options);
-			stream.push({ type: "start", partial: output });
-			await consumeChatStream(
-				model,
-				output,
-				stream,
-				mistralStream,
-				options?.onProviderStreamEvent,
-			);
-			if (options?.signal?.aborted) {
-				throw new Error("Request was aborted");
-			}
-			if (output.stopReason === "pending") {
-				throw new Error("Mistral stream ended without a finish reason");
-			}
-			if (output.stopReason === "aborted" || output.stopReason === "error") {
-				throw new Error(output.errorMessage || "An unknown error occurred");
-			}
-			stream.push({ type: "done", reason: output.stopReason, message: output });
-			stream.end();
-		} catch (error) {
-			for (const block of output.content) {
-				delete (block as { partialArgs?: string }).partialArgs;
-			}
-			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-			output.errorMessage = formatMistralError(error);
-			stream.push({ type: "error", reason: output.stopReason, error: output });
-			stream.end();
-		}
-	})();
-	return stream;
-};
-
-export const streamSimple: StreamFunction<"mistral-conversations", SimpleStreamOptions> = (
-	model: Model<"mistral-conversations">,
-	context: TranscriptContext,
-	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
-	const apiKey = options?.apiKey;
-	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
-	}
-	const base = {
-		...buildBaseOptions(model, context, options, apiKey),
-		toolChoice: options?.toolChoice,
-	} satisfies MistralOptions;
-	const clampedReasoning = options?.reasoning
-		? clampThinkingLevel(model, options.reasoning)
-		: undefined;
-	const reasoning = clampedReasoning === "off" ? undefined : clampedReasoning;
-	const effortMap = model.reasoning ? model.thinkingLevelMap : undefined;
-
-	let reasoningEffort: MistralReasoningEffort | undefined;
-	if (effortMap) {
-		const mapped = (reasoning ? effortMap[reasoning] : effortMap.off) ?? undefined;
-
-		reasoningEffort = (mapped ?? (reasoning ? "high" : undefined)) as
-			| MistralReasoningEffort
-			| undefined;
-	}
-
-	return stream(model, context, {
-		...base,
-		promptMode: model.reasoning && !effortMap && reasoning ? "reasoning" : undefined,
-		reasoningEffort,
-	} satisfies MistralOptions);
-};
-
 function parseMistralEvent(
 	raw: string,
 ): MistralCompletionEvent | typeof MISTRAL_STREAM_DONE | undefined {
@@ -616,11 +501,23 @@ function parseMistralEvent(
 		.trim();
 	if (!data) return undefined;
 	if (data === "[DONE]") return MISTRAL_STREAM_DONE;
-	const parsed: unknown = JSON.parse(data);
+	const parsed: unknown = parseStreamEventData(data);
 	if (!isMistralRecord(parsed) || !Array.isArray(parsed.choices)) {
-		throw new Error("Invalid Mistral streaming event");
+		throw new Error(`Invalid stream event: ${previewEventData(data)}`);
 	}
 	return { data: parsed as MistralCompletionEvent["data"] };
+}
+
+function parseStreamEventData(data: string): unknown {
+	try {
+		return parseJsonWithRepair(data);
+	} catch (error) {
+		throw new Error(`Malformed stream event: ${previewEventData(data)}`, { cause: error });
+	}
+}
+
+function previewEventData(data: string): string {
+	return truncateErrorText(data, MAX_PROVIDER_ERROR_BODY_CHARS);
 }
 
 function buildChatPayload(
@@ -647,7 +544,7 @@ function buildChatPayload(
 
 async function* readMistralEvents(
 	body: ReadableStream<Uint8Array>,
-	signal: AbortSignal,
+	signal: AbortSignal | undefined,
 ): AsyncGenerator<MistralCompletionEvent> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
@@ -655,12 +552,12 @@ async function* readMistralEvents(
 	const onAbort = () => {
 		void reader.cancel().catch(() => {});
 	};
-	signal.addEventListener("abort", onAbort, { once: true });
+	signal?.addEventListener("abort", onAbort, { once: true });
 	try {
 		while (true) {
-			if (signal.aborted) throw signal.reason;
+			if (signal?.aborted) throw signal.reason;
 			const { done, value } = await reader.read();
-			if (signal.aborted) throw signal.reason;
+			if (signal?.aborted) throw signal.reason;
 			buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
 			let boundary = findMistralEventBoundary(buffer);
 			while (boundary) {
@@ -677,7 +574,7 @@ async function* readMistralEvents(
 			if (event !== MISTRAL_STREAM_DONE && event) yield event;
 		}
 	} finally {
-		signal.removeEventListener("abort", onAbort);
+		signal?.removeEventListener("abort", onAbort);
 		try {
 			await reader.cancel();
 		} catch {}
@@ -781,11 +678,12 @@ function toChatMessages(messages: Message[], supportsImages: boolean): MistralCh
 async function consumeChatStream(
 	model: Model<"mistral-conversations">,
 	output: AssistantMessage,
-	stream: AssistantMessageEventStream,
+	stream: ReplyStream,
 	mistralStream: AsyncIterable<MistralCompletionEvent>,
 	onProviderStreamEvent: StreamOptions["onProviderStreamEvent"],
 ): Promise<void> {
 	let currentBlock: TextContent | ThinkingContent | null = null;
+	let lastToolCallKey: string | number | undefined;
 	const blocks = output.content;
 	const blockIndex = () => blocks.length - 1;
 	const toolBlocksByKey = new Map<string | number, number>();
@@ -876,6 +774,7 @@ async function consumeChatStream(
 			}
 		}
 		const delta = choice.delta;
+		if (!delta) continue;
 		if (delta.content !== null && delta.content !== undefined) {
 			const contentItems = typeof delta.content === "string" ? [delta.content] : delta.content;
 			for (const item of contentItems) {
@@ -904,11 +803,19 @@ async function consumeChatStream(
 				finishCurrentBlock(currentBlock);
 				currentBlock = null;
 			}
+			const providedId =
+				toolCall.id && toolCall.id !== "null" ? toolCall.id : undefined;
+			const key =
+				toolCall.index ??
+				providedId ??
+				lastToolCallKey ??
+				deriveMistralToolCallId(`toolcall:${toolCall.index ?? 0}`, 0);
+			lastToolCallKey = key;
 			const callId =
-				toolCall.id && toolCall.id !== "null"
-					? toolCall.id
-					: deriveMistralToolCallId(`toolcall:${toolCall.index ?? 0}`, 0);
-			const key = toolCall.index ?? callId;
+				providedId ??
+				(typeof key === "string"
+					? key
+					: deriveMistralToolCallId(`toolcall:${key}`, 0));
 			const existingIndex = toolBlocksByKey.get(key);
 			let block: (ToolCall & { partialArgs?: string }) | undefined;
 			if (existingIndex !== undefined) {
@@ -932,6 +839,8 @@ async function consumeChatStream(
 					contentIndex: output.content.length - 1,
 					partial: output,
 				});
+			} else if (!block.name && toolCall.function.name) {
+				block.name = toolCall.function.name;
 			}
 			const args = toolCall.function.arguments;
 			const argsDelta = typeof args === "string" ? args : JSON.stringify(args || {});
@@ -951,7 +860,7 @@ async function consumeChatStream(
 
 	for (const index of toolBlocksByKey.values()) {
 		const block = output.content[index];
-		if (block.type !== "toolCall") continue;
+		if (!block || block.type !== "toolCall") continue;
 
 		const toolBlock = block as ToolCall & { partialArgs?: string };
 		toolBlock.arguments = parseStreamingJson<ToolCall["arguments"]>(toolBlock.partialArgs);
@@ -964,3 +873,100 @@ async function consumeChatStream(
 		});
 	}
 }
+
+export const stream: StreamFunction<"mistral-conversations", MistralOptions> = (
+	model: Model<"mistral-conversations">,
+	context: TranscriptContext,
+	options?: MistralOptions,
+): ReplyStream => {
+	const stream = new ReplyStream();
+	const normalizedContext = resolveTranscript(
+		context,
+		model.compat?.supportsMidConvoSystemMessages,
+	);
+	(async () => {
+		const output = createOutput(model);
+		try {
+			const apiKey = options?.apiKey;
+			if (!apiKey) {
+				throw new Error(`No API key: ${model.provider}`);
+			}
+			const normalizeMistralToolCallId = createMistralToolCallIdNormalizer();
+			const transformedMessages = transformMessages(
+				normalizedContext.messages,
+				model,
+				normalizeMistralToolCallId,
+			);
+
+			let payload = buildChatPayload(model, normalizedContext, transformedMessages, options);
+			const nextPayload = await options?.onPayload?.(payload, model);
+			if (nextPayload !== undefined) {
+				payload = nextPayload as MistralChatPayload;
+			}
+			const mistralStream = await requestMistralStream(model, payload, apiKey, options);
+			stream.push({ type: "start", partial: output });
+			await consumeChatStream(
+				model,
+				output,
+				stream,
+				mistralStream,
+				options?.onProviderStreamEvent,
+			);
+			if (options?.signal?.aborted) {
+				throw new Error("Request was aborted");
+			}
+			if (output.stopReason === "pending") {
+				throw new Error("No finish reason");
+			}
+			if (output.stopReason === "aborted" || output.stopReason === "error") {
+				throw new Error(output.errorMessage || "Unknown error");
+			}
+			stream.push({ type: "done", reason: output.stopReason, message: output });
+			stream.end();
+		} catch (error) {
+			for (const block of output.content) {
+				delete (block as { partialArgs?: string }).partialArgs;
+			}
+			output.stopReason = options?.signal?.aborted ? "aborted" : "error";
+			output.errorMessage = formatMistralError(error);
+			stream.push({ type: "error", reason: output.stopReason, error: output });
+			stream.end();
+		}
+	})();
+	return stream;
+};
+
+export const streamSimple: StreamFunction<"mistral-conversations", SimpleStreamOptions> = (
+	model: Model<"mistral-conversations">,
+	context: TranscriptContext,
+	options?: SimpleStreamOptions,
+): ReplyStream => {
+	const apiKey = options?.apiKey;
+	if (!apiKey) {
+		throw new Error(`No API key: ${model.provider}`);
+	}
+	const base = {
+		...buildBaseOptions(model, context, options, apiKey),
+		toolChoice: options?.toolChoice,
+	} satisfies MistralOptions;
+	const clampedReasoning = options?.reasoning
+		? clampThinkingLevel(model, options.reasoning)
+		: undefined;
+	const reasoning = clampedReasoning === "off" ? undefined : clampedReasoning;
+	const effortMap = model.reasoning ? model.thinkingLevelMap : undefined;
+
+	let reasoningEffort: MistralReasoningEffort | undefined;
+	if (effortMap) {
+		const mapped = (reasoning ? effortMap[reasoning] : effortMap.off) ?? undefined;
+
+		reasoningEffort = (mapped ?? (reasoning ? "high" : undefined)) as
+			| MistralReasoningEffort
+			| undefined;
+	}
+
+	return stream(model, context, {
+		...base,
+		promptMode: model.reasoning && !effortMap && reasoning ? "reasoning" : undefined,
+		reasoningEffort,
+	} satisfies MistralOptions);
+};
