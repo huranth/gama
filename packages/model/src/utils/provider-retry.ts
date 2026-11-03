@@ -11,31 +11,10 @@ interface ProviderError extends Error {
 
 const DEFAULT_MAX_RETRY_DELAY_MS = 60_000;
 
-export async function retryProviderRequest<T>(
-	request: () => Promise<T>,
-	options: ProviderRetryOptions = {},
-): Promise<T> {
-	const maxRetries = options.maxRetries ?? 0;
-	let retriesRemaining = maxRetries;
+function normalizeRetryCount(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value)) return 0;
 
-	for (;;) {
-		try {
-			return await request();
-		} catch (error) {
-			if (options.signal?.aborted) throw createAbortError();
-
-			const retryableError = isProviderError(error) && isRetryableProviderError(error);
-			const canRetry = retriesRemaining > 0 && retryableError;
-
-			if (!canRetry) throw error;
-
-			const retryIndex = maxRetries - retriesRemaining;
-			retriesRemaining--;
-
-			const delayMs = getRetryDelayMs(error, retryIndex, options.maxRetryDelayMs);
-			await abortableSleep(delayMs, options.signal);
-		}
-	}
+	return Math.max(0, Math.floor(value));
 }
 
 function createAbortError(): Error {
@@ -102,8 +81,8 @@ function getRetryDelayMs(
 	if (retryAfterMs) {
 		const value = Number.parseFloat(retryAfterMs);
 
-		if (Number.isFinite(value)) {
-			return validateServerRetryDelayMs(value, maxRetryDelayMs, error.message);
+		if (Number.isFinite(value) && value >= 0) {
+			return validateServerRetryDelayMs(value, maxRetryDelayMs);
 		}
 	}
 
@@ -114,7 +93,7 @@ function getRetryDelayMs(
 		const delayMs = Number.isNaN(seconds) ? Date.parse(retryAfter) - Date.now() : seconds * 1000;
 
 		if (Number.isFinite(delayMs) && delayMs > 0) {
-			return validateServerRetryDelayMs(delayMs, maxRetryDelayMs, error.message);
+			return validateServerRetryDelayMs(delayMs, maxRetryDelayMs);
 		}
 	}
 
@@ -127,7 +106,6 @@ function getRetryDelayMs(
 function validateServerRetryDelayMs(
 	delayMs: number,
 	maxRetryDelayMs: number | undefined,
-	providerErrorMessage: string,
 ): number {
 	const maxDelayMs = maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
 
@@ -135,11 +113,37 @@ function validateServerRetryDelayMs(
 		const requestedSeconds = Math.ceil(delayMs / 1000);
 		const maxSeconds = Math.ceil(maxDelayMs / 1000);
 
-		throw new Error(
-			`Server requested ${requestedSeconds}s retry delay ` +
-				`(max: ${maxSeconds}s). ${providerErrorMessage}`,
-		);
+		throw new Error(`Delay too long: ${requestedSeconds}s (max: ${maxSeconds}s)`);
 	}
 
 	return delayMs;
+}
+
+export async function retryProviderRequest<T>(
+	request: () => Promise<T>,
+	options: ProviderRetryOptions = {},
+): Promise<T> {
+	const maxRetries = normalizeRetryCount(options.maxRetries);
+	let retriesRemaining = maxRetries;
+
+	for (;;) {
+		if (options.signal?.aborted) throw createAbortError();
+
+		try {
+			return await request();
+		} catch (error) {
+			if (options.signal?.aborted) throw createAbortError();
+
+			const retryableError = isProviderError(error) && isRetryableProviderError(error);
+			const canRetry = retriesRemaining > 0 && retryableError;
+
+			if (!canRetry) throw error;
+
+			const retryIndex = maxRetries - retriesRemaining;
+			retriesRemaining--;
+
+			const delayMs = getRetryDelayMs(error, retryIndex, options.maxRetryDelayMs);
+			await abortableSleep(delayMs, options.signal);
+		}
+	}
 }

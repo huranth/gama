@@ -1,7 +1,7 @@
 import type { AssistantMessage, AssistantMessageEvent } from "../types.ts";
 
-export function createAssistantMessageEventStream(): AssistantMessageEventStream {
-	return new AssistantMessageEventStream();
+export function createReplyStream(): ReplyStream {
+	return new ReplyStream();
 }
 
 export class EventStream<T, R = T> implements AsyncIterable<T> {
@@ -10,14 +10,17 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 	private done = false;
 	private finalResultPromise: Promise<R>;
 	private resolveFinalResult!: (result: R) => void;
+	private rejectFinalResult!: (error: Error) => void;
+	private settled = false;
 	private isComplete: (event: T) => boolean;
 	private extractResult: (event: T) => R;
 
 	constructor(isComplete: (event: T) => boolean, extractResult: (event: T) => R) {
 		this.isComplete = isComplete;
 		this.extractResult = extractResult;
-		this.finalResultPromise = new Promise((resolve) => {
+		this.finalResultPromise = new Promise((resolve, reject) => {
 			this.resolveFinalResult = resolve;
+			this.rejectFinalResult = reject;
 		});
 	}
 
@@ -26,6 +29,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 
 		if (this.isComplete(event)) {
 			this.done = true;
+			this.settled = true;
 			this.resolveFinalResult(this.extractResult(event));
 		}
 
@@ -33,6 +37,11 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 
 		if (waiter) {
 			waiter({ value: event, done: false });
+			if (this.isComplete(event)) {
+				while (this.waiting.length > 0) {
+					this.waiting.dequeue()!({ value: undefined as any, done: true });
+				}
+			}
 			return;
 		}
 
@@ -43,7 +52,11 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 		this.done = true;
 
 		if (result !== undefined) {
+			this.settled = true;
 			this.resolveFinalResult(result);
+		} else if (!this.settled) {
+			this.settled = true;
+			this.rejectFinalResult(new Error("No stream result"));
 		}
 
 		while (this.waiting.length > 0) {
@@ -76,7 +89,7 @@ export class EventStream<T, R = T> implements AsyncIterable<T> {
 	}
 }
 
-export class AssistantMessageEventStream extends EventStream<
+export class ReplyStream extends EventStream<
 	AssistantMessageEvent,
 	AssistantMessage
 > {
@@ -89,7 +102,7 @@ export class AssistantMessageEventStream extends EventStream<
 				} else if (event.type === "error") {
 					return event.error;
 				}
-				throw new Error("Unexpected event type for final result");
+				throw new Error("Unexpected final event");
 			},
 		);
 	}

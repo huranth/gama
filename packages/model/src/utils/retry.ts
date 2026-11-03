@@ -88,13 +88,64 @@ const RETRYABLE_PROVIDER_ERROR_PATTERN = buildProviderErrorPattern([
 	"subscription_sharing_user_unavailable",
 ]);
 
+function normalizeMaxAttempts(value: number | undefined): number {
+	if (value === undefined || !Number.isFinite(value)) return 0;
+
+	return Math.max(0, Math.floor(value));
+}
+
+class RetrySleepAbortError extends Error {
+	constructor() {
+		super("Aborted");
+	}
+}
+
+function sleep(ms: number, signal?: AbortSignal): Promise<void> {
+	return new Promise((resolve, reject) => {
+		if (signal?.aborted) {
+			reject(new RetrySleepAbortError());
+			return;
+		}
+
+		const onAbort = () => {
+			clearTimeout(timeout);
+			reject(new RetrySleepAbortError());
+		};
+
+		const timeout = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+
+		signal?.addEventListener("abort", onAbort, { once: true });
+	});
+}
+
+function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
+	const parts = patterns.map((pattern) =>
+		/^\d{3}$/.test(pattern) ? `\\b${pattern}\\b` : pattern,
+	);
+
+	return new RegExp(parts.join("|"), "i");
+}
+
 export function retryDelayMs(
 	policy: Pick<RetryPolicy, "baseDelayMs" | "maxAgentDelayMs">,
 	attempt: number,
 ): number {
-	const delay = policy.baseDelayMs * 2 ** Math.max(0, attempt - 1);
-	const safeDelay = Number.isSafeInteger(delay) ? delay : Number.MAX_SAFE_INTEGER;
-	const maxDelayMs = policy.maxAgentDelayMs ?? DEFAULT_MAX_AGENT_RETRY_DELAY_MS;
+	const baseDelayMs =
+		Number.isFinite(policy.baseDelayMs) && policy.baseDelayMs > 0 ? policy.baseDelayMs : 0;
+	const delay = baseDelayMs * 2 ** Math.max(0, attempt - 1);
+	const safeDelay = Number.isSafeInteger(delay) ? Math.max(0, delay) : Number.MAX_SAFE_INTEGER;
+	const configuredMax = policy.maxAgentDelayMs;
+	const maxDelayMs =
+		configuredMax === undefined
+			? DEFAULT_MAX_AGENT_RETRY_DELAY_MS
+			: Number.isFinite(configuredMax)
+				? Math.max(0, configuredMax)
+				: configuredMax === Number.POSITIVE_INFINITY
+					? Number.MAX_SAFE_INTEGER
+					: DEFAULT_MAX_AGENT_RETRY_DELAY_MS;
 
 	return Math.min(safeDelay, maxDelayMs);
 }
@@ -115,7 +166,9 @@ export async function retryAssistantCall(
 	signal: AbortSignal | undefined,
 	callbacks?: RetryCallbacks,
 ): Promise<AssistantMessage> {
-	const maxAttempts = policy?.enabled ? policy.maxRetries : 0;
+	const maxAttempts = policy?.enabled ? normalizeMaxAttempts(policy.maxRetries) : 0;
+
+	signal?.throwIfAborted();
 
 	let attempt = 0;
 	let lastRetry: { attempt: number; errorMessage: string } | undefined;
@@ -132,7 +185,14 @@ export async function retryAssistantCall(
 	};
 
 	for (;;) {
+		signal?.throwIfAborted();
 		const response = await produce();
+
+		if (signal?.aborted) {
+			await finish(false, response.errorMessage);
+			const { errorMessage: _errorMessage, ...rest } = response;
+			return { ...rest, stopReason: "aborted" };
+		}
 
 		if (response.stopReason === "aborted") {
 			await finish(false);
@@ -174,39 +234,4 @@ export async function retryAssistantCall(
 
 		await callbacks?.onRetryAttemptStart?.();
 	}
-}
-
-class RetrySleepAbortError extends Error {
-	constructor() {
-		super("Aborted");
-	}
-}
-
-function sleep(ms: number, signal?: AbortSignal): Promise<void> {
-	return new Promise((resolve, reject) => {
-		if (signal?.aborted) {
-			reject(new RetrySleepAbortError());
-			return;
-		}
-
-		const onAbort = () => {
-			clearTimeout(timeout);
-			reject(new RetrySleepAbortError());
-		};
-
-		const timeout = setTimeout(() => {
-			signal?.removeEventListener("abort", onAbort);
-			resolve();
-		}, ms);
-
-		signal?.addEventListener("abort", onAbort, { once: true });
-	});
-}
-
-function buildProviderErrorPattern(patterns: readonly string[]): RegExp {
-	const parts = patterns.map((pattern) =>
-		/^\d{3}$/.test(pattern) ? `\\b${pattern}\\b` : pattern,
-	);
-
-	return new RegExp(parts.join("|"), "i");
 }

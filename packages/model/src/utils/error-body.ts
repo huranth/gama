@@ -52,7 +52,9 @@ export function formatProviderError(norm: NormalizedProviderError, prefix?: stri
 export function truncateErrorText(text: string, maxChars: number): string {
 	if (text.length <= maxChars) return text;
 
-	return `${text.slice(0, maxChars)}... [truncated ${text.length - maxChars} chars]`;
+	const end = avoidLoneSurrogate(text, maxChars);
+
+	return `${text.slice(0, end)}... [truncated ${text.length - end} chars]`;
 }
 
 export function safeJsonStringify(value: unknown): string {
@@ -65,11 +67,21 @@ export function safeJsonStringify(value: unknown): string {
 	}
 }
 
+function avoidLoneSurrogate(text: string, maxChars: number): number {
+	const lastCode = text.charCodeAt(maxChars - 1);
+
+	return lastCode >= 0xd800 && lastCode <= 0xdbff ? maxChars - 1 : maxChars;
+}
+
 function extractStatus(error: SdkErrorShape): number | undefined {
 	if (typeof error.statusCode === "number") return error.statusCode;
 	if (typeof error.status === "number") return error.status;
-	if (typeof error.$metadata?.httpStatusCode === "number") return error.$metadata.httpStatusCode;
-	if (typeof error.$response?.statusCode === "number") return error.$response.statusCode;
+
+	const metadataStatus = error.$metadata?.httpStatusCode;
+	if (typeof metadataStatus === "number") return metadataStatus;
+
+	const responseStatus = error.$response?.statusCode;
+	if (typeof responseStatus === "number") return responseStatus;
 
 	return undefined;
 }

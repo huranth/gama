@@ -51,7 +51,7 @@ export function raceWithAbortSignal<T>(operation: Promise<T>, signal: AbortSigna
 function abortReason(signal: AbortSignal): unknown {
 	if (signal.reason !== undefined) return signal.reason;
 
-	const error = new Error("The operation was aborted");
+	const error = new Error("Operation aborted");
 	error.name = "AbortError";
 
 	return error;
