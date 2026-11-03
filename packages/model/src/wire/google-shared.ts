@@ -6,7 +6,7 @@ import {
 	type Part,
 	type ThinkingConfig,
 } from "@google/genai";
-import { clampThinkingLevel } from "../models.ts";
+import { clampThinkingLevel } from "../registry.ts";
 import type {
 	AssistantMessage,
 	GoogleApiThinkingLevel,
@@ -26,7 +26,7 @@ import type {
 } from "../types.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
-import { collapseSystemMessages, withoutInitialSystemMessage } from "../utils/transcript.ts";
+import { appendSystemUpdatesAsUser, withoutInitialSystemMessage } from "../utils/transcript.ts";
 import {
 	getJsonSchemaToolParameters,
 	resolveJsonSchemaStrictSampling,
@@ -68,6 +68,12 @@ const JSON_SCHEMA_META_DECLARATIONS = new Set([
 	"$defs",
 	"definitions",
 ]);
+
+function isBlank(text: string | undefined): boolean {
+	if (!text) return true;
+
+	return text.trim() === "";
+}
 
 export function toGoogleSdkThinkingLevel(level: GoogleApiThinkingLevel): GoogleSdkThinkingLevel {
 	return GOOGLE_SDK_THINKING_LEVEL_MAP[level];
@@ -161,10 +167,7 @@ export function resolveGoogleThinkingLevel<T extends GoogleApiType>(
 		case "high":
 			return resolvedLevel;
 		default:
-			throw new Error(
-				`Unsupported Google thinking level mapping for ${model.provider}/${model.id}: ` +
-					`${level} -> ${String(mapped)}`,
-			);
+			throw new Error(`Invalid thinking level: ${level}`);
 	}
 }
 
@@ -187,7 +190,10 @@ export function getDisabledGoogleThinkingConfig<T extends GoogleApiType>(
 	if (!usesGoogleThinkingLevel(model)) return { thinkingBudget: 0 };
 
 	const fallback = clampThinkingLevel(model, "off");
-	if (fallback === "off") return { thinkingBudget: 0 };
+	if (fallback === "off") {
+		// Gemini 3
+		return { thinkingLevel: GoogleSdkThinkingLevel.MINIMAL };
+	}
 
 	const resolvedLevel = resolveGoogleThinkingLevel(model, fallback);
 	const apiLevel = toGoogleThinkingLevel(resolvedLevel);
@@ -291,21 +297,9 @@ export function mapStopReason(reason: FinishReason): StopReason {
 	}
 }
 
-export function mapStopReasonString(reason: string): StopReason {
-	switch (reason) {
-		case "STOP":
-			return "stop";
-		case "MAX_TOKENS":
-			return "length";
-		default:
-			return "error";
-	}
-}
-
 function sanitizeForOpenApi(schema: unknown): unknown {
-	if (typeof schema !== "object" || schema === null || Array.isArray(schema)) {
-		return schema;
-	}
+	if (Array.isArray(schema)) return schema.map(sanitizeForOpenApi);
+	if (typeof schema !== "object" || schema === null) return schema;
 
 	const result: Record<string, unknown> = {};
 	for (const [key, value] of Object.entries(schema)) {
@@ -320,10 +314,9 @@ export function convertMessages<T extends GoogleApiType>(
 	model: Model<T>,
 	context: TranscriptContext,
 ): Content[] {
-	const conversation = withoutInitialSystemMessage(collapseSystemMessages(context).messages);
+	const conversation = withoutInitialSystemMessage(appendSystemUpdatesAsUser(context).messages);
 	const contents: Content[] = [];
-	// Image turns for Gemini < 3 go after the whole run of tool results, so the
-	// parallel functionResponses stay in one user turn.
+	// Parallel turn
 	const deferredImageTurns: Content[] = [];
 
 	for (const message of transformMessages(conversation, model, toolCallIdNormalizer(model))) {
@@ -427,6 +420,18 @@ function pushThinkingPart(
 	});
 }
 
+function functionResponseValue(hasText: boolean, text: string, hasImages: boolean): string {
+	if (hasText) {
+		return sanitizeSurrogates(text);
+	}
+
+	if (hasImages) {
+		return "(see attached image)";
+	}
+
+	return "";
+}
+
 function pushToolResult<T extends GoogleApiType>(
 	contents: Content[],
 	model: Model<T>,
@@ -444,7 +449,7 @@ function pushToolResult<T extends GoogleApiType>(
 	const isMultimodal = supportsMultimodalFunctionResponse(model.id);
 	const includeId = requiresToolCallId(model.id);
 
-	const value = hasText ? sanitizeSurrogates(textResult) : hasImages ? "(see attached image)" : "";
+	const value = functionResponseValue(hasText, textResult, hasImages);
 
 	const part: Part = {
 		functionResponse: {
@@ -487,12 +492,6 @@ function toImageParts<T extends GoogleApiType>(
 	return message.content
 		.filter((part): part is ImageContent => part.type === "image")
 		.map((part) => ({ inlineData: { mimeType: part.mimeType, data: part.data } }));
-}
-
-function isBlank(text: string | undefined): boolean {
-	if (!text) return true;
-
-	return text.trim() === "";
 }
 
 export function retryGoogleRequest<T>(
