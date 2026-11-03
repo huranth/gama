@@ -1,15 +1,11 @@
 import type * as NodeZlib from "node:zlib";
-
 import type {
 	Tool as OpenAITool,
 	ResponseCreateParamsStreaming,
 	ResponseInput,
 } from "openai/resources/responses/responses.js";
-
-import { clampThinkingLevel } from "../models.ts";
-
-import { registerSessionResourceCleanup } from "../session-resources.ts";
-
+import { clampThinkingLevel } from "../registry.ts";
+import { onSessionClose } from "../resources.ts";
 import type {
 	AssistantMessage,
 	Model,
@@ -21,27 +17,18 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "../types.ts";
-
 import { combineAbortSignals } from "../utils/abort-signals.ts";
-
 import {
 	appendAssistantMessageDiagnostic,
 	createAssistantMessageDiagnostic,
 	formatThrownValue,
 } from "../utils/diagnostics.ts";
-
 import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
-
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
-
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
-
-import { headersToRecord } from "../utils/headers.ts";
-
+import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { resolveHttpProxyUrlForTarget } from "../utils/node-http-proxy.ts";
-
 import { getSystemMessageText } from "../utils/text.ts";
-
 import {
 	getDeclaredTools,
 	getInitialSystemMessage,
@@ -49,19 +36,14 @@ import {
 	resolveTranscript,
 	resolveTranscriptTools,
 } from "../utils/transcript.ts";
-
 import { uuidv7 } from "../utils/uuid.ts";
-
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
-
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
-
 import {
 	convertResponsesMessages,
 	convertResponsesTools,
 	processResponsesStream,
 } from "./openai-responses-shared.ts";
-
 import { buildBaseOptions } from "./simple-options.ts";
 
 export interface OpenAICodexResponsesOptions extends StreamOptions {
@@ -370,7 +352,7 @@ function getServiceTierCostMultiplier(
 		case "flex":
 			return 0.5;
 		case "priority":
-			return model.id === "gpt-5.5" ? 2.5 : 2;
+			return model.compat?.priorityServiceTierMultiplier ?? 2;
 		default:
 			return 1;
 	}
@@ -415,6 +397,7 @@ function getOrCreateWebSocketDebugStats(sessionId: string): OpenAICodexWebSocket
 		};
 		websocketDebugStats.set(sessionId, stats);
 	}
+
 	return stats;
 }
 
@@ -434,11 +417,16 @@ function sleep(ms: number, signal: AbortSignal | undefined): Promise<void> {
 			reject(new Error("Request was aborted"));
 			return;
 		}
-		const timeout = setTimeout(resolve, ms);
-		signal?.addEventListener("abort", () => {
+		let timeout: ReturnType<typeof setTimeout>;
+		const onAbort = () => {
 			clearTimeout(timeout);
 			reject(new Error("Request was aborted"));
-		});
+		};
+		timeout = setTimeout(() => {
+			signal?.removeEventListener("abort", onAbort);
+			resolve();
+		}, ms);
+		signal?.addEventListener("abort", onAbort, { once: true });
 	});
 }
 
@@ -506,21 +494,23 @@ function resolveCodexWebSocketUrl(baseUrl: string | undefined): string {
 	return url.toString();
 }
 
-registerSessionResourceCleanup(closeOpenAICodexWebSocketSessions);
+onSessionClose(closeOpenAICodexWebSocketSessions);
 
 function extractAccountId(token: string): string {
 	try {
 		const parts = token.split(".");
 		if (parts.length !== 3) throw new Error("Invalid token");
-		const payload = JSON.parse(atob(parts[1])) as Record<
+		const base64 = parts[1]!.replace(/-/g, "+").replace(/_/g, "/");
+		const padded = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+		const payload = JSON.parse(atob(padded)) as Record<
 			string,
 			Record<string, unknown> | undefined
 		>;
 		const accountId = payload?.[JWT_CLAIM_PATH]?.chatgpt_account_id;
-		if (!accountId) throw new Error("No account ID in token");
+		if (!accountId) throw new Error("Missing account ID");
 		return accountId as string;
 	} catch {
-		throw new Error("Failed to extract accountId from token");
+		throw new Error("Invalid account token");
 	}
 }
 
@@ -531,8 +521,7 @@ function validateRetryDelayMs(
 	const maxRetryDelayMs = options?.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
 	if (maxRetryDelayMs > 0 && delayMs > maxRetryDelayMs) {
 		throw new RetryDelayExceededError(
-			`Server requested ${Math.ceil(delayMs / 1000)}s retry delay ` +
-				`(max: ${Math.ceil(maxRetryDelayMs / 1000)}s)`,
+			`Delay too long: ${Math.ceil(delayMs / 1000)}s (max: ${Math.ceil(maxRetryDelayMs / 1000)}s)`,
 		);
 	}
 	return delayMs;
@@ -565,7 +554,7 @@ function resolveCodexServiceTier(
 function normalizeTimeoutMs(value: number | undefined): number | undefined {
 	if (value === undefined) return undefined;
 	if (!Number.isFinite(value) || value < 0) {
-		throw new Error(`Invalid timeoutMs: ${String(value)}`);
+		throw new Error(`Invalid timeout: ${String(value)}`);
 	}
 	return Math.floor(value);
 }
@@ -584,14 +573,7 @@ function buildBaseCodexHeaders(
 	accountId: string,
 	token: string,
 ): Headers {
-	const headers = new Headers(initHeaders as unknown as Record<string, string>);
-	for (const [key, value] of Object.entries(additionalHeaders || {})) {
-		if (value === null) {
-			headers.delete(key);
-		} else {
-			headers.set(key, value);
-		}
-	}
+	const headers = new Headers(providerHeadersToRecord(initHeaders, additionalHeaders));
 	headers.set("Authorization", `Bearer ${token}`);
 	headers.set("chatgpt-account-id", accountId);
 	headers.set("originator", "gama");
@@ -864,7 +846,7 @@ async function connectWebSocket(
 ): Promise<WebSocketLike> {
 	const WebSocketCtor = await getWebSocketConstructor(env);
 	if (!WebSocketCtor) {
-		throw new Error("WebSocket transport is not available in this runtime");
+		throw new Error("WebSocket unavailable");
 	}
 	const wsHeaders = headersToRecord(headers) as Record<string, string | undefined>;
 	delete wsHeaders["OpenAI-Beta"];
@@ -919,7 +901,7 @@ async function connectWebSocket(
 		if (connectTimeoutMs > 0) {
 			timeout = setTimeout(() => {
 				fail(
-					new Error(`WebSocket connect timeout after ${connectTimeoutMs}ms`),
+					new Error(`Connect timeout: ${connectTimeoutMs}ms`),
 					"connect_timeout",
 				);
 			}, connectTimeoutMs);
@@ -1084,7 +1066,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 	context,
 	options,
 ) => {
-	const stream = new AssistantMessageEventStream();
+	const stream = new ReplyStream();
 	const normalizedContext = resolveTranscript(
 		context,
 		model.compat?.supportsMidConvoSystemMessages,
@@ -1112,7 +1094,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 		try {
 			const apiKey = options?.apiKey;
 			if (!apiKey) {
-				throw new Error(`No API key for provider: ${model.provider}`);
+				throw new Error(`No API key: ${model.provider}`);
 			}
 
 			const accountId = extractAccountId(apiKey);
@@ -1274,19 +1256,24 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 						);
 					} catch (error) {
 						if (headerTimeoutSignal?.aborted && !options?.signal?.aborted) {
-							throw new Error(
-								`Codex SSE response headers timed out after ${httpTimeoutMs}ms`,
-							);
+							throw new Error(`Headers timeout: ${httpTimeoutMs}ms`);
 						}
 						throw error;
 					} finally {
 						combinedSignal.cleanup();
 					}
 
-					await options?.onResponse?.(
-						{ status: response.status, headers: headersToRecord(response.headers) },
-						model,
-					);
+					try {
+						await options?.onResponse?.(
+							{ status: response.status, headers: headersToRecord(response.headers) },
+							model,
+						);
+					} catch (error) {
+						// Callback error
+						throw new NonRetryableError(
+							error instanceof Error ? error.message : String(error),
+						);
+					}
 
 					if (response.ok) {
 						break;
@@ -1310,6 +1297,9 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 					const info = await parseErrorResponse(fakeResponse);
 					throw new NonRetryableError(info.friendlyMessage || info.message);
 				} catch (error) {
+					if (options?.signal?.aborted) {
+						throw new Error("Request was aborted");
+					}
 					if (error instanceof Error) {
 						if (error.name === "AbortError" || error.message === "Request was aborted") {
 							throw new Error("Request was aborted");
@@ -1331,8 +1321,8 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 				}
 			}
 
-			if (!response?.ok) {
-				throw lastError ?? new Error("Failed after retries");
+			if (!response) {
+				throw new Error("No response");
 			}
 			if (!response.body) {
 				throw new Error("No response body");
@@ -1378,7 +1368,7 @@ export const stream: StreamFunction<"openai-codex-responses", OpenAICodexRespons
 async function processStream(
 	response: Response,
 	output: AssistantMessage,
-	stream: AssistantMessageEventStream,
+	stream: ReplyStream,
 	model: Model<"openai-codex-responses">,
 	grammarToolInputProperties: ReadonlyMap<string, string>,
 	options: OpenAICodexResponsesOptions | undefined,
@@ -1410,7 +1400,7 @@ export const streamSimple: StreamFunction<"openai-codex-responses", SimpleStream
 ) => {
 	const apiKey = options?.apiKey;
 	if (!apiKey) {
-		throw new Error(`No API key for provider: ${model.provider}`);
+		throw new Error(`No API key: ${model.provider}`);
 	}
 	const base = {
 		...buildBaseOptions(model, context, options, apiKey),
@@ -1428,10 +1418,10 @@ export const streamSimple: StreamFunction<"openai-codex-responses", SimpleStream
 
 function assertSuccessfulOutput(output: AssistantMessage): void {
 	if (output.stopReason === "pending") {
-		throw new Error("Codex stream ended without a stop reason");
+		throw new Error("No stop reason");
 	}
 	if (output.stopReason === "error" || output.stopReason === "aborted") {
-		throw new Error(output.errorMessage || "An unknown error occurred");
+		throw new Error(output.errorMessage || "Unknown error");
 	}
 }
 
@@ -1462,7 +1452,7 @@ async function* parseSSE(
 			buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
 			if (done && buffer.trim()) buffer += "\n\n";
 
-			// Normalize CRLF.
+			// Normalize CRLF
 			buffer = buffer.replace(/\r\n/g, "\n");
 
 			let boundary = buffer.indexOf("\n\n");
@@ -1513,7 +1503,7 @@ async function processWebSocketStream(
 	body: CodexRequestBody,
 	headers: Headers,
 	output: AssistantMessage,
-	stream: AssistantMessageEventStream,
+	stream: ReplyStream,
 	model: Model<"openai-codex-responses">,
 	onStart: () => void,
 	idleTimeoutMs: number | undefined,
@@ -1588,6 +1578,7 @@ async function processWebSocketStream(
 		} else if (
 			useCachedContext &&
 			entry &&
+			(output.stopReason === "stop" || output.stopReason === "toolUse") &&
 			(output as AssistantMessage & { responseId?: string }).responseId
 		) {
 			const responseItems = convertResponsesMessages(
@@ -1722,7 +1713,7 @@ async function* parseWebSocket(
 		resolve();
 	};
 
-	// Order intact.
+	// Order intact
 	let decodeChain: Promise<void> = Promise.resolve();
 
 	const onMessage = (event: unknown): void => {
@@ -1765,7 +1756,7 @@ async function* parseWebSocket(
 	};
 
 	const onClose = (event: unknown): void => {
-		// Await decodes.
+		// Await decodes
 		void decodeChain.then(() => {
 			if (sawCompletion) {
 				done = true;
@@ -1806,7 +1797,7 @@ async function* parseWebSocket(
 				pending = resolve;
 				if (idleTimeoutMs !== undefined && idleTimeoutMs > 0) {
 					timeout = setTimeout(() => {
-						const error = new Error(`WebSocket idle timeout after ${idleTimeoutMs}ms`);
+						const error = new Error(`Idle timeout: ${idleTimeoutMs}ms`);
 						failed = error;
 						done = true;
 						pending = null;
@@ -1825,7 +1816,7 @@ async function* parseWebSocket(
 			throw failed;
 		}
 		if (!sawCompletion) {
-			throw new Error("WebSocket stream closed before response.completed");
+			throw new Error("Stream closed early");
 		}
 	} finally {
 		socket.removeEventListener("message", onMessage);
