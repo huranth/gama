@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { streamSimple as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { streamSimple as streamAzure } from "../src/api/azure-openai-responses.ts";
-import { streamSimple as streamGoogle } from "../src/api/google-generative-ai.ts";
-import { streamSimple as streamMistral } from "../src/api/mistral-conversations.ts";
-import { streamSimple as streamCodex } from "../src/api/openai-codex-responses.ts";
-import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
-import { streamSimple as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import type { Api, AssistantMessageEventStream, Model } from "../src/types.ts";
+import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
+import { streamSimple as streamAzure } from "../src/wire/azure-openai-responses.ts";
+import { streamSimple as streamGoogle } from "../src/wire/google-generative-ai.ts";
+import { streamSimple as streamMistral } from "../src/wire/mistral-conversations.ts";
+import { streamSimple as streamCodex } from "../src/wire/openai-codex-responses.ts";
+import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
+import { streamSimple as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
+import type { Api, ReplyStream, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 function model<TApi extends Api>(api: TApi): Model<TApi> {
@@ -24,8 +24,8 @@ function model<TApi extends Api>(api: TApi): Model<TApi> {
 	};
 }
 
-function expectMissingAuthThrows(create: () => AssistantMessageEventStream): void {
-	expect(create).toThrow("No API key for provider: test-provider");
+function expectMissingAuthThrows(create: () => ReplyStream): void {
+	expect(create).toThrow("No API key: test-provider");
 }
 
 describe("direct API authentication", () => {

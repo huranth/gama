@@ -1,14 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamSimple as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { streamSimple as streamAzureOpenAIResponses } from "../src/api/azure-openai-responses.ts";
-import { streamSimple as streamGamaMessages } from "../src/api/gama-messages.ts";
-import { streamSimple as streamGoogleGenerativeAI } from "../src/api/google-generative-ai.ts";
-import { streamSimple as streamGoogleVertex } from "../src/api/google-vertex.ts";
-import { streamSimple as streamMistral } from "../src/api/mistral-conversations.ts";
-import { streamSimple as streamOpenAICodexResponses } from "../src/api/openai-codex-responses.ts";
-import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
-import { streamSimple as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { generateImages } from "../src/api/openrouter-images.ts";
+import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
+import { streamSimple as streamAzureOpenAIResponses } from "../src/wire/azure-openai-responses.ts";
+import { streamSimple as streamGamaMessages } from "../src/wire/gama-messages.ts";
+import { streamSimple as streamGoogleGenerativeAI } from "../src/wire/google-generative-ai.ts";
+import { streamSimple as streamGoogleVertex } from "../src/wire/google-vertex.ts";
+import { streamSimple as streamMistral } from "../src/wire/mistral-conversations.ts";
+import { streamSimple as streamOpenAICodexResponses } from "../src/wire/openai-codex-responses.ts";
+import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
+import { streamSimple as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
+import { generateImages } from "../src/wire/openrouter-images.ts";
 import type { Api, FetchFunction, ImageModel, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -134,10 +134,10 @@ describe("fetch stream option", () => {
 		}).result();
 
 		expect(google.errorMessage).toContain(
-			"Custom fetch is not supported by the Google Generative AI adapter",
+			"Custom fetch unsupported",
 		);
 		expect(vertex.errorMessage).toContain(
-			"Custom fetch is not supported by the Google Vertex adapter",
+			"Custom fetch unsupported",
 		);
 		expect(custom).not.toHaveBeenCalled();
 		expect(fallback).not.toHaveBeenCalled();

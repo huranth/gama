@@ -84,9 +84,11 @@ describe("EventStream", () => {
 		const secondIterator = stream[Symbol.asyncIterator]();
 		const firstEvent = firstIterator.next();
 		const secondEvent = secondIterator.next();
+		const result = stream.result();
 
 		stream.end();
 
+		await expect(result).rejects.toThrow("No stream result");
 		expect(await firstEvent).toEqual({ value: undefined, done: true });
 		expect(await secondEvent).toEqual({ value: undefined, done: true });
 	});

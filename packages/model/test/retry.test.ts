@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fauxAssistantMessage } from "../src/providers/faux.ts";
+import { fauxAssistantMessage } from "../src/catalog/faux.ts";
 import {
 	isRetryableAssistantError,
 	type RetryPolicy,
@@ -178,11 +178,27 @@ describe("retryDelayMs", () => {
 		expect(retryDelayMs({ baseDelayMs: 2000, maxAgentDelayMs: 5000 }, 5)).toBe(5000);
 		expect(retryDelayMs({ baseDelayMs: 2000, maxAgentDelayMs: 0 }, 5)).toBe(0);
 	});
+
+	it("clamps a non-finite base delay", () => {
+		expect(retryDelayMs({ baseDelayMs: Number.POSITIVE_INFINITY }, 3)).toBe(0);
+		expect(retryDelayMs({ baseDelayMs: Number.NaN }, 3)).toBe(0);
+	});
 });
 
 describe("retryAssistantCall", () => {
 	const disabled: RetryPolicy = { enabled: false, maxRetries: 3, baseDelayMs: 0 };
 	const enabled: RetryPolicy = { enabled: true, maxRetries: 3, baseDelayMs: 0 };
+
+	it("fails without producing when already aborted", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const produce = vi.fn(async () => fauxAssistantMessage("ok"));
+
+		await expect(retryAssistantCall(produce, enabled, controller.signal)).rejects.toMatchObject({
+			name: "AbortError",
+		});
+		expect(produce).not.toHaveBeenCalled();
+	});
 
 	it("returns a successful response immediately without retrying", async () => {
 		const produce = vi.fn(async () => fauxAssistantMessage("ok"));
@@ -331,6 +347,25 @@ describe("retryAssistantCall", () => {
 			"attempt-start",
 			"produce:2",
 		]);
+	});
+
+	it("returns aborted when the signal aborts during produce", async () => {
+		const controller = new AbortController();
+		let resolveResponse!: (message: ReturnType<typeof fauxAssistantMessage>) => void;
+		const produce = vi.fn(
+			() =>
+				new Promise<ReturnType<typeof fauxAssistantMessage>>((resolve) => {
+					resolveResponse = resolve;
+				}),
+		);
+		const pending = retryAssistantCall(produce, enabled, controller.signal);
+		await vi.waitFor(() => expect(produce).toHaveBeenCalled());
+		controller.abort();
+		resolveResponse(fauxAssistantMessage("late"));
+
+		const res = await pending;
+		expect(res.stopReason).toBe("aborted");
+		expect(res.errorMessage).toBeUndefined();
 	});
 
 	it("aborts backoff via signal and emits onRetryFinished(false)", async () => {

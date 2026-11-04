@@ -1,9 +1,9 @@
 import { NOOP_TELEMETRY_CONTEXT, type TelemetryContext } from "@huranth/gama-telemetry";
 import { describe, expect, it } from "vitest";
-import { buildBaseOptions } from "../src/api/simple-options.ts";
+import { buildBaseOptions } from "../src/wire/simple-options.ts";
 import { generateImages } from "../src/images.ts";
 import { registerImagesApiProvider } from "../src/images-api-registry.ts";
-import { createModels, createProvider } from "../src/models.ts";
+import { createModels, createProvider } from "../src/registry.ts";
 import type {
 	DeferredHandle,
 	ImageModel,
@@ -11,7 +11,7 @@ import type {
 	Model,
 	ProviderRequestOptions,
 } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 const telemetryContext: TelemetryContext = NOOP_TELEMETRY_CONTEXT;
@@ -43,8 +43,8 @@ const imageModel: ImageModel<"telemetry-test-images"> = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 };
 
-function completedStream(requestModel: Model<string>): AssistantMessageEventStream {
-	const stream = new AssistantMessageEventStream();
+function completedStream(requestModel: Model<string>): ReplyStream {
+	const stream = new ReplyStream();
 	queueMicrotask(() => {
 		stream.push({
 			type: "done",

@@ -3,6 +3,7 @@ import {
 	formatProviderError,
 	MAX_PROVIDER_ERROR_BODY_CHARS,
 	normalizeProviderError,
+	truncateErrorText,
 } from "../src/utils/error-body.ts";
 
 describe("normalizeProviderError", () => {
@@ -216,5 +217,21 @@ describe("formatProviderError", () => {
 		const norm = normalizeProviderError({ reason: "boom" });
 
 		expect(formatProviderError(norm)).toBe('{"reason":"boom"}');
+	});
+});
+
+describe("truncateErrorText", () => {
+	it("keeps short text as is", () => {
+		expect(truncateErrorText("short", 10)).toBe("short");
+	});
+
+	it("truncates and reports the dropped chars", () => {
+		expect(truncateErrorText("abcdefghij", 4)).toBe("abcd... [truncated 6 chars]");
+	});
+
+	it("does not split a surrogate pair", () => {
+		const text = `abc\u{1f600}def`;
+
+		expect(truncateErrorText(text, 4)).toBe("abc... [truncated 5 chars]");
 	});
 });
