@@ -1,8 +1,8 @@
 import type { GenerateContentParameters } from "@google/genai";
 import { describe, expect, it } from "vitest";
-import { streamSimple as streamSimpleGoogle } from "../src/api/google-generative-ai.ts";
-import { resolveGoogleThinkingLevel } from "../src/api/google-shared.ts";
-import { streamSimple as streamSimpleVertex } from "../src/api/google-vertex.ts";
+import { streamSimple as streamSimpleGoogle } from "../src/wire/google-generative-ai.ts";
+import { resolveGoogleThinkingLevel } from "../src/wire/google-shared.ts";
+import { streamSimple as streamSimpleVertex } from "../src/wire/google-vertex.ts";
 import type { Model, ThinkingBudgets, ThinkingLevel, ThinkingLevelMap } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -137,10 +137,10 @@ describe("Google thinking level maps", () => {
 
 		const invalidModel = googleModel("gemini-3.7-flash", { xhigh: "extreme" });
 		expect(() => resolveGoogleThinkingLevel(invalidModel, "xhigh")).toThrow(
-			"Unsupported Google thinking level mapping for test-google/gemini-3.7-flash: xhigh -> extreme",
+			"Invalid thinking level: xhigh",
 		);
 		expect(() => resolveGoogleThinkingLevel(googleModel("gemini-3.7-flash", {}), "max")).toThrow(
-			"Unsupported Google thinking level mapping for test-google/gemini-3.7-flash: max -> undefined",
+			"Invalid thinking level: max",
 		);
 	});
 

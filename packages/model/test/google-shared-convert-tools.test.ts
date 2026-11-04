@@ -3,7 +3,7 @@ import {
 	convertTools,
 	resolveGoogleFunctionCallingMode,
 	supportsGoogleStrictToolSampling,
-} from "../src/api/google-shared.ts";
+} from "../src/wire/google-shared.ts";
 import type { Tool } from "../src/types.ts";
 
 function makeTool(parameters: Record<string, unknown>): Tool {
@@ -192,7 +192,7 @@ describe("google-shared convertTools", () => {
 		expect(supportsGoogleStrictToolSampling("gemini-2.5-pro")).toBe(false);
 		expect(resolveGoogleFunctionCallingMode([tool], undefined, true)).toBe("VALIDATED");
 		expect(() => resolveGoogleFunctionCallingMode([tool], undefined, false)).toThrow(
-			'Tool "test_tool" requires JSON-schema constrained sampling',
+			"Strict unsupported: test_tool",
 		);
 	});
 

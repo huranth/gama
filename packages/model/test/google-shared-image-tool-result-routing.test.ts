@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertMessages } from "../src/api/google-shared.ts";
+import { convertMessages } from "../src/wire/google-shared.ts";
 import type { Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -77,7 +77,9 @@ function makeContext(model: { api: string; provider: string; id: string }): Cont
 }
 
 describe("google-shared image tool result routing", () => {
-	it("keeps parallel functionResponses in one turn and adds the image turn after for Gemini 2.x", () => {
+	it(
+		"keeps parallel functionResponses in one turn and adds the image turn after for Gemini 2.x",
+		() => {
 		const model = makeModel("google-generative-ai", "google", "gemini-2.5-flash");
 		const contents = convertMessages(model, normalizeContext(makeContext(model)));
 

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { retryGoogleRequest } from "../src/api/google-shared.ts";
+import { retryGoogleRequest } from "../src/wire/google-shared.ts";
 
 function googleApiError(status: number): Error {
 	return Object.assign(new Error(`got status: ${status}`), { status });

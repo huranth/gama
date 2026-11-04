@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { convertMessages, requiresToolCallId } from "../src/api/google-shared.ts";
+import { convertMessages, requiresToolCallId } from "../src/wire/google-shared.ts";
 import type { Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -81,7 +81,7 @@ function makeContext(
 	};
 }
 
-describe("google-shared convertMessages — Gemini 3 unsigned tool calls", () => {
+describe("google-shared convertMessages - Gemini 3 unsigned tool calls", () => {
 	it.each([
 		makeGemini3Model("google-generative-ai", "google"),
 		makeGemini3Model("google-generative-ai", "google", "gemini-3.6-flash"),
