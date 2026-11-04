@@ -2,7 +2,7 @@
 	"name": "@huranth/gama-ai",
 	"version": "1.0.3",
 	"private": true,
-	"description": "Unified LLM API with bring-your-own provider configuration (base URL + API key)",
+	"description": "Model gateway and provider adapters for Gama",
 	"type": "module",
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -16,20 +16,20 @@
 			"import": "./dist/index.js"
 		},
 		"./models": {
-			"types": "./dist/models.d.ts",
-			"import": "./dist/models.js"
+			"types": "./dist/registry.d.ts",
+			"import": "./dist/registry.js"
 		},
 		"./compat": {
 			"types": "./dist/compat.d.ts",
 			"import": "./dist/compat.js"
 		},
-		"./providers/*": {
-			"types": "./dist/providers/*.d.ts",
-			"import": "./dist/providers/*.js"
+		"./catalog/*": {
+			"types": "./dist/catalog/*.d.ts",
+			"import": "./dist/catalog/*.js"
 		},
-		"./api/*": {
-			"types": "./dist/api/*.d.ts",
-			"import": "./dist/api/*.js"
+		"./wire/*": {
+			"types": "./dist/wire/*.d.ts",
+			"import": "./dist/wire/*.js"
 		},
 		"./utils/*": {
 			"types": "./dist/utils/*.d.ts",
@@ -76,7 +76,7 @@
 	"repository": {
 		"type": "git",
 		"url": "git+https://github.com/huranth/gama.git",
-		"directory": "packages/ai"
+		"directory": "packages/model"
 	},
 	"engines": {
 		"node": ">=22.19.0"

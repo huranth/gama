@@ -5,14 +5,14 @@ import {
 	appendGrammarToolInputJsonDelta,
 	makeStrictJsonSchema,
 	resolveJsonSchemaStrictSampling,
-} from "../src/api/constrained-sampling.ts";
+} from "../src/wire/constrained-sampling.ts";
 import {
 	convertResponsesMessages,
 	convertResponsesTools,
 	processResponsesStream,
-} from "../src/api/openai-responses-shared.ts";
+} from "../src/wire/openai-responses-shared.ts";
 import type { AssistantMessage, Model, Tool, ToolCall } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 function makeModel(): Model<"openai-responses"> {
@@ -67,7 +67,7 @@ function makeTool(overrides: Partial<Tool> = {}): Tool {
 	};
 }
 
-function captureToolCallEvents(stream: AssistantMessageEventStream): {
+function captureToolCallEvents(stream: ReplyStream): {
 	starts: ToolCall["arguments"][];
 	deltas: string[];
 } {
@@ -101,7 +101,7 @@ describe("constrained tool sampling", () => {
 					supportsStrictMode: false,
 				},
 			),
-		).toThrow('Tool "sample_tool" requires JSON-schema constrained sampling');
+		).toThrow("Strict unsupported: sample_tool");
 
 		const grammarTool = makeTool({
 			constrainedSampling: { type: "grammar", variants: { openai_lark: "start: /[a-z]+/" } },
@@ -120,10 +120,7 @@ describe("constrained tool sampling", () => {
 					supportsOpenAIGrammarTools: true,
 				},
 			),
-		).toThrow(
-			'Tool "sample_tool" cannot use grammar constrained sampling: ' +
-				"no supported grammar variant was provided",
-		);
+		).toThrow("Missing grammar: sample_tool");
 
 		const fallback = convertResponsesTools([grammarTool], {
 			supportsOpenAIGrammarTools: false,
@@ -250,7 +247,7 @@ describe("constrained tool sampling", () => {
 				convertResponsesMessages(makeModel(), context, new Set(["openai"]), {
 					grammarToolInputProperties: new Map([["sample_tool", "payload"]]),
 				}),
-			).toThrow('Grammar tool call "sample_tool" requires argument "payload" to be a string');
+			).toThrow("Grammar argument: payload (sample_tool)");
 		}
 
 		replayedToolCall.arguments = { payload: "abc" };
@@ -320,13 +317,13 @@ describe("constrained tool sampling", () => {
 		expect(JSON.parse(`${first}${second}`)).toEqual({ payload: 'a"\nb' });
 		expect(appendGrammarToolInputJsonDelta(buffer, "payload", 'a"\nb', true)).toBeUndefined();
 		expect(() => appendGrammarToolInputJsonDelta(buffer, "payload", "changed", true)).toThrow(
-			'grammar tool input for property "payload" changed after it was closed',
+			"Late input change: payload",
 		);
 	});
 
 	it("starts custom Responses tool calls with their initial input", async () => {
 		const output = makeOutput();
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 		const { starts, deltas } = captureToolCallEvents(stream);
 		const events = [
 			{
