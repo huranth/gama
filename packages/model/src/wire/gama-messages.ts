@@ -13,11 +13,13 @@ import type {
 	ToolCall,
 	TranscriptContext,
 } from "../types.ts";
+import { raceWithAbortSignal } from "../utils/abort.ts";
 import {
 	appendAssistantMessageDiagnostic,
 	createAssistantMessageDiagnostic,
+	formatThrownValue,
 } from "../utils/diagnostics.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
 import { getProviderEnvValue } from "../utils/provider-env.ts";
@@ -151,15 +153,21 @@ function formatGamaMessagesResponseError(
 }
 
 function parseGamaMessagesEvent(raw: string): GamaMessagesEvent | undefined {
-	// Join data.
+	// Join data
 	const data = raw
-		.split("\n")
+		.split(/\r\n|\n|\r/u)
 		.filter((line) => line.startsWith("data:"))
 		.map((line) => line.slice(5).trimStart())
 		.join("\n")
 		.trim();
 
-	return data && data !== "[DONE]" ? (JSON.parse(data) as GamaMessagesEvent) : undefined;
+	if (!data || data === "[DONE]") return undefined;
+	try {
+		return JSON.parse(data) as GamaMessagesEvent;
+	} catch (cause) {
+		const preview = truncateDiagnosticString(data);
+		throw new Error(`Malformed SSE JSON: ${formatThrownValue(cause)}: ${preview}`, { cause });
+	}
 }
 
 function appendRewriteDiagnostic(
@@ -202,10 +210,10 @@ function truncateDiagnosticString(value: string): string {
 	const maxLength = 8192;
 	if (value.length <= maxLength) return value;
 
-	// Surrogate safe.
+	// Surrogate safe
 	const lastCode = value.charCodeAt(maxLength - 1);
 	const end = lastCode >= 0xd800 && lastCode <= 0xdbff ? maxLength - 1 : maxLength;
-	return `${value.slice(0, end)}…`;
+	return `${value.slice(0, end)}...`;
 }
 
 function createErrorEvent(
@@ -366,14 +374,14 @@ export const stream: StreamFunction<"gama-messages", GamaMessagesOptions> = (
 	context,
 	options,
 ) => {
-	const eventStream = new AssistantMessageEventStream();
+	const eventStream = new ReplyStream();
 	const converter = createEventConverter(model);
 
 	void (async () => {
 		try {
 			const apiKey = options?.apiKey;
 			if (!apiKey) {
-				throw new Error(`No API key provided for provider "${model.provider}"`);
+				throw new Error(`No API key: ${model.provider}`);
 			}
 
 			const url = new URL(`${model.baseUrl.replace(/\/+$/u, "")}/messages`);
@@ -409,10 +417,10 @@ export const stream: StreamFunction<"gama-messages", GamaMessagesOptions> = (
 				throw createGamaMessagesResponseError(model, url, response, body);
 			}
 			if (!response.body) {
-				throw new Error(`${model.provider} response has no body`);
+				throw new Error(`Missing body: ${model.provider}`);
 			}
 
-			for await (const gamaEvent of readGamaMessagesEvents(response.body)) {
+			for await (const gamaEvent of readGamaMessagesEvents(response.body, options?.signal)) {
 				await options?.onProviderStreamEvent?.(gamaEvent, model);
 				const event = converter.convert(gamaEvent);
 				eventStream.push(event);
@@ -421,9 +429,9 @@ export const stream: StreamFunction<"gama-messages", GamaMessagesOptions> = (
 				}
 			}
 
-			throw new Error(`${model.provider} stream ended without a terminal event`);
+			throw new Error(`No terminal event: ${model.provider}`);
 		} catch (error) {
-			// Keep partial.
+			// Keep partial
 			eventStream.push(
 				createErrorEvent(model, error, options?.signal?.aborted ?? false, converter.partial),
 			);
@@ -437,7 +445,7 @@ export const streamSimple: StreamFunction<"gama-messages", SimpleStreamOptions> 
 	model: Model<"gama-messages">,
 	context: TranscriptContext,
 	options?: SimpleStreamOptions,
-): AssistantMessageEventStream => {
+): ReplyStream => {
 	const extra = options as GamaMessagesOptions | undefined;
 	return stream(model, context, {
 		...options,
@@ -447,8 +455,20 @@ export const streamSimple: StreamFunction<"gama-messages", SimpleStreamOptions> 
 	});
 };
 
+function findEventBoundary(buffer: string): { index: number; length: number } | undefined {
+	const match = /\r\n\r\n|\r\n\r|\r\n\n|\r\r\n|\n\r\n|\r\r|\n\r|\n\n/u.exec(buffer);
+	if (!match) return undefined;
+
+	// CRLF split
+	const endsWithCR = match[0].endsWith("\r") && match.index + match[0].length === buffer.length;
+	if (endsWithCR) return undefined;
+
+	return { index: match.index, length: match[0].length };
+}
+
 async function* readGamaMessagesEvents(
 	stream: ReadableStream<Uint8Array>,
+	signal?: AbortSignal,
 ): AsyncGenerator<GamaMessagesEvent> {
 	const decoder = new TextDecoder();
 	const reader = stream.getReader();
@@ -456,18 +476,19 @@ async function* readGamaMessagesEvents(
 
 	try {
 		while (true) {
-			const { done, value } = await reader.read();
+			if (signal?.aborted) throw new Error("Request was aborted");
+			const read = reader.read();
+			const { done, value } = signal ? await raceWithAbortSignal(read, signal) : await read;
 			buffer += done ? decoder.decode() : decoder.decode(value, { stream: true });
-			buffer = buffer.replace(/\r\n/g, "\n");
 
-			let split = buffer.indexOf("\n\n");
-			while (split !== -1) {
-				const event = parseGamaMessagesEvent(buffer.slice(0, split));
+			let boundary = findEventBoundary(buffer);
+			while (boundary) {
+				const event = parseGamaMessagesEvent(buffer.slice(0, boundary.index));
 				if (event) {
 					yield event;
 				}
-				buffer = buffer.slice(split + 2);
-				split = buffer.indexOf("\n\n");
+				buffer = buffer.slice(boundary.index + boundary.length);
+				boundary = findEventBoundary(buffer);
 			}
 
 			if (done) {
