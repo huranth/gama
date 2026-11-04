@@ -13,6 +13,17 @@ describe("provider request retries", () => {
 		vi.useRealTimers();
 	});
 
+	it("does not call request when already aborted", async () => {
+		const controller = new AbortController();
+		controller.abort();
+		const request = vi.fn<() => Promise<string>>().mockResolvedValue("ok");
+
+		await expect(
+			retryProviderRequest(request, { signal: controller.signal }),
+		).rejects.toMatchObject({ name: "AbortError" });
+		expect(request).not.toHaveBeenCalled();
+	});
+
 	it("retries retryable provider errors", async () => {
 		vi.useFakeTimers();
 		const request = vi
@@ -24,6 +35,42 @@ describe("provider request retries", () => {
 		await vi.advanceTimersByTimeAsync(999);
 		expect(request).toHaveBeenCalledTimes(1);
 		await vi.advanceTimersByTimeAsync(1);
+
+		await expect(result).resolves.toBe("ok");
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it("treats a non-finite retry count as no retries", async () => {
+		const error = providerError(429);
+		const request = vi.fn<() => Promise<string>>().mockRejectedValue(error);
+
+		await expect(
+			retryProviderRequest(request, { maxRetries: Number.POSITIVE_INFINITY }),
+		).rejects.toBe(error);
+		expect(request).toHaveBeenCalledTimes(1);
+	});
+
+	it("floors a fractional retry count", async () => {
+		const request = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(providerError(429, { "retry-after-ms": "0" }))
+			.mockResolvedValue("ok");
+
+		await expect(retryProviderRequest(request, { maxRetries: 1.9 })).resolves.toBe("ok");
+		expect(request).toHaveBeenCalledTimes(2);
+	});
+
+	it("ignores a negative retry-after-ms header", async () => {
+		vi.useFakeTimers();
+		const request = vi
+			.fn<() => Promise<string>>()
+			.mockRejectedValueOnce(providerError(429, { "retry-after-ms": "-100" }))
+			.mockResolvedValue("ok");
+
+		const result = retryProviderRequest(request, { maxRetries: 1 });
+		await vi.advanceTimersByTimeAsync(0);
+		expect(request).toHaveBeenCalledTimes(1);
+		await vi.advanceTimersByTimeAsync(500);
 
 		await expect(result).resolves.toBe("ok");
 		expect(request).toHaveBeenCalledTimes(2);
@@ -44,7 +91,7 @@ describe("provider request retries", () => {
 
 		await expect(
 			retryProviderRequest(request, { maxRetries: 1, maxRetryDelayMs: 1000 }),
-		).rejects.toThrow("Server requested 277403s retry delay (max: 1s)");
+		).rejects.toThrow("Delay too long: 277403s (max: 1s)");
 		expect(request).toHaveBeenCalledTimes(1);
 	});
 

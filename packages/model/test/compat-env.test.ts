@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { complete, registerApiProvider, resetApiProviders } from "../src/compat.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 
 const context: Context = { messages: [{ role: "user", content: "hi", timestamp: Date.now() }] };
 
@@ -49,7 +49,7 @@ describe("compat legacy API fallback", () => {
 			api: "openai-responses",
 			stream: (_model, _context, options) => {
 				capturedApiKey = options?.apiKey;
-				const stream = new AssistantMessageEventStream();
+				const stream = new ReplyStream();
 				const output = message();
 				stream.push({ type: "start", partial: output });
 				stream.push({ type: "done", reason: "stop", message: output });
@@ -58,7 +58,7 @@ describe("compat legacy API fallback", () => {
 			},
 			streamSimple: (_model, _context, options) => {
 				capturedApiKey = options?.apiKey;
-				const stream = new AssistantMessageEventStream();
+				const stream = new ReplyStream();
 				const output = message();
 				stream.push({ type: "start", partial: output });
 				stream.push({ type: "done", reason: "stop", message: output });

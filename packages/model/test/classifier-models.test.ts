@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { typesafeSystemOneApi } from "../src/api/typesafe-system-one.lazy.ts";
-import { createModels, createProvider, getModelType } from "../src/models.ts";
+import { typesafeSystemOneApi } from "../src/wire/typesafe-system-one.lazy.ts";
+import { createModels, createProvider, getModelType } from "../src/registry.ts";
 import type {
 	Api,
 	ClassifierApi,
@@ -9,7 +9,7 @@ import type {
 	ClassifierResult,
 	Model,
 } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 
 function classifierModel(provider: string, id: string): ClassifierModel<ClassifierApi> {
 	return {
@@ -61,8 +61,8 @@ describe("Models with classifier models", () => {
 			models: [chat, classifier],
 			api: {
 				"test-chat": {
-					stream: () => new AssistantMessageEventStream(),
-					streamSimple: () => new AssistantMessageEventStream(),
+					stream: () => new ReplyStream(),
+					streamSimple: () => new ReplyStream(),
 				},
 			},
 			classifiers: {
@@ -102,8 +102,8 @@ describe("Models with classifier models", () => {
 				auth: { apiKey: { name: "Test", resolve: async () => ({ auth: {} }) } },
 				models: [chat],
 				api: {
-					stream: () => new AssistantMessageEventStream(),
-					streamSimple: () => new AssistantMessageEventStream(),
+					stream: () => new ReplyStream(),
+					streamSimple: () => new ReplyStream(),
 				},
 			}),
 		);

@@ -137,7 +137,7 @@ describe("faux provider", () => {
 		expect(first.content).toEqual([{ type: "text", text: "first" }]);
 		expect(second.content).toEqual([{ type: "text", text: "second" }]);
 		expect(exhausted.stopReason).toBe("error");
-		expect(exhausted.errorMessage).toBe("No more faux responses queued");
+		expect(exhausted.errorMessage).toBe("No responses queued");
 		expect(registration.getPendingResponseCount()).toBe(0);
 		expect(registration.state.callCount).toBe(3);
 	});
@@ -227,7 +227,7 @@ describe("faux provider", () => {
 		expect(terminal?.type).toBe("error");
 		if (terminal?.type === "error") {
 			expect(terminal.error.stopReason).toBe("error");
-			expect(terminal.error.errorMessage).toBe("Faux response ended without a stop reason");
+			expect(terminal.error.errorMessage).toBe("No stop reason");
 		}
 	});
 
@@ -673,6 +673,6 @@ describe("faux provider", () => {
 			complete(registration.getModel(), {
 				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
 			}),
-		).rejects.toThrow(`No API provider registered for api: ${registration.api}`);
+		).rejects.toThrow(`No API provider: ${registration.api}`);
 	});
 });

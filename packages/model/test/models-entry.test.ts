@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 
 const packageRoot = fileURLToPath(new URL("..", import.meta.url));
-const sourceEntry = new URL("../src/models.ts", import.meta.url).href;
+const sourceEntry = new URL("../src/registry.ts", import.meta.url).href;
 
 const preload = `data:text/javascript,${encodeURIComponent(`
 	import { registerHooks } from "node:module";
@@ -33,7 +33,7 @@ describe("lightweight models entry", () => {
 			const script = `
 				import assert from "node:assert/strict";
 				import { createModels, createProvider } from ${JSON.stringify(entry)};
-				import { fauxAssistantMessage, fauxProvider } from "@huranth/gama-ai/providers/faux";
+				import { fauxAssistantMessage, fauxProvider } from "@huranth/gama-ai/catalog/faux";
 				assert.equal(typeof createProvider, "function");
 				const models = createModels();
 				assert.deepEqual(models.getModels(), []);
