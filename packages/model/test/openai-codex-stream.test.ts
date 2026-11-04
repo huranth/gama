@@ -10,7 +10,7 @@ import {
 	resetOpenAICodexWebSocketDebugStats,
 	stream as streamOpenAICodexResponses,
 	streamSimple as streamSimpleOpenAICodexResponses,
-} from "../src/api/openai-codex-responses.ts";
+} from "../src/wire/openai-codex-responses.ts";
 import type { Api, Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -457,7 +457,7 @@ describe("openai-codex streaming", () => {
 
 		expect(fetchMock).toHaveBeenCalledTimes(1);
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toBe("Codex SSE response headers timed out after 10ms");
+		expect(result.errorMessage).toBe("Headers timeout: 10ms");
 	});
 
 	it("aborts SSE body reads after response headers arrive", async () => {
@@ -1130,6 +1130,9 @@ describe("openai-codex streaming", () => {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 400000,
 				maxTokens: 128000,
+				...(modelId === "gpt-5.5"
+					? { compat: { priorityServiceTierMultiplier: 2.5 } }
+					: {}),
 			};
 
 			const context = normalizeContext({
@@ -1233,6 +1236,9 @@ describe("openai-codex streaming", () => {
 				cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 400000,
 				maxTokens: 128000,
+				...(modelId === "gpt-5.5"
+					? { compat: { priorityServiceTierMultiplier: 2.5 } }
+					: {}),
 			};
 
 			const context = normalizeContext({
@@ -1781,7 +1787,7 @@ describe("openai-codex streaming", () => {
 			websocketFailures: 1,
 			sseFallbacks: 1,
 			websocketFallbackActive: true,
-			lastWebSocketError: "WebSocket connect timeout after 50ms",
+			lastWebSocketError: "Connect timeout: 50ms",
 		});
 	});
 
@@ -2044,7 +2050,7 @@ describe("openai-codex streaming", () => {
 
 		const result = await resultPromise;
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toBe("WebSocket idle timeout after 50ms");
+		expect(result.errorMessage).toBe("Idle timeout: 50ms");
 		expect(fetchMock).not.toHaveBeenCalled();
 	});
 
@@ -2716,7 +2722,7 @@ describe("openai-codex streaming", () => {
 			}).result();
 
 			expect(result.stopReason).toBe("error");
-			expect(result.errorMessage).toBe("Server requested 2s retry delay (max: 1s)");
+			expect(result.errorMessage).toBe("Delay too long: 2s (max: 1s)");
 			expect(fetchMock).toHaveBeenCalledTimes(1);
 		},
 	);

@@ -1,9 +1,9 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";
-import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
-import { processResponsesStream } from "../src/api/openai-responses-shared.ts";
+import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
+import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 import type { Api, AssistantMessage, AssistantMessageEvent, Model } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 vi.mock("openai", () => {
@@ -208,6 +208,18 @@ async function* createPhasedMessageEvents(
 	} as ResponseStreamEvent;
 }
 
+async function* createUnknownStatusEvents(): AsyncIterable<ResponseStreamEvent> {
+	yield {
+		type: "response.completed",
+		sequence_number: 0,
+		response: {
+			id: "resp_unknown_status",
+			status: "some_new_status",
+			usage: { input_tokens: 5, output_tokens: 3, total_tokens: 8 },
+		},
+	} as unknown as ResponseStreamEvent;
+}
+
 async function* createUnfinishedToolCallEvents(): AsyncIterable<ResponseStreamEvent> {
 	yield {
 		type: "response.output_item.added",
@@ -265,14 +277,30 @@ async function* createToolCallsWithoutOutputIndexEvents(): AsyncIterable<Respons
 }
 
 describe("OpenAI Responses terminal event handling", () => {
+	it("degrades an unknown terminal status to stop instead of failing", async () => {
+		const model = createModel();
+		const output = createOutput(model);
+
+		await processResponsesStream(
+			createUnknownStatusEvents(),
+			output,
+			new ReplyStream(),
+			model,
+		);
+
+		expect(output.stopReason).toBe("stop");
+		expect(output.errorMessage).toBeUndefined();
+		expect(output.usage.totalTokens).toBe(8);
+	});
+
 	it("rejects streams that end before a terminal response event", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await expect(
 			processResponsesStream(createEarlyEofEvents(), output, stream, model),
-		).rejects.toThrow("OpenAI Responses stream ended before a terminal response event");
+		).rejects.toThrow("No terminal event");
 	});
 
 	it("rejects completed streams whose tool call never received output_item.done", async () => {
@@ -282,11 +310,11 @@ describe("OpenAI Responses terminal event handling", () => {
 			processResponsesStream(
 				createUnfinishedToolCallEvents(),
 				createOutput(model),
-				new AssistantMessageEventStream(),
+				new ReplyStream(),
 				model,
 			),
 		).rejects.toThrow(
-			"OpenAI Responses stream completed with an unfinished tool call: bash (call_1|fc_1)",
+			"Unfinished tool call: bash",
 		);
 	});
 
@@ -297,11 +325,11 @@ describe("OpenAI Responses terminal event handling", () => {
 			processResponsesStream(
 				createToolCallsWithoutOutputIndexEvents(),
 				createOutput(model),
-				new AssistantMessageEventStream(),
+				new ReplyStream(),
 				model,
 			),
 		).rejects.toThrow(
-			"OpenAI Responses stream completed with an unfinished tool call: bash (call_a|fc_a)",
+			"Unfinished tool call: bash",
 		);
 	});
 
@@ -356,7 +384,7 @@ describe("OpenAI Responses terminal event handling", () => {
 		expect(lastEvent?.type).toBe("error");
 		expect(result.stopReason).toBe("error");
 		expect(result.errorMessage).toBe(
-			"OpenAI Responses stream ended before a terminal response event",
+			"No terminal event",
 		);
 	});
 
@@ -367,7 +395,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	] as const)("tracks message phases $phases", async ({ phases, expected }) => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 		const observedStopReasons: AssistantMessage["stopReason"][] = [];
 		const push = stream.push.bind(stream);
 		stream.push = (event) => {
@@ -384,7 +412,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("replaces a provisional final-answer stop with an incomplete terminal reason", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 		const observedStopReasons: AssistantMessage["stopReason"][] = [];
 		const push = stream.push.bind(stream);
 		stream.push = (event) => {
@@ -406,7 +434,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("finalizes completed terminal events as stop", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await processResponsesStream(createCompletedEvents(), output, stream, model);
 
@@ -425,7 +453,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("finalizes incomplete terminal events as length stops", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await processResponsesStream(createIncompleteEvents(), output, stream, model);
 
@@ -444,7 +472,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("finalizes content-filtered incomplete responses as non-retryable errors", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await processResponsesStream(createIncompleteEvents("content_filter"), output, stream, model);
 
@@ -456,7 +484,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("preserves unknown provider incomplete reasons as non-retryable errors", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await processResponsesStream(createIncompleteEvents("max_time_limit"), output, stream, model);
 
@@ -468,7 +496,7 @@ describe("OpenAI Responses terminal event handling", () => {
 	it("rejects failed terminal events with the provider error", async () => {
 		const model = createModel();
 		const output = createOutput(model);
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 
 		await expect(
 			processResponsesStream(createFailedEvents(), output, stream, model),

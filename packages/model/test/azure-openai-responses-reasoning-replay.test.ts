@@ -6,9 +6,9 @@ import { describe, expect, it } from "vitest";
 import {
 	convertResponsesMessages,
 	processResponsesStream,
-} from "../src/api/openai-responses-shared.ts";
+} from "../src/wire/openai-responses-shared.ts";
 import type { AssistantMessage, Model } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 function createModel(): Model<"azure-openai-responses"> {
@@ -103,7 +103,7 @@ describe("Azure OpenAI Responses reasoning replay", () => {
 		await processResponsesStream(
 			createEvents(doneItem, completedItem),
 			output,
-			new AssistantMessageEventStream(),
+			new ReplyStream(),
 			model,
 		);
 
@@ -112,6 +112,24 @@ describe("Azure OpenAI Responses reasoning replay", () => {
 			id: "rs_done",
 			encrypted_content: "from-output-item-done",
 		});
+	});
+
+	it("replays unsigned thinking as assistant text", () => {
+		const model = createModel();
+		const assistant = createOutput(model);
+		assistant.stopReason = "stop";
+		assistant.content = [{ type: "thinking", thinking: "private steps" }];
+		const context = normalizeContext({ messages: [assistant] });
+
+		const input = convertResponsesMessages(model, context, new Set(["azure-openai-responses"]));
+
+		expect(input).toEqual([
+			expect.objectContaining({
+				type: "message",
+				role: "assistant",
+				content: [{ type: "output_text", text: "private steps", annotations: [] }],
+			}),
+		]);
 	});
 
 	it("fills encrypted_content when output_item.done omitted it", async () => {
@@ -130,7 +148,7 @@ describe("Azure OpenAI Responses reasoning replay", () => {
 		await processResponsesStream(
 			createEvents(doneItem, completedItem),
 			output,
-			new AssistantMessageEventStream(),
+			new ReplyStream(),
 			model,
 		);
 

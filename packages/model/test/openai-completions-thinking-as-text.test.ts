@@ -6,7 +6,7 @@ import {
 	convertMessages,
 	type ResolvedOpenAICompletionsCompat,
 	stream as streamOpenAICompletions,
-} from "../src/api/openai-completions.ts";
+} from "../src/wire/openai-completions.ts";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -112,9 +112,15 @@ interface ChatCompletionsRequestBody {
 	stream_options?: { include_usage?: boolean };
 }
 
+const originalOpenAiApiKey = process.env.OPENAI_API_KEY;
+
 describe("openai-completions thinking-as-text replay", () => {
 	afterEach(() => {
-		delete process.env.OPENAI_API_KEY;
+		if (originalOpenAiApiKey === undefined) {
+			delete process.env.OPENAI_API_KEY;
+		} else {
+			process.env.OPENAI_API_KEY = originalOpenAiApiKey;
+		}
 	});
 
 	it("serializes same-model thinking-plus-text replay as assistant text parts", () => {

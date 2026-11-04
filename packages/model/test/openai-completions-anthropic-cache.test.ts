@@ -183,7 +183,9 @@ describe("openai-completions anthropic cache control", () => {
 	});
 
 	describe("tool loop closers", () => {
-		it("ends an in-flight tool-loop request with a marked closer and leaves tool messages unmarked", async () => {
+		it(
+			"ends an in-flight tool-loop request with a marked closer and leaves tool messages unmarked",
+			async () => {
 			const sent = await captureSentMessages({
 				systemPrompt: "you are a test",
 				messages: [
@@ -206,7 +208,7 @@ describe("openai-completions anthropic cache control", () => {
 				}
 			}
 
-			// Breakpoint count.
+			// Breakpoint count
 			expect(markedMessageIndexes(sent)).toHaveLength(2);
 			expect(mockState.params.tools.at(-1).cache_control).toEqual({ type: "ephemeral" });
 		});
@@ -236,7 +238,7 @@ describe("openai-completions anthropic cache control", () => {
 			expect(tail.role).toBe("user");
 			expect(tail.content[0].text).toBe(TOOL_BATCH_CLOSER_TEXT);
 
-			// Breakpoint cap.
+			// Breakpoint cap
 			expect(markedMessageIndexes(sent)).toHaveLength(3);
 			expect(mockState.params.tools.at(-1).cache_control).toEqual({ type: "ephemeral" });
 		});

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { stream as streamOpenAICompletions } from "../src/api/openai-completions.ts";
+import { stream as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
 import type { Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -133,8 +133,7 @@ describe("openai-completions provider retries", () => {
 		const result = await consume({ maxRetries: 2, maxRetryDelayMs: 1000 });
 
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain("Server requested 277403s retry delay (max: 1s)");
-		expect(result.errorMessage).toContain("rate limited");
+		expect(result.errorMessage).toBe("Delay too long: 277403s (max: 1s)");
 		expect(mockState.requestOptions).toEqual([expect.objectContaining({ maxRetries: 0 })]);
 	});
 });

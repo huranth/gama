@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { stream as streamOpenAIResponses } from "../src/api/openai-responses.ts";
+import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
 import type { Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 

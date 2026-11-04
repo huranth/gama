@@ -1,15 +1,17 @@
 #!/usr/bin/env node
+// Manual probe
 
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
-import { ModelRuntime } from "../../coding-agent/src/core/model-runtime.ts";
+import { ModelHub } from "../../cli/src/core/model-run.ts";
 import {
 	closeOpenAICodexWebSocketSessions,
 	getOpenAICodexWebSocketDebugStats,
 	resetOpenAICodexWebSocketDebugStats,
 	stream as streamOpenAICodexResponses,
-} from "../src/api/openai-codex-responses.ts";
+} from "../src/wire/openai-codex-responses.ts";
 import { getModel, normalizeContext } from "../src/compat.ts";
 import type {
 	AssistantMessage,
@@ -187,7 +189,7 @@ async function main(): Promise<void> {
 	const model = getModel("openai-codex", "gpt-5.5") as Model<"openai-codex-responses"> | undefined;
 	if (!model) throw new Error("Model openai-codex/gpt-5.5 not found");
 	const modelWithMaxTokens = { ...model, maxTokens: args.maxTokens };
-	const modelRuntime = await ModelRuntime.create();
+	const modelRuntime = await ModelHub.create();
 	const apiKey =
 		(await modelRuntime.getAuth("openai-codex"))?.auth.apiKey ??
 		(await modelRuntime.getAuth("openai"))?.auth.apiKey;
@@ -325,7 +327,12 @@ async function main(): Promise<void> {
 	closeOpenAICodexWebSocketSessions(args.sessionId);
 }
 
-main().catch((error: unknown) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+const entry = process.argv[1];
+const direct = entry !== undefined && resolve(entry) === fileURLToPath(import.meta.url);
+
+if (direct) {
+	main().catch((error: unknown) => {
+		console.error(error instanceof Error ? error.message : String(error));
+		process.exitCode = 1;
+	});
+}

@@ -35,6 +35,15 @@ vi.mock("openai", () => {
 	return { default: FakeOpenAI };
 });
 
+const EXPLICIT_CACHE_IDS = new Set([
+	"deepseek/deepseek-v3.2",
+	"qwen/qwen3-max",
+	"qwen/qwen-plus",
+	"qwen/qwen3.6-plus",
+	"qwen/qwen3-coder-plus",
+	"qwen/qwen3-coder-flash",
+]);
+
 function openRouterModel(
 	id = "openrouter/auto",
 	provider = "openrouter",
@@ -118,8 +127,12 @@ async function captureCachePayload(
 ): Promise<CachePayload> {
 	let payload: CachePayload | undefined;
 	mockState.chunks = [{ choices: [{ delta: {}, finish_reason: "stop" }] }];
+	const model = openRouterModel(id, provider);
+	if (EXPLICIT_CACHE_IDS.has(id)) {
+		model.compat = { cacheControlFormat: "anthropic" };
+	}
 	await completeSimple(
-		openRouterModel(id, provider),
+		model,
 		{
 			messages: [
 				{

@@ -2,10 +2,11 @@ import type { ResponseStreamEvent } from "openai/resources/responses/responses.j
 import { describe, expect, it } from "vitest";
 import {
 	convertResponsesMessages,
+	parseReasoningSignature,
 	processResponsesStream,
-} from "../src/api/openai-responses-shared.ts";
+} from "../src/wire/openai-responses-shared.ts";
 import type { Api, AssistantMessage, Model, ToolCall } from "../src/types.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
 const model: Model<"openai-responses"> = {
@@ -119,11 +120,22 @@ describe("OpenAI Responses terminal messages", () => {
 		await processResponsesStream(
 			createFunctionCallEvents(),
 			output,
-			new AssistantMessageEventStream(),
+			new ReplyStream(),
 			model,
 		);
 
 		expect(output).not.toHaveProperty("errorMessage");
+	});
+
+	it("skips a malformed reasoning signature instead of throwing", () => {
+		expect(parseReasoningSignature('{"type":"reasoning","summary":[')).toBeUndefined();
+		expect(parseReasoningSignature("not json")).toBeUndefined();
+	});
+
+	it("parses a stored reasoning signature", () => {
+		const stored = parseReasoningSignature('{"type":"reasoning","id":"rs_1"}');
+
+		expect(stored?.id).toBe("rs_1");
 	});
 });
 
@@ -133,7 +145,7 @@ describe("OpenAI Responses tool-call namespaces", () => {
 		await processResponsesStream(
 			createFunctionCallEvents(),
 			output,
-			new AssistantMessageEventStream(),
+			new ReplyStream(),
 			model,
 		);
 
@@ -166,7 +178,7 @@ describe("OpenAI Responses tool-call namespaces", () => {
 		await processResponsesStream(
 			createCustomToolCallEvents(),
 			output,
-			new AssistantMessageEventStream(),
+			new ReplyStream(),
 			model,
 			{
 				grammarToolInputProperties,
