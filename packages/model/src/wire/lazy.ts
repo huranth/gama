@@ -5,7 +5,7 @@ import type {
 	Model,
 	ProviderStreams,
 } from "../types.ts";
-import { AssistantMessageEventStream } from "../utils/event-stream.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 
 export interface LazyApiCapabilities {
 	fetchDeferred?: boolean;
@@ -19,7 +19,7 @@ function hasResult(
 }
 
 async function forwardStream(
-	target: AssistantMessageEventStream,
+	target: ReplyStream,
 	source: AsyncIterable<AssistantMessageEvent>,
 ): Promise<void> {
 	for await (const event of source) {
@@ -55,8 +55,8 @@ function createSetupErrorMessage(model: Model<Api>, error: unknown): AssistantMe
 export function lazyStream(
 	model: Model<Api>,
 	setup: () => Promise<AsyncIterable<AssistantMessageEvent>>,
-): AssistantMessageEventStream {
-	const outer = new AssistantMessageEventStream();
+): ReplyStream {
+	const outer = new ReplyStream();
 
 	setup()
 		.then((inner) => forwardStream(outer, inner))
@@ -85,7 +85,7 @@ export function lazyApi(
 			lazyStream(model, async () => {
 				const implementation = await load();
 				if (!implementation.fetchDeferred) {
-					throw new Error("API does not support deferred responses");
+					throw new Error("Deferred unsupported");
 				}
 
 				return implementation.fetchDeferred(model, handle, options);
@@ -96,7 +96,7 @@ export function lazyApi(
 		api.cancelDeferred = async (model, handle, options) => {
 			const implementation = await load();
 			if (!implementation.cancelDeferred) {
-				throw new Error("API cannot cancel deferred responses");
+				throw new Error("Cancel unsupported");
 			}
 
 			await implementation.cancelDeferred(model, handle, options);

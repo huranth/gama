@@ -100,9 +100,7 @@ export function getGrammarToolInput(
 ): string {
 	const input = arguments_[inputProperty];
 	if (typeof input !== "string") {
-		throw new Error(
-			`Grammar tool call "${toolName}" requires argument "${inputProperty}" to be a string.`,
-		);
+		throw new Error(`Grammar argument: ${inputProperty} (${toolName})`);
 	}
 
 	return input;
@@ -132,10 +130,7 @@ export function resolveJsonSchemaStrictSampling(
 
 	if (!supportsStrictMode) {
 		if (config.strict === "require") {
-			throw new Error(
-				`Tool "${tool.name}" requires JSON-schema constrained sampling, ` +
-					"but strict tools are unsupported.",
-			);
+			throw new Error(`Strict unsupported: ${tool.name}`);
 		}
 
 		return undefined;
@@ -149,9 +144,7 @@ export function resolveJsonSchemaStrictSampling(
 		if (!(error instanceof UnsupportedStrictJsonSchemaError)) throw error;
 		if (config.strict !== "require") return undefined;
 
-		throw new Error(
-			`Tool "${tool.name}" requires JSON-schema constrained sampling, but ${error.message}.`,
-		);
+		throw new Error(`Invalid schema: ${error.message}`);
 	}
 }
 
@@ -169,48 +162,47 @@ export function resolveGrammarConstrainedSampling(
 	const hasRegex = typeof regex === "string" && regex.trim().length > 0;
 
 	if (!hasLark && !hasRegex) {
-		throw new Error(
-			`Tool "${tool.name}" cannot use grammar constrained sampling: ` +
-				"no supported grammar variant was provided.",
-		);
+		throw new Error(`Missing grammar: ${tool.name}`);
 	}
 
-	try {
+	if (hasLark) {
 		return {
-			format: hasLark ? "lark" : "regex",
-			definition: hasLark ? lark : regex!,
+			format: "lark",
+			definition: lark,
 			inputProperty: inferGrammarInputProperty(tool),
 		};
-	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-
-		throw new Error(`Tool "${tool.name}" cannot use grammar constrained sampling: ${message}.`);
 	}
+
+	if (!regex) {
+		throw new Error(`Missing regex: ${tool.name}`);
+	}
+
+	return {
+		format: "regex",
+		definition: regex,
+		inputProperty: inferGrammarInputProperty(tool),
+	};
 }
 
 function inferGrammarInputProperty(tool: Tool): string {
 	const schema = tool.parameters as JsonSchemaObject;
 	if (schema.type !== "object") {
-		throw new Error("grammar constrained sampling requires an object parameter schema");
+		throw new Error("Object schema required");
 	}
 
 	const required = schema.required;
 	if (!Array.isArray(required) || required.length !== 1 || typeof required[0] !== "string") {
-		throw new Error("grammar constrained sampling requires exactly one required string property");
+		throw new Error("Single property required");
 	}
 
 	const inputProperty = required[0];
 	const property = schema.properties?.[inputProperty];
 	if (!property) {
-		throw new Error(
-			`grammar constrained sampling requires a properties entry for ${inputProperty}`,
-		);
+		throw new Error(`Missing property: ${inputProperty}`);
 	}
 
 	if (property.type !== "string") {
-		throw new Error(
-			`grammar constrained sampling property ${inputProperty} must have type string`,
-		);
+		throw new Error(`Invalid property type: ${inputProperty}`);
 	}
 
 	return inputProperty;
@@ -225,15 +217,11 @@ export function appendGrammarToolInputJsonDelta(
 	if (buffer.closed) {
 		if (close && nextInput === buffer.input) return undefined;
 
-		throw new Error(
-			`grammar tool input for property "${inputProperty}" changed after it was closed`,
-		);
+		throw new Error(`Late input change: ${inputProperty}`);
 	}
 
 	if (!nextInput.startsWith(buffer.input)) {
-		throw new Error(
-			`grammar tool input for property "${inputProperty}" changed non-monotonically`,
-		);
+		throw new Error(`Input went backwards: ${inputProperty}`);
 	}
 
 	const inputDelta = nextInput.slice(buffer.input.length);
