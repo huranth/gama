@@ -9,8 +9,9 @@ import type {
 
 function resolveImagesApiProvider(api: ImageApi) {
 	const provider = getImagesApiProvider(api);
+
 	if (!provider) {
-		throw new Error(`No API provider registered for api: ${api}`);
+		throw new Error(`No API provider: ${api}`);
 	}
 	return provider;
 }

@@ -18,12 +18,20 @@ import type {
 	TextContent,
 	Usage,
 } from "../types.ts";
-import { formatProviderError, normalizeProviderError } from "../utils/error-body.ts";
+import {
+	formatProviderError,
+	MAX_PROVIDER_ERROR_BODY_CHARS,
+	normalizeProviderError,
+	safeJsonStringify,
+	truncateErrorText,
+} from "../utils/error-body.ts";
 import { headersToRecord, providerHeadersToRecord } from "../utils/headers.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 
 const DATA_URL_PATTERN = /^data:([^;]+);base64,(.+)$/;
+
+const PER_MILLION = 1_000_000;
 
 interface OpenRouterGeneratedImage {
 	image_url?: string | { url?: string };
@@ -115,6 +123,10 @@ function parseGeneratedImages(images: OpenRouterGeneratedImage[] | undefined): I
 	return result;
 }
 
+function describePayload(value: unknown): string {
+	return truncateErrorText(safeJsonStringify(value), MAX_PROVIDER_ERROR_BODY_CHARS);
+}
+
 function parseUsage(
 	rawUsage: {
 		prompt_tokens?: number;
@@ -126,12 +138,15 @@ function parseUsage(
 	const promptTokens = rawUsage.prompt_tokens || 0;
 	const reportedCachedTokens = rawUsage.prompt_tokens_details?.cached_tokens || 0;
 	const cacheWriteTokens = rawUsage.prompt_tokens_details?.cache_write_tokens || 0;
+
 	const cacheReadTokens =
 		cacheWriteTokens > 0
 			? Math.max(0, reportedCachedTokens - cacheWriteTokens)
 			: reportedCachedTokens;
+
 	const input = Math.max(0, promptTokens - cacheReadTokens - cacheWriteTokens);
 	const output = rawUsage.completion_tokens || 0;
+
 	const usage: Usage = {
 		input,
 		output,
@@ -139,10 +154,10 @@ function parseUsage(
 		cacheWrite: cacheWriteTokens,
 		totalTokens: input + output + cacheReadTokens + cacheWriteTokens,
 		cost: {
-			input: (model.cost.input / 1000000) * input,
-			output: (model.cost.output / 1000000) * output,
-			cacheRead: (model.cost.cacheRead / 1000000) * cacheReadTokens,
-			cacheWrite: (model.cost.cacheWrite / 1000000) * cacheWriteTokens,
+			input: (model.cost.input / PER_MILLION) * input,
+			output: (model.cost.output / PER_MILLION) * output,
+			cacheRead: (model.cost.cacheRead / PER_MILLION) * cacheReadTokens,
+			cacheWrite: (model.cost.cacheWrite / PER_MILLION) * cacheWriteTokens,
 			total: 0,
 		},
 	};
@@ -169,7 +184,7 @@ export const generateImages: ImagesFunction<ImagesOptions> = async (
 
 	try {
 		const apiKey = options?.apiKey;
-		if (!apiKey) throw new Error(`No API key for provider: ${model.provider}`);
+		if (!apiKey) throw new Error(`No API key: ${model.provider}`);
 
 		const client = createClient(model, apiKey, options?.headers, options?.fetch);
 		let params = buildParams(model, context);
@@ -201,15 +216,22 @@ export const generateImages: ImagesFunction<ImagesOptions> = async (
 		output.responseId = imageResponse.id;
 		if (imageResponse.usage) output.usage = parseUsage(imageResponse.usage, model);
 
-		const choice = imageResponse.choices[0];
-		if (choice) {
-			const content = choice.message.content;
-			if (typeof content === "string" && content.length > 0) {
-				output.output.push({ type: "text", text: content });
-			}
+		const choice = imageResponse.choices?.[0];
+		if (!choice) throw new Error("No image returned");
 
-			output.output.push(...parseGeneratedImages(choice.message.images));
+		const images = parseGeneratedImages(choice.message.images);
+		if (images.length === 0) {
+			throw new Error(`No image data in response: ${describePayload(choice.message.images)}`, {
+				cause: choice.message.images,
+			});
 		}
+
+		const content = choice.message.content;
+		if (typeof content === "string" && content.length > 0) {
+			output.output.push({ type: "text", text: content });
+		}
+
+		output.output.push(...images);
 
 		return output;
 	} catch (error) {

@@ -43,7 +43,7 @@ function wrapGenerateImages<TOptions extends ImagesOptions>(
 ): ImagesApiFunction {
 	return (model, context, options) => {
 		if (model.api !== api) {
-			throw new Error(`Mismatched api: ${model.api} expected ${api}`);
+			throw new Error(`API mismatch: ${model.api}`);
 		}
 		return generateImages(model, context, options as TOptions);
 	};
