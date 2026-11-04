@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamSimple as streamAnthropic } from "../src/api/anthropic-messages.ts";
-import { fauxAssistantMessage } from "../src/providers/faux.ts";
+import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
+import { fauxAssistantMessage } from "../src/catalog/faux.ts";
 import type { FetchFunction, Model } from "../src/types.ts";
 import { isRetryableAssistantError } from "../src/utils/retry.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
@@ -49,7 +49,7 @@ describe("anthropic stream idle timeout", () => {
 		const message = await pending;
 
 		expect(message.stopReason).toBe("error");
-		expect(message.errorMessage).toMatch(/idle timeout/);
+		expect(message.errorMessage).toMatch(/Idle timeout/);
 		expect(isRetryableAssistantError(fauxAssistantMessage("", message))).toBe(true);
 	});
 

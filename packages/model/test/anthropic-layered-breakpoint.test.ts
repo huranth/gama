@@ -3,7 +3,7 @@ import type {
 	BetaMessageParam as MessageParam,
 } from "@anthropic-ai/sdk/resources/beta/messages/messages.js";
 import { describe, expect, test } from "vitest";
-import { applyLayeredBreakpoint } from "../src/api/anthropic-messages.ts";
+import { applyLayeredBreakpoint } from "../src/wire/anthropic-messages.ts";
 
 const cacheControl: CacheControlEphemeral = { type: "ephemeral" };
 
@@ -20,7 +20,7 @@ describe("applyLayeredBreakpoint", () => {
 		applyLayeredBreakpoint(params, cacheControl);
 		const anchor = params[params.length - 1 - 12].content[0] as { cache_control?: unknown };
 		expect(anchor.cache_control).toEqual(cacheControl);
-		// Anchor only.
+		// Anchor only
 		const marks = params.filter((m) =>
 			(m.content as { cache_control?: unknown }[]).some((b) => b.cache_control),
 		);
