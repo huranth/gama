@@ -1,6 +1,6 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it } from "vitest";
-import { processResponsesStream } from "../src/api/openai-responses-shared.ts";
+import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
@@ -9,7 +9,7 @@ import {
 	type Model,
 	reduceAssistantMessageFrames,
 } from "../src/index.ts";
-import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
 
 function seed(): AssistantMessage {
 	return {
@@ -228,7 +228,7 @@ describe("assistant message frames", () => {
 
 		const encoder = new AssistantMessageFrameEncoder();
 		const frames: AssistantMessageFrame[] = [frame(encoder, { type: "start", partial: output })];
-		const stream = new AssistantMessageEventStream();
+		const stream = new ReplyStream();
 		const push = stream.push.bind(stream);
 		stream.push = (event) => {
 			const converted = encoder.encode(event);
@@ -412,7 +412,7 @@ describe("assistant message frames", () => {
 				reason: "stop",
 				message: completed,
 			}),
-		).toThrow("done event appears before start");
+		).toThrow("Done before start");
 		expect(() =>
 			new AssistantMessageFrameEncoder().encode({
 				type: "text_delta",
@@ -420,7 +420,7 @@ describe("assistant message frames", () => {
 				delta: "x",
 				partial: seed(),
 			}),
-		).toThrow("text_delta event appears before start");
+		).toThrow("Event before start");
 	});
 
 	it("treats end signature metadata, including absence, as authoritative", () => {
@@ -628,7 +628,7 @@ describe("assistant message frames", () => {
 				{ type: "text_delta", contentIndex: 0, delta: "x" },
 				{ type: "start", partial: seed() },
 			]),
-		).toThrow("before the start frame");
+		).toThrow("Frame before start");
 		expect(() =>
 			reduceAssistantMessageFrames([
 				{ type: "start", partial: seed() },
@@ -639,7 +639,7 @@ describe("assistant message frames", () => {
 				},
 				{ type: "text_delta", contentIndex: 0, delta: "wrong" },
 			]),
-		).toThrow("expected text block");
+		).toThrow("Wrong block type");
 		expect(() =>
 			reduceAssistantMessageFrames([
 				{ type: "start", partial: seed() },
@@ -647,7 +647,7 @@ describe("assistant message frames", () => {
 				{ type: "text_end", contentIndex: 0, content: "" },
 				{ type: "text_end", contentIndex: 0, content: "" },
 			]),
-		).toThrow("follows the end");
+		).toThrow("Block already ended");
 		expect(() =>
 			reduceAssistantMessageFrames([
 				{ type: "start", partial: seed() },
@@ -662,7 +662,7 @@ describe("assistant message frames", () => {
 		encoder.encode({ type: "start", partial });
 		partial.content.push({ type: "thinking", thinking: "" });
 		expect(() => encoder.encode({ type: "text_start", contentIndex: 0, partial })).toThrow(
-			"text_start event points to thinking block",
+			"Wrong content type: thinking",
 		);
 	});
 });

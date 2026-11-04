@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { classify } from "../src/api/typesafe-system-one.ts";
+import { classify } from "../src/wire/typesafe-system-one.ts";
 import type { ClassifierContext, ClassifierModel } from "../src/types.ts";
 
 const model: ClassifierModel<"typesafe-system-one"> = {
@@ -203,7 +203,7 @@ describe("TypeSafe System One", () => {
 		});
 
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toBe("Request timed out after 5ms");
+		expect(result.errorMessage).toBe("Request timed out: 5ms");
 	});
 
 	it("creates a fresh timeout for every retry attempt", async () => {
@@ -237,7 +237,7 @@ describe("TypeSafe System One", () => {
 
 		expect(result.stopReason).toBe("error");
 		expect(result.answers).toEqual({});
-		expect(result.errorMessage).toContain("did not return an answer for category");
+		expect(result.errorMessage).toContain("Missing answer: category");
 		expect(result.usage).toMatchObject({ input: 10, output: 2 });
 	});
 

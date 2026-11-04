@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { type GamaMessagesOptions, stream, streamSimple } from "../src/api/gama-messages.ts";
+import { type GamaMessagesOptions, stream, streamSimple } from "../src/wire/gama-messages.ts";
 import type { Api, AssistantMessageEvent, Context, Model, StopReason } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
@@ -15,6 +15,7 @@ type ResponderOptions = {
 	status?: number;
 	headers?: Record<string, string>;
 	events?: unknown[];
+	rawEvents?: string[];
 	rawBody?: string;
 };
 
@@ -55,6 +56,9 @@ async function startServer(
 			}
 			for (const event of options.events ?? []) {
 				response.write(`data: ${JSON.stringify(event)}\n\n`);
+			}
+			for (const event of options.rawEvents ?? []) {
+				response.write(`data: ${event}\n\n`);
 			}
 			response.end();
 		});
@@ -263,7 +267,20 @@ describe("gama-messages", () => {
 		const message = await stream(model, normalizeContext(context)).result();
 
 		expect(message.stopReason).toBe("error");
-		expect(message.errorMessage).toContain("No API key provided");
+		expect(message.errorMessage).toContain("No API key");
+	});
+
+	it("surfaces malformed SSE JSON as a stream error", async () => {
+		const { baseUrl } = await startServer({ rawEvents: ['{"type":"start"'] });
+		const model = createModel(baseUrl);
+
+		const message = await stream(model, normalizeContext(context), {
+			apiKey: "test-key",
+		}).result();
+
+		expect(message.stopReason).toBe("error");
+		expect(message.errorMessage).toContain("Malformed SSE JSON");
+		expect(message.errorMessage).toContain('{"type":"start"');
 	});
 
 	it("errors when the stream ends without a terminal event", async () => {
@@ -281,7 +298,7 @@ describe("gama-messages", () => {
 		}).result();
 
 		expect(message.stopReason).toBe("error");
-		expect(message.errorMessage).toContain("stream ended without a terminal event");
+		expect(message.errorMessage).toContain("No terminal event");
 	});
 });
 

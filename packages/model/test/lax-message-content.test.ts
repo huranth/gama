@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { transformMessages } from "../src/api/transform-messages.ts";
+import { transformMessages } from "../src/wire/transform-messages.ts";
 import type { Message, Model } from "../src/types.ts";
 
 function makeTextOnlyModel(): Model<"openai-completions"> {

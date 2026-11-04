@@ -50,6 +50,16 @@ describe("node HTTP proxy resolution", () => {
 		).toBeUndefined();
 	});
 
+	it("treats a wildcard inside NO_PROXY as a full bypass", () => {
+		resetProxyEnv();
+		process.env.HTTPS_PROXY = "http://proxy.example:8080";
+		process.env.NO_PROXY = "*,bedrock-runtime.us-east-1.amazonaws.com";
+
+		expect(
+			resolveHttpProxyUrlForTarget("https://bedrock-runtime.us-east-1.amazonaws.com"),
+		).toBeUndefined();
+	});
+
 	it("resolves HTTP and HTTPS proxy URLs", () => {
 		resetProxyEnv();
 		process.env.HTTPS_PROXY = "http://proxy.example:8080";

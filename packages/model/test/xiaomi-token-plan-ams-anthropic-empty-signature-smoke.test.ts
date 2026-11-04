@@ -78,7 +78,7 @@ async function captureReplayPayload(context: Context): Promise<AnthropicPayload>
 	return capturedPayload;
 }
 
-// Empty signature.
+// Empty signature
 function thinkingThenTextEvents(): unknown[] {
 	return [
 		{

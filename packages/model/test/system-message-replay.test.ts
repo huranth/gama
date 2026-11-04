@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { Message, Tool, TranscriptContext } from "../src/types.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../src/utils/text.ts";
 import {
+	appendSystemUpdatesAsUser,
 	collapseSystemMessages,
 	declarationsEqual,
 	getCurrentSystemMessage,
@@ -12,6 +13,7 @@ import {
 	hasNonAdditiveToolChanges,
 	hasToolRedefinitions,
 	normalizeContext,
+	resolveTranscript,
 } from "../src/utils/transcript.ts";
 
 function tool(name: string, description = `${name} tool`): Tool {
@@ -64,6 +66,39 @@ describe("system message replay", () => {
 			"assistant",
 		]);
 		expect(collapseSystemMessages(collapsed)).toEqual(collapsed);
+	});
+
+	test("keeps the head byte-stable and appends section updates as user messages", () => {
+		const context = normalizeContext({
+			messages: [
+				{ role: "system", content: "base", sections: { a: "<a>1</a>" }, timestamp: 1 },
+				{ role: "user", content: "hello", timestamp: 2 },
+				{ role: "system", content: "", sections: { a: "<a>2</a>" }, timestamp: 3 },
+			],
+		});
+		const resolved = resolveTranscript(context, false);
+
+		expect(resolved.messages[0]).toEqual(context.messages[0]);
+		expect(resolved.messages.map((message) => message.role)).toEqual([
+			"system",
+			"user",
+			"user",
+		]);
+		expect(resolved.messages[2]).toMatchObject({
+			role: "user",
+			content: '<system-update>\nUpdated system prompt section "a":\n\n<a>2</a>\n</system-update>',
+		});
+	});
+
+	test("falls back to a folded head when tools change", () => {
+		const resolved = appendSystemUpdatesAsUser(transcript);
+
+		expect(resolved.messages.filter((message) => message.role === "system")).toHaveLength(1);
+		expect(resolved.messages[0]).toMatchObject({
+			content: "base\n\nalso do this",
+			sections: { a: "<a>2</a>", c: "<c>1</c>" },
+			toolsAdded: [tool("second")],
+		});
 	});
 
 	test("replay of a transcript without system messages is empty", () => {
