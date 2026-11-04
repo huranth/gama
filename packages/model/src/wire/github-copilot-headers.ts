@@ -6,15 +6,12 @@ export function inferCopilotInitiator(messages: Message[]): "user" | "agent" {
 }
 
 export function hasCopilotVisionInput(messages: Message[]): boolean {
-	return messages.some((msg) => {
-		if (msg.role === "user" && Array.isArray(msg.content)) {
-			return msg.content.some((c) => c.type === "image");
-		}
-		if (msg.role === "toolResult" && Array.isArray(msg.content)) {
-			return msg.content.some((c) => c.type === "image");
-		}
-		return false;
-	});
+	return messages.some(
+		(msg) =>
+			(msg.role === "user" || msg.role === "toolResult") &&
+			Array.isArray(msg.content) &&
+			msg.content.some((content) => content.type === "image"),
+	);
 }
 
 export function buildCopilotDynamicHeaders(params: {
