@@ -6,7 +6,7 @@ import {
 	llamaServerRoot,
 	peakConfidence,
 	renderQuestion,
-} from "../src/api/llama-cpp-classify.ts";
+} from "../src/wire/llama-cpp-classify.ts";
 import type { ClassifierContext, ClassifierModel, ClassifierOptions } from "../src/types.ts";
 
 let serverCount = 0;
@@ -254,7 +254,7 @@ describe("llama.cpp classifier", () => {
 		const result = await classify(model(), context, { fetch: server.fetch, temperature: 0 });
 
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain("Temperature must be a positive number, got 0");
+		expect(result.errorMessage).toContain("Invalid temperature: 0");
 		expect(server.requests).toEqual([]);
 	});
 
@@ -275,7 +275,7 @@ describe("llama.cpp classifier", () => {
 		expect(failed.stopReason).toBe("error");
 		expect(failed.answers).toEqual({});
 		expect(failed.errorMessage).toContain(
-			"did not rank labels B for pick within the top 32768 tokens",
+			"Missing labels: B",
 		);
 		expect(completionDepths(never.requests)).toEqual([256, 4096, 32768]);
 	});
@@ -326,7 +326,7 @@ describe("llama.cpp classifier", () => {
 			{ fetch: split.fetch },
 		);
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toContain('Label "Yes" is not a single token for qwen');
+		expect(result.errorMessage).toContain("Multi-token label: Yes");
 	});
 
 	it("caches label tokens per server and model", async () => {
@@ -366,8 +366,8 @@ describe("llama.cpp classifier", () => {
 			{ fetch: server.fetch },
 		);
 
-		expect(tooMany.errorMessage).toContain("A choice question needs 2 to 62 options, got 63");
-		expect(tooFew.errorMessage).toContain("A score question needs 2 to 10 levels, got 1");
+		expect(tooMany.errorMessage).toContain("Invalid options: 63");
+		expect(tooFew.errorMessage).toContain("Invalid levels: 1");
 		expect(server.requests).toEqual([]);
 	});
 

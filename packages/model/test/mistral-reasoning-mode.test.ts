@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { streamSimple } from "../src/api/mistral-conversations.ts";
+import { streamSimple } from "../src/wire/mistral-conversations.ts";
 import type { Context, Model, SimpleStreamOptions, ThinkingLevelMap } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 

@@ -3,8 +3,8 @@ import {
 	type AiBinding,
 	CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL,
 	createAiBindingFetch,
-} from "../src/api/cloudflare-ai-binding.ts";
-import { streamSimple as streamOpenAICompletions } from "../src/api/openai-completions.ts";
+} from "../src/wire/cloudflare-ai-binding.ts";
+import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
 import type { Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
 
