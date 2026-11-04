@@ -11,22 +11,8 @@ import type {
 } from "../types.ts";
 
 const NON_VISION_USER_IMAGE_PLACEHOLDER = "(image omitted: model does not support images)";
+
 const NON_VISION_TOOL_IMAGE_PLACEHOLDER = "(tool image omitted: model does not support images)";
-
-export function transformMessages<TApi extends Api>(
-	messages: Message[],
-	model: Model<TApi>,
-	normalizeToolCallId?: (id: string, model: Model<TApi>, source: AssistantMessage) => string,
-): Message[] {
-	const toolCallIds = new Map<string, string>();
-	const normalized = messages.map((msg) => (msg.content == null ? { ...msg, content: [] } : msg));
-	const imageAware = downgradeUnsupportedImages(normalized, model);
-	const transformed = imageAware.map((msg) =>
-		transformMessage(msg, model, toolCallIds, normalizeToolCallId),
-	);
-
-	return dropUnansweredToolCalls(transformed);
-}
 
 function transformMessage<TApi extends Api>(
 	msg: Message,
@@ -197,6 +183,7 @@ function dropUnansweredToolCalls(messages: Message[]): Message[] {
 	const heldSystemMessages: Message[] = [];
 	let pendingToolCalls: ToolCall[] = [];
 	let answeredIds = new Set<string>();
+	let sawToolCalls = false;
 
 	const closeToolCalls = () => {
 		for (const call of pendingToolCalls) {
@@ -225,6 +212,7 @@ function dropUnansweredToolCalls(messages: Message[]): Message[] {
 
 			const toolCalls = message.content.filter((block) => block.type === "toolCall");
 			if (toolCalls.length > 0) {
+				sawToolCalls = true;
 				pendingToolCalls = toolCalls as ToolCall[];
 				answeredIds = new Set();
 			}
@@ -234,7 +222,15 @@ function dropUnansweredToolCalls(messages: Message[]): Message[] {
 		}
 
 		if (message.role === "toolResult") {
+			const answersPendingCall =
+				!answeredIds.has(message.toolCallId) &&
+				pendingToolCalls.some((call) => call.id === message.toolCallId);
+			if (!answersPendingCall) {
+				if (!sawToolCalls) result.push(message);
+				continue;
+			}
 			answeredIds.add(message.toolCallId);
+
 			result.push(message);
 			continue;
 		}
@@ -252,4 +248,19 @@ function dropUnansweredToolCalls(messages: Message[]): Message[] {
 	closeToolCalls();
 
 	return result;
+}
+
+export function transformMessages<TApi extends Api>(
+	messages: Message[],
+	model: Model<TApi>,
+	normalizeToolCallId?: (id: string, model: Model<TApi>, source: AssistantMessage) => string,
+): Message[] {
+	const toolCallIds = new Map<string, string>();
+	const normalized = messages.map((msg) => (msg.content == null ? { ...msg, content: [] } : msg));
+	const imageAware = downgradeUnsupportedImages(normalized, model);
+	const transformed = imageAware.map((msg) =>
+		transformMessage(msg, model, toolCallIds, normalizeToolCallId),
+	);
+
+	return dropUnansweredToolCalls(transformed);
 }
