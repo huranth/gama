@@ -33,7 +33,7 @@ RUN chmod -R go-rwx \
       /repo/packages/evals/vitest.evals.config.ts \
     && mkdir -p /run/gama-eval-secrets \
     && chmod 0700 /run/gama-eval-secrets
-ENTRYPOINT ["node", "--experimental-strip-types", "docker/entrypoint.ts"]
+ENTRYPOINT ["node", "--experimental-strip-types", "container/entrypoint.ts"]
 
 FROM evaluator AS without_docs
 COPY --from=without-docs-install /opt/evaluator/install/node_modules /repo/node_modules

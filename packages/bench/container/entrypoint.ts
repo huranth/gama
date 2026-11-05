@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import {
+	chmodSync,
 	chownSync,
 	copyFileSync,
 	existsSync,
@@ -38,8 +39,8 @@ function assertDirectoryEntries(path: string, expectedEntries: readonly string[]
 function assertWorkspace(): void {
 	assertDirectoryEntries("/repo", ["node_modules", "package.json", "packages", "vitest.base.ts"]);
 	assertDirectoryEntries("/repo/packages", ["evals"]);
-	assertDirectoryEntries("/repo/packages/evals", [
-		"docker",
+	assertDirectoryEntries("/repo/packages/bench", [
+		"container",
 		"evals",
 		"package.json",
 		"src",
@@ -48,7 +49,7 @@ function assertWorkspace(): void {
 	const codingAgentDir = "/repo/node_modules/@huranth/gama-harness";
 	for (const name of ["package.json", "dist/index.js"]) {
 		if (!existsSync(join(codingAgentDir, name))) {
-			throw new Error(`Installed coding-agent is missing ${name}.`);
+			throw new Error(`Gama CLI is missing ${name}.`);
 		}
 	}
 	const internalScope = "/repo/node_modules/@huranth";
@@ -69,7 +70,7 @@ function assertWorkspace(): void {
 	if (variant === "without_docs") {
 		for (const name of ["README.md", "CHANGELOG.md", "docs", "examples"]) {
 			if (existsSync(join(codingAgentDir, name))) {
-				throw new Error(`without_docs contains coding-agent ${name}.`);
+				throw new Error(`Gama CLI package contains ${name}.`);
 			}
 		}
 		return;
@@ -82,6 +83,16 @@ function assertWorkspace(): void {
 		if (!existsSync(path) || readFileSync(path).length === 0) {
 			throw new Error(`Missing documentation: ${path}`);
 		}
+	}
+	for (const name of ["docs", "examples"]) {
+		assertNonEmptyDirectory(join(codingAgentDir, name));
+	}
+}
+
+function assertNonEmptyDirectory(path: string): void {
+	const stats = statSync(path);
+	if (!stats.isDirectory() || readdirSync(path).length === 0) {
+		throw new Error(`Missing documentation directory: ${path}`);
 	}
 }
 
@@ -114,17 +125,18 @@ function assertSandboxCannotRead(path: string): void {
 }
 
 assertWorkspace();
-const evalRoot = "/repo/packages/evals/evals";
+const evalRoot = "/repo/packages/bench/evals";
 for (const path of [
 	evalRoot,
-	"/repo/packages/evals/src",
-	"/repo/packages/evals/docker",
-	"/repo/packages/evals/vitest.evals.config.ts",
+	"/repo/packages/bench/src",
+	"/repo/packages/bench/container",
+	"/repo/packages/bench/vitest.evals.config.ts",
 	"/repo/vitest.base.ts",
 ]) {
 	assertRootOnly(path);
 	assertSandboxCannotRead(path);
 }
+
 const codingAgentEntry = fileURLToPath(import.meta.resolve("@huranth/gama-harness"));
 if (codingAgentEntry !== "/repo/node_modules/@huranth/gama-harness/dist/index.js") {
 	throw new Error(`Eval does not resolve gama-harness from dist: ${codingAgentEntry}`);
@@ -133,8 +145,10 @@ if (codingAgentEntry !== "/repo/node_modules/@huranth/gama-harness/dist/index.js
 const agentDir = "/tmp/gama-eval-host-agent";
 mkdirSync(agentDir, { recursive: true });
 const authSource = "/run/gama-eval-secrets/auth.json";
-if (existsSync(authSource)) copyFileSync(authSource, join(agentDir, "auth.json"));
-chownTree(agentDir, sandboxUid, sandboxGid);
+const authTarget = join(agentDir, "auth.json");
+if (existsSync(authSource)) copyFileSync(authSource, authTarget);
+chmodSync(agentDir, 0o700);
+if (existsSync(authTarget)) chmodSync(authTarget, 0o600);
 chownTree("/artifacts", sandboxUid, sandboxGid);
 process.env.HOME = "/tmp/gama-eval-bootstrap";
 process.env.USERPROFILE = process.env.HOME;
