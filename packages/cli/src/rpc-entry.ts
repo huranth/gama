@@ -3,10 +3,12 @@ import { APP_NAME } from "./config.ts";
 import { configureHttpDispatcher } from "./core/http-dispatcher.ts";
 import { main } from "./main.ts";
 
+function muteWarnings(): void {}
+
 process.title = `${APP_NAME}-rpc`;
 process.env.GAMA_CODING_AGENT = "true";
 process.env.AI_AGENT = "gama";
-process.emitWarning = (() => {}) as typeof process.emitWarning;
+process.emitWarning = muteWarnings as typeof process.emitWarning;
 
 configureHttpDispatcher();
 

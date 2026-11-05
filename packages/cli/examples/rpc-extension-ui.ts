@@ -10,7 +10,7 @@ import {
 	ProcessTerminal,
 	SelectList,
 	type TUI,
-	TuiMainScreen,
+	MainScreen,
 } from "@huranth/gama-tui";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
@@ -230,7 +230,7 @@ async function main() {
 	}
 
 	const terminal = new ProcessTerminal();
-	const tui: TUI = new TuiMainScreen(terminal);
+	const tui: TUI = new MainScreen(terminal);
 
 	const outputLog = new OutputLog();
 	const loadingIndicator = new LoadingIndicator();
@@ -397,7 +397,8 @@ async function main() {
 
 			case "setStatus":
 				outputLog.append(
-					`${MAGENTA}${BOLD}Notification:${RESET} ${DIM}[status: ${req.statusKey}]${RESET} ${req.statusText ?? "(cleared)"}`,
+					`${MAGENTA}${BOLD}Notification:${RESET} ${DIM}[status: ${req.statusKey}]${RESET} ` +
+						`${req.statusText ?? "(cleared)"}`,
 				);
 				tui.requestRender();
 				break;

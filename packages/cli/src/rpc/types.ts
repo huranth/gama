@@ -4,11 +4,11 @@ import type {
 	PromptDisposition,
 	QueuedInputDisposition,
 	SessionStats,
-} from "../../core/agent-session.ts";
-import type { BashResult } from "../../core/bash-executor.ts";
-import type { CompactionResult } from "../../core/comp/index.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
-import type { SourceInfo } from "../../core/source-info.ts";
+} from "../core/session/session.ts";
+import type { BashResult } from "../core/bash-executor.ts";
+import type { CompactionResult } from "../core/comp/index.ts";
+import type { SessionEntry, SessionTreeNode } from "../core/sessions.ts";
+import type { SourceInfo } from "../core/origin.ts";
 
 export type RpcCommand =
 	| {
@@ -290,5 +290,3 @@ export type RpcExtensionUIResponse =
 	| { type: "extension_ui_response"; id: string; value: string }
 	| { type: "extension_ui_response"; id: string; confirmed: boolean }
 	| { type: "extension_ui_response"; id: string; cancelled: true };
-
-export type RpcCommandType = RpcCommand["type"];

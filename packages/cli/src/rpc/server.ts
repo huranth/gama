@@ -1,20 +1,21 @@
 import * as crypto from "node:crypto";
-import type { AgentSessionRuntime } from "../../core/agent-session-runtime.ts";
 import type {
 	ExtensionUIContext,
 	ExtensionUIDialogOptions,
 	ExtensionWidgetOptions,
 	WorkingIndicatorOptions,
-} from "../../core/ext/index.ts";
+} from "../core/ext/index.ts";
 import {
 	flushRawStdout,
 	takeOverStdout,
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
-} from "../../core/output-guard.ts";
-import { killTrackedDetachedChildren } from "../../utils/shell.ts";
+} from "../core/output-guard.ts";
+import type { SessionRuntime } from "../core/session/runtime.ts";
 import { toJsonEvent } from "../json-event.ts";
-import { type Theme, theme } from "../tui/theme/theme.ts";
+import { type Theme, theme } from "../term/theme/theme.ts";
+import { disposeWithTimeout } from "../utils/dispose.ts";
+import { killTrackedDetachedChildren } from "../utils/shell.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
 import type {
 	RpcCommand,
@@ -23,7 +24,7 @@ import type {
 	RpcResponse,
 	RpcSessionState,
 	RpcSlashCommand,
-} from "./rpc-types.ts";
+} from "./types.ts";
 
 export type {
 	RpcCommand,
@@ -31,12 +32,33 @@ export type {
 	RpcExtensionUIResponse,
 	RpcResponse,
 	RpcSessionState,
-} from "./rpc-types.ts";
+} from "./types.ts";
 
-/** Longest wait for in-flight work after stdin EOF before shutting down anyway. */
 const EOF_DRAIN_TIMEOUT_MS = 30_000;
 
-export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<never> {
+const DEFAULT_EXTENSION_UI_TIMEOUT_MS = 5 * 60 * 1000;
+
+function exitCodeForSignal(signal: NodeJS.Signals): number {
+	if (signal === "SIGHUP") return 129;
+	if (signal === "SIGINT") return 130;
+
+	return 143;
+}
+
+function messageOf(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
+
+function isAbortCommand(line: string): boolean {
+	try {
+		const parsed = JSON.parse(line) as { type?: unknown };
+		return parsed?.type === "abort" || parsed?.type === "abort_bash";
+	} catch {
+		return false;
+	}
+}
+
+export async function runRpcMode(runtimeHost: SessionRuntime): Promise<never> {
 	takeOverStdout();
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
@@ -66,10 +88,19 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		{ resolve: (value: any) => void; reject: (error: Error) => void }
 	>();
 
+	const rejectPendingRequests = (reason: string): void => {
+		for (const [id, pending] of [...pendingExtensionRequests]) {
+			pendingExtensionRequests.delete(id);
+			pending.reject(new Error(reason));
+		}
+	};
+
 	let shutdownRequested = false;
 	let shuttingDown = false;
+
 	const signalCleanupHandlers: Array<() => void> = [];
-	// Commands and prompt runs still executing. stdin EOF waits for these before shutdown.
+
+	// In flight
 	const inFlight = new Set<Promise<void>>();
 	const track = (work: Promise<unknown>): void => {
 		const settled = work
@@ -89,6 +120,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	): Promise<T> {
 		if (opts?.signal?.aborted) return Promise.resolve(defaultValue);
 
+		const timeoutMs = opts?.timeout ?? DEFAULT_EXTENSION_UI_TIMEOUT_MS;
 		const id = crypto.randomUUID();
 		return new Promise((resolve, reject) => {
 			let timeoutId: ReturnType<typeof setTimeout> | undefined;
@@ -105,21 +137,27 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			};
 			opts?.signal?.addEventListener("abort", onAbort, { once: true });
 
-			if (opts?.timeout) {
-				timeoutId = setTimeout(() => {
-					cleanup();
-					resolve(defaultValue);
-				}, opts.timeout);
-			}
+			timeoutId = setTimeout(() => {
+				cleanup();
+				resolve(defaultValue);
+			}, timeoutMs);
 
 			pendingExtensionRequests.set(id, {
 				resolve: (response: RpcExtensionUIResponse) => {
 					cleanup();
 					resolve(parseResponse(response));
 				},
-				reject,
+				reject: (failure: Error) => {
+					cleanup();
+					reject(failure);
+				},
 			});
-			output({ type: "extension_ui_request", id, ...request } as RpcExtensionUIRequest);
+			output({
+				type: "extension_ui_request",
+				id,
+				...request,
+				timeout: timeoutMs,
+			} as RpcExtensionUIRequest);
 		});
 	}
 
@@ -233,8 +271,14 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		async editor(title: string, prefill?: string): Promise<string | undefined> {
 			const id = crypto.randomUUID();
 			return new Promise((resolve, reject) => {
+				const timer = setTimeout(() => {
+					pendingExtensionRequests.delete(id);
+					reject(new Error("Dialog timeout"));
+				}, 60_000);
 				pendingExtensionRequests.set(id, {
 					resolve: (response: RpcExtensionUIResponse) => {
+						clearTimeout(timer);
+						pendingExtensionRequests.delete(id);
 						if ("cancelled" in response && response.cancelled) {
 							resolve(undefined);
 						} else if ("value" in response) {
@@ -243,7 +287,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							resolve(undefined);
 						}
 					},
-					reject,
+					reject: (failure: Error) => {
+						clearTimeout(timer);
+						pendingExtensionRequests.delete(id);
+						reject(failure);
+					},
 				});
 				output({
 					type: "extension_ui_request",
@@ -276,7 +324,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		},
 
 		setTheme(_theme: string | Theme) {
-			return { success: false, error: "Theme switching not supported in RPC mode" };
+			return { success: false, error: "Theme unsupported" };
 		},
 
 		getToolsExpanded() {
@@ -353,7 +401,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 		for (const signal of signals) {
 			const handler = () => {
 				killTrackedDetachedChildren();
-				void shutdown(signal === "SIGHUP" ? 129 : signal === "SIGINT" ? 130 : 143, signal);
+				void shutdown(exitCodeForSignal(signal));
 			};
 			process.on(signal, handler);
 			signalCleanupHandlers.push(() => process.off(signal, handler));
@@ -368,7 +416,9 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 		switch (command.type) {
 			case "prompt": {
-				let preflightSucceeded = false;
+				// Reply once
+				let replied = false;
+
 				track(
 					session
 						.prompt(command.message, {
@@ -376,13 +426,15 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 							streamingBehavior: command.streamingBehavior,
 							source: "rpc",
 							preflightResult: (disposition) => {
-								preflightSucceeded = true;
+								replied = true;
 								output(success(id, "prompt", { disposition }));
 							},
 						})
 						.catch((e) => {
-							if (!preflightSucceeded) {
-								output(error(id, "prompt", e.message));
+							output(error(id, "prompt", messageOf(e)));
+							if (replied) {
+								// Settle run.
+								output({ type: "agent_settled" });
 							}
 						}),
 				);
@@ -569,7 +621,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "clone": {
 				const leafId = session.sessionManager.getLeafId();
 				if (!leafId) {
-					return error(id, "clone", "Cannot clone session: no current entry selected");
+					return error(id, "clone", "No entry selected");
 				}
 				const result = await runtimeHost.fork(leafId, { position: "at" });
 				return success(id, "clone", { cancelled: result.cancelled });
@@ -609,7 +661,7 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			case "set_session_name": {
 				const name = command.name.trim();
 				if (!name) {
-					return error(id, "set_session_name", "Session name cannot be empty");
+					return error(id, "set_session_name", "Empty session name");
 				}
 				session.setSessionName(name);
 				return success(id, "set_session_name");
@@ -661,25 +713,44 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 
 	let detachInput = () => {};
 
-	async function shutdown(exitCode = 0, signal?: NodeJS.Signals): Promise<never> {
+	async function drainPendingOutput(timeoutMs: number): Promise<void> {
+		const idle = (async () => {
+			while (inFlight.size > 0) {
+				await Promise.all(inFlight);
+			}
+		})();
+
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const timedOut = new Promise<void>((resolve) => {
+			timer = setTimeout(resolve, timeoutMs);
+		});
+
+		await Promise.race([idle, timedOut]);
+		clearTimeout(timer);
+	}
+
+	async function shutdown(exitCode = 0): Promise<never> {
 		if (shuttingDown) {
-			process.exit(exitCode);
+			try {
+				await flushRawStdout();
+			} finally {
+				process.exit(exitCode);
+			}
 		}
 		shuttingDown = true;
 		try {
 			for (const cleanup of signalCleanupHandlers) {
 				cleanup();
 			}
+			rejectPendingRequests("Transport closed");
 			unsubscribe?.();
 			unsubscribeBackpressure?.();
-			await runtimeHost.dispose();
+			await disposeWithTimeout(() => runtimeHost.dispose());
 			detachInput();
 			process.stdin.pause();
-			if (signal !== "SIGTERM") {
-				await flushRawStdout();
-			}
+			await flushRawStdout();
 		} catch {
-			// Exit anyway.
+			// Best effort
 		} finally {
 			process.exit(exitCode);
 		}
@@ -691,18 +762,11 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 	}
 
 	const handleInputLine = async (line: string) => {
-		let parsed: any;
+		let parsed: unknown;
 		try {
 			parsed = JSON.parse(line);
 		} catch (parseError: unknown) {
-			output(
-				error(
-					undefined,
-					"parse",
-					`Failed to parse command: ` +
-						`${parseError instanceof Error ? parseError.message : String(parseError)}`,
-				),
-			);
+			output(error(undefined, "parse", `Parse failed: ` + messageOf(parseError)));
 			await waitForRawStdoutBackpressure();
 			return;
 		}
@@ -726,9 +790,10 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			typeof parsed !== "object" ||
 			parsed === null ||
 			Array.isArray(parsed) ||
+			!("type" in parsed) ||
 			typeof parsed.type !== "string"
 		) {
-			output(error(undefined, "parse", "Expected a command object with a string type"));
+			output(error(undefined, "parse", "Invalid command"));
 			await waitForRawStdoutBackpressure();
 			return;
 		}
@@ -742,46 +807,48 @@ export async function runRpcMode(runtimeHost: AgentSessionRuntime): Promise<neve
 			}
 			await checkShutdownRequested();
 		} catch (commandError: unknown) {
-			output(
-				error(
-					command.id,
-					command.type,
-					commandError instanceof Error ? commandError.message : String(commandError),
-				),
-			);
+			output(error(command.id, command.type, messageOf(commandError)));
 			await waitForRawStdoutBackpressure();
 		}
 	};
 
 	const onInputEnd = () => {
-		// Stdin is closed, so no extension UI response can arrive. Cancel the
-		// pending dialogs so work blocked on them can finish.
+		// Cancel dialogs
 		for (const [id, pending] of [...pendingExtensionRequests]) {
 			pendingExtensionRequests.delete(id);
 			pending.resolve({ type: "extension_ui_response", id, cancelled: true });
 		}
 		void (async () => {
-			const drained = (async () => {
-				while (inFlight.size > 0) {
-					await Promise.all(inFlight);
-				}
-			})();
-			let timer: ReturnType<typeof setTimeout> | undefined;
-			const timedOut = new Promise<void>((resolve) => {
-				timer = setTimeout(resolve, EOF_DRAIN_TIMEOUT_MS);
-			});
-			await Promise.race([drained, timedOut]);
-			clearTimeout(timer);
+			await drainPendingOutput(EOF_DRAIN_TIMEOUT_MS);
 			await shutdown();
 		})();
 	};
 
+	const onInputError = (inputError: Error): void => {
+		process.stderr.write(`stdin failed: ${inputError.message}\n`);
+		rejectPendingRequests("Input stream failed");
+		void shutdown(1);
+	};
+
 	detachInput = (() => {
-		// The line reader must attach first so its end handler dispatches an
-		// unterminated final line before onInputEnd starts waiting.
-		const detachJsonl = attachJsonlLineReader(process.stdin, (line) => {
-			track(handleInputLine(line));
-		});
+		let inputChain: Promise<unknown> = Promise.resolve();
+		const enqueue = (line: string) => {
+			if (isAbortCommand(line)) {
+				track(handleInputLine(line));
+				return;
+			}
+			inputChain = inputChain
+				.then(() => handleInputLine(line))
+				.catch((lineError: unknown) => {
+					try {
+						output(error(undefined, "input", messageOf(lineError)));
+					} catch {
+						// Output closed
+					}
+				});
+			track(inputChain);
+		};
+		const detachJsonl = attachJsonlLineReader(process.stdin, enqueue, onInputError);
 		process.stdin.on("end", onInputEnd);
 		return () => {
 			detachJsonl();

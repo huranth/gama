@@ -1,17 +1,24 @@
 import { type ChildProcess, spawn } from "node:child_process";
+import type { Writable } from "node:stream";
 import type { AgentMessage, ThinkingLevel } from "@huranth/gama-agent-core";
 import type { ImageContent } from "@huranth/gama-ai";
 import type {
 	PromptDisposition,
 	QueuedInputDisposition,
 	SessionStats,
-} from "../../core/agent-session.ts";
-import type { BashResult } from "../../core/bash-executor.ts";
-import type { CompactionResult } from "../../core/comp/index.ts";
-import type { SessionEntry, SessionTreeNode } from "../../core/session-manager.ts";
+} from "../core/session/session.ts";
+import type { BashResult } from "../core/bash-executor.ts";
+import type { CompactionResult } from "../core/comp/index.ts";
+import type { SessionEntry, SessionTreeNode } from "../core/sessions.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
-import type { RpcCommand, RpcResponse, RpcSessionState, RpcSlashCommand } from "./rpc-types.ts";
+import type {
+	RpcCommand,
+	RpcExtensionUIResponse,
+	RpcResponse,
+	RpcSessionState,
+	RpcSlashCommand,
+} from "./types.ts";
 
 type DistributiveOmit<T, K extends keyof T> = T extends unknown ? Omit<T, K> : never;
 
@@ -19,9 +26,13 @@ type RpcCommandBody = DistributiveOmit<RpcCommand, "id">;
 
 const RESPONSE_TIMEOUT_MS = 30_000;
 
-// These commands run work that can legitimately outlast the response timeout
-// (a shell command, summarisation, session replacement, a prompt's preflight).
-// They wait for the response, or for the process to exit, without a timer.
+const IDLE_TIMEOUT_MS = 60_000;
+
+const KILL_TIMEOUT_MS = 1_000;
+
+const START_SETTLE_MS = 100;
+
+// Long commands
 const LONG_RUNNING_COMMANDS: ReadonlySet<string> = new Set([
 	"prompt",
 	"bash",
@@ -62,6 +73,7 @@ export class RpcClient {
 	private requestId = 0;
 	private stderr = "";
 	private exitError: Error | null = null;
+	private writeQueue: Promise<void> = Promise.resolve();
 	private options: RpcClientOptions;
 
 	constructor(options: RpcClientOptions = {}) {
@@ -70,10 +82,11 @@ export class RpcClient {
 
 	async start(): Promise<void> {
 		if (this.process) {
-			throw new Error("Client already started");
+			throw new Error("Client started");
 		}
 
 		this.exitError = null;
+		this.writeQueue = Promise.resolve();
 
 		const cliPath = this.options.cliPath ?? "dist/cli.js";
 		const args = ["--mode", "rpc"];
@@ -109,7 +122,7 @@ export class RpcClient {
 		childProcess.once("error", (error) => {
 			if (this.process !== childProcess) return;
 			const processError = new Error(
-				`Agent process error: ${error.message}. Stderr: ${this.stderr}`,
+				`Agent failed: ${error.message}`,
 			);
 			this.exitError = processError;
 			this.rejectPendingRequests(processError);
@@ -118,7 +131,7 @@ export class RpcClient {
 			if (this.process !== childProcess) return;
 			const stdinError =
 				this.exitError ??
-				new Error(`Agent process stdin error: ${error.message}. Stderr: ${this.stderr}`);
+				new Error(`Agent stdin failed: ${error.message}`);
 			this.exitError = stdinError;
 			this.rejectPendingRequests(stdinError);
 		});
@@ -127,9 +140,9 @@ export class RpcClient {
 			this.handleLine(line);
 		});
 
-		await new Promise((resolve) => setTimeout(resolve, 100));
+		await new Promise((resolve) => setTimeout(resolve, START_SETTLE_MS));
 
-		if (this.process.exitCode !== null) {
+		if (this.process.exitCode !== null || this.exitError) {
 			const error =
 				this.exitError ??
 				this.createProcessExitError(this.process.exitCode, this.process.signalCode);
@@ -149,7 +162,7 @@ export class RpcClient {
 			const timeout = setTimeout(() => {
 				this.process?.kill("SIGKILL");
 				resolve();
-			}, 1000);
+			}, KILL_TIMEOUT_MS);
 
 			this.process?.on("exit", () => {
 				clearTimeout(timeout);
@@ -158,6 +171,7 @@ export class RpcClient {
 		});
 
 		this.process = null;
+		this.writeQueue = Promise.resolve();
 		this.eventListeners = [];
 		this.rejectPendingRequests(new Error("Client stopped"));
 	}
@@ -281,6 +295,14 @@ export class RpcClient {
 		await this.send({ type: "abort_bash" });
 	}
 
+	async respondToExtensionUI(response: RpcExtensionUIResponse): Promise<void> {
+		const stdin = this.process?.stdin;
+		if (!stdin || stdin.destroyed || !stdin.writable) {
+			throw new Error("Client not started");
+		}
+		await this.writeLine(stdin, serializeJsonLine(response));
+	}
+
 	async getSessionStats(): Promise<SessionStats> {
 		const response = await this.send({ type: "get_session_stats" });
 		return this.getData(response);
@@ -341,64 +363,119 @@ export class RpcClient {
 		return this.getData<{ commands: RpcSlashCommand[] }>(response).commands;
 	}
 
-	waitForIdle(timeout = 60000): Promise<void> {
-		return new Promise((resolve, reject) => {
-			const timer = setTimeout(() => {
-				unsubscribe();
-				reject(new Error(`Timeout waiting for agent to become idle. Stderr: ${this.stderr}`));
-			}, timeout);
-
-			const unsubscribe = this.onEvent((event) => {
-				if (event.type === "agent_settled") {
-					clearTimeout(timer);
-					unsubscribe();
-					resolve();
-				}
-			});
-		});
+	waitForIdle(timeout = IDLE_TIMEOUT_MS): Promise<void> {
+		return this.waitForSettled(timeout, "Idle timeout").then(
+			() => undefined,
+		);
 	}
 
-	collectEvents(timeout = 60000): Promise<JsonAgentSessionEvent[]> {
-		return new Promise((resolve, reject) => {
-			const events: JsonAgentSessionEvent[] = [];
-			const timer = setTimeout(() => {
-				unsubscribe();
-				reject(new Error(`Timeout collecting events. Stderr: ${this.stderr}`));
-			}, timeout);
-
-			const unsubscribe = this.onEvent((event) => {
-				events.push(event);
-				if (event.type === "agent_settled") {
-					clearTimeout(timer);
-					unsubscribe();
-					resolve(events);
-				}
-			});
-		});
+	collectEvents(timeout = IDLE_TIMEOUT_MS, signal?: AbortSignal): Promise<JsonAgentSessionEvent[]> {
+		return this.waitForSettled(timeout, "Event timeout", signal);
 	}
 
 	async promptAndWait(
 		message: string,
 		images?: ImageContent[],
-		timeout = 60000,
+		timeout = IDLE_TIMEOUT_MS,
 	): Promise<JsonAgentSessionEvent[]> {
-		const eventsPromise = this.collectEvents(timeout);
+		const collector = new AbortController();
+		const eventsPromise = this.collectEvents(timeout, collector.signal);
 		try {
 			await this.prompt(message, images);
 		} catch (error) {
-			// Drain collector.
+			collector.abort();
 			eventsPromise.catch(() => {});
 			throw error;
 		}
 		return eventsPromise;
 	}
 
+	private waitForSettled(
+		timeout: number,
+		timeoutMessage: string,
+		signal?: AbortSignal,
+	): Promise<JsonAgentSessionEvent[]> {
+		return new Promise((resolve, reject) => {
+			const self = this;
+			const events: JsonAgentSessionEvent[] = [];
+			const child = this.process;
+			let timer: ReturnType<typeof setTimeout> | undefined;
+			let unsubscribe = () => {};
+			let settled = false;
+
+			function cleanup(): void {
+				if (settled) return;
+				settled = true;
+				if (timer) clearTimeout(timer);
+				unsubscribe();
+				child?.removeListener("exit", onExit);
+				child?.removeListener("error", onError);
+				signal?.removeEventListener("abort", onAbort);
+			}
+
+			function fail(error: Error): void {
+				cleanup();
+				reject(error);
+			}
+
+			function onExit(code: number | null, exitSignal: NodeJS.Signals | null): void {
+				fail(self.exitError ?? self.createProcessExitError(code, exitSignal));
+			}
+
+			function onError(error: Error): void {
+				fail(
+					self.exitError ??
+						new Error(`Agent failed: ${error.message}`),
+				);
+			}
+
+			function onAbort(): void {
+				fail(new Error("Collector cancelled"));
+			}
+
+			function onEvent(event: JsonAgentSessionEvent): void {
+				if (settled) return;
+				events.push(event);
+				if (event.type !== "agent_settled") return;
+
+				cleanup();
+				resolve(events);
+			}
+
+			timer = setTimeout(() => {
+				fail(new Error(`${timeoutMessage}: ${self.stderr}`));
+			}, timeout);
+			unsubscribe = this.onEvent(onEvent);
+			child?.once("exit", onExit);
+			child?.once("error", onError);
+			signal?.addEventListener("abort", onAbort, { once: true });
+
+			if (signal?.aborted) {
+				onAbort();
+				return;
+			}
+			if (this.exitError) {
+				fail(this.exitError);
+				return;
+			}
+			if (child && child.exitCode !== null) {
+				onExit(child.exitCode, child.signalCode);
+			}
+		});
+	}
+
 	private handleLine(line: string): void {
 		try {
 			const data = JSON.parse(line);
+			const pending = data.id ? this.pendingRequests.get(data.id) : undefined;
 
-			if (data.type === "response" && data.id && this.pendingRequests.has(data.id)) {
-				const pending = this.pendingRequests.get(data.id)!;
+			if (data.type === "response") {
+				if (!pending) {
+					if (!data.id && data.success === false && typeof data.error === "string") {
+						this.rejectPendingRequests(new Error(data.error));
+					}
+					return;
+				}
 				this.pendingRequests.delete(data.id);
 				pending.resolve(data as RpcResponse);
 				return;
@@ -407,13 +484,14 @@ export class RpcClient {
 			for (const listener of [...this.eventListeners]) {
 				listener(data as JsonAgentSessionEvent);
 			}
-		} catch {}
+		} catch {
+			// Unparsable
+		}
 	}
 
 	private createProcessExitError(code: number | null, signal: NodeJS.Signals | null): Error {
-		return new Error(
-			`Agent process exited (code=${code} signal=${signal}). Stderr: ${this.stderr}`,
-		);
+		const reason = signal === null ? `code ${code}` : `signal ${signal}`;
+		return new Error(`Agent exited: ${reason}`);
 	}
 
 	private rejectPendingRequests(error: Error): void {
@@ -438,7 +516,9 @@ export class RpcClient {
 			throw error;
 		}
 		if (stdin.destroyed || !stdin.writable) {
-			const error = new Error(`Agent process stdin is not writable. Stderr: ${this.stderr}`);
+			const error = new Error(
+				"Agent stdin closed",
+			);
 			this.exitError = error;
 			throw error;
 		}
@@ -453,7 +533,7 @@ export class RpcClient {
 						this.pendingRequests.delete(id);
 						reject(
 							new Error(
-								`Timeout waiting for response to ${command.type}. Stderr: ${this.stderr}`,
+								`Request timeout: ${command.type}`,
 							),
 						);
 					}, RESPONSE_TIMEOUT_MS);
@@ -469,15 +549,28 @@ export class RpcClient {
 				},
 			});
 
-			try {
-				stdin.write(serializeJsonLine(fullCommand));
-			} catch (error: unknown) {
+			void this.writeLine(stdin, serializeJsonLine(fullCommand)).catch((error: unknown) => {
 				const writeError = error instanceof Error ? error : new Error(String(error));
 				const pending = this.pendingRequests.get(id);
 				this.pendingRequests.delete(id);
 				pending?.reject(writeError);
-			}
+			});
 		});
+	}
+
+	private writeLine(stdin: Writable, line: string): Promise<void> {
+		const write = this.writeQueue.then(
+			() =>
+				new Promise<void>((resolve, reject) => {
+					stdin.write(line, (error) => {
+						if (error) reject(error);
+						else resolve();
+					});
+				}),
+		);
+
+		this.writeQueue = write.catch(() => {});
+		return write;
 	}
 
 	private getData<T>(response: RpcResponse): T {
