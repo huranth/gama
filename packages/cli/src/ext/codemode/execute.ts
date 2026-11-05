@@ -14,6 +14,7 @@ import type {
 	Usage,
 } from "@huranth/gama-ai";
 import {
+	type CodemodeError,
 	type CodemodeResult,
 	CodemodeSandbox,
 	type CodemodeTool,
@@ -24,8 +25,9 @@ import {
 } from "@huranth/gama-codemode";
 import { getCodemodeWorkerSpecifier, getQuickJSWasmPath } from "../../config.ts";
 import type { ExtensionToolContext, ToolNamespace } from "../../core/ext/types.ts";
-import type { SessionEntry } from "../../core/session-manager.ts";
-import { combineUsage } from "../../core/usage-totals.ts";
+import type { SessionEntry } from "../../core/sessions.ts";
+import { combineUsage } from "../../core/usage.ts";
+import { pruneTempFiles } from "../../utils/temp-cleanup.ts";
 import { Bm25Ranker, createToolSearchDocument, DEFAULT_TOOL_SEARCH_LIMIT } from "../search/tool.ts";
 import {
 	CODEMODE_STORE_ENTRY_TYPE,
@@ -35,6 +37,7 @@ import {
 	type CodemodeToolDetails,
 	type CodemodeToolInput,
 	type CodemodeToolOptions,
+	CHARS_PER_TOKEN,
 	getCodemodeCallableTools,
 	toCodemodeDeclaration,
 } from "./tool.ts";
@@ -46,9 +49,23 @@ interface ModelCallResult {
 }
 
 const ARGS_PREVIEW_CHARS = 200;
+
 const ERROR_PREVIEW_CHARS = 500;
+
 const MAX_CONCURRENT_MODEL_CALLS = 4;
+
 const CODEMODE_MEMORY_LIMIT_BYTES = 256 * 1024 * 1024;
+
+const DEFAULT_SCRIPT_TIMEOUT_MS = 120_000;
+
+const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
+
+const SPILL_PREFIX = "gama-codemode-";
+
+const SPILL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+const SPILL_MODE = 0o600;
+
 const MODEL_TYPES: ReadonlySet<string> = new Set<ModelType>(["chat", "image", "classifier"]);
 
 function truncateText(text: string, maxChars: number): string {
@@ -74,13 +91,13 @@ function textOf(result: AgentToolResult<unknown>): string {
 function toModelType(value: unknown): ModelType {
 	if (typeof value === "string" && MODEL_TYPES.has(value)) return value as ModelType;
 	throw new Error(
-		`Unknown model type ${JSON.stringify(value)}. Use "chat", "image", or "classifier".`,
+		`Unknown model type: ${JSON.stringify(value)}`,
 	);
 }
 
 function toProvider(value: unknown): string | undefined {
 	if (value === undefined || value === null) return undefined;
-	if (typeof value !== "string") throw new Error("provider must be a string");
+	if (typeof value !== "string") throw new Error("Invalid provider");
 	return value;
 }
 
@@ -90,8 +107,10 @@ function toModelInfo(model: AnyModel): Record<string, unknown> {
 	return info;
 }
 
-function withArticle(word: string): string {
-	return `${/^[aeiou]/.test(word) ? "an" : "a"} ${word}`;
+function callStatus(reason: ModelCallResult["stopReason"]): CodemodeNestedCall["status"] {
+	if (reason === "stop") return "ok";
+	if (reason === "aborted") return "cancelled";
+	return "error";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -109,16 +128,8 @@ function describeValue(value: unknown): string {
 	return typeof value === "string" ? "a string" : `a ${typeof value}`;
 }
 
-const CLASSIFIER_CONTEXT_SHAPE = [
-	'{ state: { ... }, questions: { <id>: { type: "choice", instructions, ',
-	'criteria: { <label>: <meaning> } } | { type: "score", instructions, ',
-	'criteria: [<lowest level>, ..., <highest level>] } | { type: "bool", ',
-	"instructions, criteria: { true: <meaning>, false: <meaning> } } } }",
-].join("");
-
 function checkClassifierContext(context: unknown): ClassifierContext {
-	const fail = (problem: string) =>
-		new Error(`models.classify() ${problem}. Expected context: ${CLASSIFIER_CONTEXT_SHAPE}.`);
+	const fail = (problem: string) => new Error(`Invalid classify context: ${problem}`);
 	if (!isRecord(context)) {
 		const got = describeValue(context);
 		throw fail(`expects a context object as its second argument, got ${got}`);
@@ -177,14 +188,7 @@ function checkClassifierContext(context: unknown): ClassifierContext {
 }
 
 function checkImagesContext(context: unknown): ImagesContext {
-	const fail = (problem: string) =>
-		new Error(
-			[
-				`models.generateImages() ${problem}. Expected context: { input: [{ type: "text", `,
-				'text: <prompt> }, ...optional { type: "image", data: <base64>, mimeType } ',
-				"references] }.",
-			].join(""),
-		);
+	const fail = (problem: string) => new Error(`Invalid image context: ${problem}`);
 	if (!isRecord(context)) {
 		const got = describeValue(context);
 		throw fail(`expects a context object as its second argument, got ${got}`);
@@ -256,19 +260,28 @@ export function readCodemodeStore(branch: readonly SessionEntry[]): Record<strin
 	return Object.fromEntries(store);
 }
 
-const DEFAULT_MAX_OUTPUT_TOKENS = 10_000;
-
-const CHARS_PER_TOKEN = 4;
-
 function valueText(value: unknown): string {
 	if (typeof value === "string") return value;
 	return JSON.stringify(value) ?? String(value);
 }
 
 function formatCallSummary(calls: readonly CodemodeNestedCall[]): string {
-	if (calls.length === 0) return "No tool calls were made.";
+	if (calls.length === 0) return "No tool calls";
 	const listed = calls.map((call) => `${call.name} (${call.status})`).join(", ");
 	return `Tool calls made before the failure (they are not undone): ${listed}`;
+}
+
+function errorHead(error: CodemodeError): string {
+	switch (error.kind) {
+		case "script":
+			return `${error.name ?? "Error"}: ${error.message}`;
+		case "timeout":
+			return `Script timed out: ${error.message}`;
+		case "aborted":
+			return `Script aborted: ${error.message}`;
+		case "sandbox":
+			return `Script sandbox failed: ${error.message}`;
+	}
 }
 
 function formatError(
@@ -276,21 +289,19 @@ function formatError(
 	calls: readonly CodemodeNestedCall[],
 ): string {
 	const { error } = result;
-	const head =
-		error.kind === "script"
-			? (error.stack ?? `${error.name ?? "Error"}: ${error.message}`)
-			: error.kind === "timeout"
-				? `Script timed out: ${error.message}`
-				: error.kind === "aborted"
-					? `Script aborted: ${error.message}`
-					: `Script sandbox failed: ${error.message}`;
-	return `${head}\n\n${formatCallSummary(calls)}`;
+
+	return `${errorHead(error)}\n\n${formatCallSummary(calls)}`;
 }
 
 async function spillOutput(text: string): Promise<{ path: string } | { error: string }> {
-	const path = join(tmpdir(), `gama-codemode-${randomBytes(8).toString("hex")}.txt`);
+	pruneTempFiles({
+		prefix: SPILL_PREFIX,
+		maxAgeMs: SPILL_MAX_AGE_MS,
+		isTarget: (name) => name.endsWith(".txt"),
+	});
+	const path = join(tmpdir(), `${SPILL_PREFIX}${randomBytes(8).toString("hex")}.txt`);
 	try {
-		await writeFile(path, text);
+		await writeFile(path, text, { mode: SPILL_MODE });
 		return { path };
 	} catch (error) {
 		return { error: error instanceof Error ? error.message : String(error) };
@@ -342,7 +353,7 @@ async function truncateOutput(
 	const dropped = Math.ceil(removed / CHARS_PER_TOKEN);
 	let text =
 		`Warning: truncated output (original token count: ${tokenCount})\n` +
-		`Total output lines: ${lineCount}\n\n${head}…${dropped} tokens truncated…${tail}`;
+		`Total output lines: ${lineCount}\n\n${head}...${dropped} tokens truncated...${tail}`;
 	const spilled = await spillOutput(combined);
 	text +=
 		"path" in spilled
@@ -354,12 +365,12 @@ async function truncateOutput(
 	};
 }
 
-function toScriptValue(tool: AgentTool<any>, outcome: AgentToolCallOutcome): unknown {
+function toScriptValue(_tool: AgentTool<any>, outcome: AgentToolCallOutcome): unknown {
 	const { result } = outcome;
 	// Structured first
-	if (tool.outputSchema && result.structuredContent !== undefined) return result.structuredContent;
+	if (result.structuredContent !== undefined) return result.structuredContent;
 	const text = textOf(result);
-	if (outcome.isError) throw new Error(text || `${tool.name} failed`);
+	if (outcome.isError) throw new Error(text || "Tool failed");
 	return text;
 }
 
@@ -403,10 +414,9 @@ export async function executeCodemode(
 			calls.push(record);
 			publish();
 			const callStartedAt = performance.now();
-			if (!ctx) throw new Error("Tool calls need a session");
 			let outcome: AgentToolCallOutcome;
 			try {
-				outcome = await ctx.executeTool(tool.name, args, { signal: callSignal });
+				outcome = await ctx!.executeTool(tool.name, args, { signal: callSignal });
 			} catch (error) {
 				record.durationMs = performance.now() - callStartedAt;
 				record.status = callSignal.aborted ? "cancelled" : "error";
@@ -422,7 +432,7 @@ export async function executeCodemode(
 			if (outcome.isError) {
 				record.status = callSignal.aborted ? "cancelled" : "error";
 				record.error = truncateText(
-					textOf(outcome.result) || `${tool.name} failed`,
+					textOf(outcome.result) || "Tool failed",
 					ERROR_PREVIEW_CHARS,
 				);
 			} else {
@@ -448,7 +458,7 @@ export async function executeCodemode(
 					)
 				: []),
 		],
-		timeoutMs: sourceOptions.timeoutMs ?? Number.POSITIVE_INFINITY,
+		timeoutMs: sourceOptions.timeoutMs ?? DEFAULT_SCRIPT_TIMEOUT_MS,
 		memoryLimitBytes: CODEMODE_MEMORY_LIMIT_BYTES,
 		wasm: loadQuickJSWasm(getQuickJSWasmPath()),
 		workerUrl: getCodemodeWorkerSpecifier(),
@@ -458,6 +468,12 @@ export async function executeCodemode(
 	try {
 		const store = ctx ? readCodemodeStore(ctx.sessionManager.getBranch()) : {};
 		result = await sandbox.execute(code, { signal, store });
+	} catch (error) {
+		for (const call of calls) {
+			if (call.status === "running") call.status = "cancelled";
+		}
+		publish();
+		throw error;
 	} finally {
 		await sandbox.close();
 	}
@@ -534,14 +550,14 @@ function createDiscoveryGlobals(
 					unknown,
 					{ limit?: unknown; namespace?: unknown } | undefined,
 				];
-				if (typeof query !== "string") throw new Error("searchTools() expects a query string");
+				if (typeof query !== "string") throw new Error("Invalid query");
 				const limit = searchOptions?.limit ?? DEFAULT_TOOL_SEARCH_LIMIT;
 				if (typeof limit !== "number" || !Number.isInteger(limit) || limit <= 0) {
-					throw new Error("searchTools() limit must be a positive integer");
+					throw new Error("Invalid limit");
 				}
 				const namespace = searchOptions?.namespace;
 				if (namespace !== undefined && namespace !== null && typeof namespace !== "string") {
-					throw new Error("searchTools() namespace must be a string");
+					throw new Error("Invalid namespace");
 				}
 				const documents = tools.flatMap((tool) => {
 					const toolNamespace = options.getToolNamespace?.(tool.name);
@@ -557,7 +573,7 @@ function createDiscoveryGlobals(
 			spread: true,
 			execute: (args) => {
 				const [name] = args as unknown[];
-				if (typeof name !== "string") throw new Error("describeTool() expects a tool name");
+				if (typeof name !== "string") throw new Error("Invalid tool name");
 				const tool = tools.find(
 					(candidate) =>
 						candidate.name === name || toCodemodeIdentifier(candidate.name) === name,
@@ -570,8 +586,7 @@ function createDiscoveryGlobals(
 			spread: true,
 			execute: (args) => {
 				const [name] = args as unknown[];
-				if (typeof name !== "string")
-					throw new Error("describeNamespace() expects a namespace name");
+				if (typeof name !== "string") throw new Error("Invalid namespace");
 				let namespace: ToolNamespace | undefined;
 				const names: string[] = [];
 				for (const tool of tools) {
@@ -614,33 +629,13 @@ function createModelGlobals(
 		checkContext: (context: unknown) => TContext,
 		run: (resolved: ModelTypeMap[TType], context: TContext) => Promise<TResult>,
 	): Promise<TResult> => {
-		const listHint = `List the ${type} models you can use with models.getAvailableOfType("${type}").`;
 		if (!isRecord(model) || typeof model.provider !== "string" || typeof model.id !== "string") {
-			const undefinedHint =
-				model === undefined || model === null
-					? " models.getModelOfType() returns undefined for an unknown provider or id."
-					: "";
-			throw new Error(
-				[
-					`${name}() expects ${withArticle(type)} model as its first argument, `,
-					`got ${describeValue(model)}.${undefinedHint} ${listHint}`,
-				].join(""),
-			);
+			throw new Error(`Invalid model: ${name}`);
 		}
 		const { provider, id } = model;
-		const ref = `${provider}/${id}`;
 		const resolved = models.getModelOfType(type, provider, id);
 		if (!resolved) {
-			const actualType = [...MODEL_TYPES].find(
-				(other) =>
-					other !== type &&
-					models.getModelOfType(other as ModelType, provider, id) !== undefined,
-			);
-			throw new Error(
-				actualType
-					? `"${ref}" is ${withArticle(actualType)} model, not ${withArticle(type)} model. ${listHint}`
-					: `Unknown ${type} model "${ref}". ${listHint}`,
-			);
+			throw new Error("Wrong model type");
 		}
 		const checked = checkContext(context);
 
@@ -667,12 +662,8 @@ function createModelGlobals(
 			throw error;
 		}
 		record.durationMs = performance.now() - startedAt;
-		record.status =
-			result.stopReason === "stop"
-				? "ok"
-				: result.stopReason === "aborted"
-					? "cancelled"
-					: "error";
+		record.status = callStatus(result.stopReason);
+
 		if (result.errorMessage)
 			record.error = truncateText(result.errorMessage, ERROR_PREVIEW_CHARS);
 		if (result.usage) {
@@ -699,12 +690,7 @@ function createModelGlobals(
 		"models.getModelOfType": (args) => {
 			const [type, provider, id] = args as unknown[];
 			if (typeof provider !== "string" || typeof id !== "string") {
-				const got = (args as unknown[]).map(describeValue).join(", ");
-				const example = 'models.getModelOfType("classifier", "typesafe", "jev-latest")';
-				throw new Error(
-					`models.getModelOfType(type, provider, id) expects three strings, got (${got}). ` +
-						`The provider and the id are separate arguments, for example ${example}.`,
-				);
+				throw new Error("Invalid model arguments");
 			}
 			const model = models.getModelOfType(toModelType(type), provider, id);
 			return model === undefined ? undefined : toModelInfo(model);

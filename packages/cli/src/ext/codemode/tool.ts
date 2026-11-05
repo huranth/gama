@@ -11,13 +11,12 @@ import { CODEMODE_SOURCE_GRAMMAR } from "@huranth/gama-codemode/source";
 import { type Static, Type } from "typebox";
 import type {
 	ToolDefinition,
-	ToolInfo,
 	ToolLoadout,
 	ToolLoadoutChanges,
 	ToolNamespace,
 } from "../../core/ext/types.ts";
-import type { ModelRegistry } from "../../core/model-registry.ts";
-import type { CodemodeMode } from "../../core/settings-manager.ts";
+import type { ModelRegistry } from "../../core/roster.ts";
+import type { CodemodeMode } from "../../core/settings.ts";
 import { wrapToolDefinition } from "../../core/tools/tool-definition-wrapper.ts";
 import { loadCodemodeExecutor } from "./execute.lazy.ts";
 import { codemodeRenderers } from "./renderer.ts";
@@ -89,10 +88,6 @@ export const codemodeSchema = Type.Object({
 	}),
 });
 
-export function isCodemodeTool(tool: Pick<ToolInfo, "name" | "parameters">): boolean {
-	return tool.name === CODEMODE_TOOL_NAME && tool.parameters === codemodeSchema;
-}
-
 export const codemodeToolSystemPromptContribution = {
 	snippet: "Run JavaScript that calls other tools",
 	guidelines: [
@@ -130,7 +125,7 @@ function describeGlobals(models: boolean): string {
 
 export const DEFAULT_CODEMODE_INLINE_BUDGET = 3000;
 
-const CHARS_PER_TOKEN = 4;
+export const CHARS_PER_TOKEN = 4;
 
 export function toCodemodeDeclaration(tool: AgentTool<any>): Omit<CodemodeTool, "execute"> {
 	return {
@@ -153,23 +148,43 @@ function renderToolSection(declaration: Omit<CodemodeTool, "execute">): string {
 }
 
 function selectCatalog(groups: readonly CatalogGroup[], budget: number | undefined): Set<string> {
-	if (budget === undefined)
+	if (budget === undefined) {
 		return new Set(groups.flatMap((group) => group.entries.map((entry) => entry.name)));
+	}
+
 	const queues = groups.map((group) => [...group.entries].sort((a, b) => a.cost - b.cost));
 	const shown = new Set<string>();
 	let remaining = budget;
 	let active = queues.filter((queue) => queue.length > 0);
+
 	while (active.length > 0) {
 		active = active.filter((queue) => {
 			const next = queue[0];
 			if (next.cost > remaining) return false;
+
 			remaining -= next.cost;
 			shown.add(next.name);
 			queue.shift();
+
 			return queue.length > 0;
 		});
 	}
+
 	return shown;
+}
+
+function compareGroups(a: CatalogGroup, b: CatalogGroup): number {
+	if (a.namespace === undefined) return -1;
+	if (b.namespace === undefined) return 1;
+
+	return a.namespace.name.localeCompare(b.namespace.name);
+}
+
+function listingFor(visible: readonly CatalogEntry[], entries: readonly CatalogEntry[]): string {
+	if (visible.length === entries.length) return "";
+	if (visible.length === 0) return " (tools not listed)";
+
+	return " (some tools not listed)";
 }
 
 export function createCodemodeDescription(
@@ -192,13 +207,7 @@ export function createCodemodeDescription(
 			cost: Math.ceil(section.length / CHARS_PER_TOKEN),
 		});
 	}
-	const ordered = [...groups.values()].sort((a, b) =>
-		a.namespace === undefined
-			? -1
-			: b.namespace === undefined
-				? 1
-				: a.namespace.name.localeCompare(b.namespace.name),
-	);
+	const ordered = [...groups.values()].sort(compareGroups);
 	const shown = selectCatalog(ordered, options.inlineBudget);
 
 	const sections = [DESCRIPTION_INTRO, describeGlobals(options.models === true)];
@@ -217,12 +226,7 @@ export function createCodemodeDescription(
 	for (const { namespace, entries } of ordered) {
 		const visible = entries.filter((entry) => shown.has(entry.name));
 		if (namespace) {
-			const listing =
-				visible.length === entries.length
-					? ""
-					: visible.length === 0
-						? " (tools not listed)"
-						: " (some tools not listed)";
+			const listing = listingFor(visible, entries);
 			const description = namespace.description?.trim();
 			toolSections.push(
 				`## ${namespace.name}${listing}${description ? `\n${description}` : ""}`,

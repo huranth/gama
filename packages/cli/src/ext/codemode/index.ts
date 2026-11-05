@@ -1,5 +1,5 @@
 import type { ExtensionAPI, ExtensionFactory } from "../../core/ext/types.ts";
-import type { CodemodeMode } from "../../core/settings-manager.ts";
+import type { CodemodeMode } from "../../core/settings.ts";
 import { createCodemodeToolDefinition } from "./tool.ts";
 
 export interface CodemodeExtensionOptions {

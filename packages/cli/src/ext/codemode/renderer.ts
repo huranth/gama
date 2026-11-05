@@ -1,14 +1,16 @@
 import { Container, Spacer, Text } from "@huranth/gama-tui";
 import type { ToolDefinition } from "../../core/ext/types.ts";
 import { getTextOutput, replaceTabs, str } from "../../core/tools/render-utils.ts";
-import { keyHint } from "../../modes/tui/parts/keybinding-hints.ts";
-import { VisualLinePreview } from "../../modes/tui/parts/visual-truncate.ts";
-import { highlightCode, type Theme } from "../../modes/tui/theme/theme.ts";
+import { VisualLinePreview } from "../../term/parts/visual-truncate.ts";
+import { highlightCode, type Theme } from "../../term/theme/theme.ts";
 import type { CodemodeNestedCall, CodemodeToolDetails } from "./tool.ts";
 
 const COLLAPSED_ARGS_CHARS = 80;
+
 const CODE_PREVIEW_LINES = 10;
+
 const CALL_PREVIEW_COUNT = 8;
+
 const OUTPUT_PREVIEW_LINES = 5;
 
 const SCRIPT_HEADER = /^Script (completed|failed)\nWall time [\d.]+ seconds\nOutput:\n$/;
@@ -32,10 +34,7 @@ function statusIcon(call: CodemodeNestedCall, theme: Theme): string {
 }
 
 function expandHint(theme: Theme, label: string): string {
-	const text = theme.fg("muted", `... (${label},`);
-	const hint = keyHint("app.tools.expand", "to expand");
-
-	return `${text} ${hint}${theme.fg("muted", ")")}`;
+	return theme.fg("muted", `... (${label})`);
 }
 
 function formatCost(cost: number): string {
@@ -150,6 +149,7 @@ export const codemodeRenderers: Pick<
 				);
 
 				const fullOutputPath = result.details?.fullOutputPath;
+
 				if (fullOutputPath) {
 					const label = theme.fg("muted", `Full output: ${fullOutputPath}`);
 					component.addChild(new Text(label, 0, 0));
