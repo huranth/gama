@@ -15,9 +15,9 @@ import {
 	createSyntheticSourceInfo,
 	getSyntheticPathSource,
 	isSyntheticPath,
-} from "../source-info.ts";
+} from "../origin.ts";
 import { time } from "../timings.ts";
-import type { ModelRouteRequest, VirtualModelDefinition } from "../virtual-models.ts";
+import type { ModelRouteRequest, VirtualModelDefinition } from "../fake-models.ts";
 import type {
 	EntryRenderer,
 	Extension,
@@ -33,6 +33,7 @@ import type {
 	ToolDefinition,
 	ToolRendererResolver,
 } from "./types.ts";
+import { STALE_CONTEXT_MESSAGE } from "./types.ts";
 
 type HandlerFn = (...args: unknown[]) => Promise<unknown>;
 
@@ -46,33 +47,38 @@ const require = createRequire(import.meta.url);
 const isNodeSeaBinary =
 	("sea" in process.features && process.features.sea === true) ||
 	process.getBuiltinModule("node:sea")?.isSea() === true;
+
 const isTypeScriptSourceRuntime =
 	!isBunBinary && path.extname(fileURLToPath(import.meta.url)) === ".ts";
+
 const usesEmbeddedModules = isBunBinary || isNodeSeaBinary || isBundledNode;
 
-let createJitiPromise: Promise<typeof createJiti> | undefined;
+// Unknown path
+const UNKNOWN_PATH = "<unknown>";
 
-function getCreateJiti(): Promise<typeof createJiti> {
-	createJitiPromise ??= (
-		usesEmbeddedModules ? import("./jiti-static-loader.ts") : import("./jiti-loader.ts")
-	).then((module) => module.createJiti);
-	return createJitiPromise;
+// Lazy once
+function once<T>(load: () => T): () => T {
+	let value: T | undefined;
+
+	return () => {
+		value ??= load();
+		return value;
+	};
 }
 
-let virtualModulesPromise: Promise<Record<string, unknown>> | undefined;
+const getCreateJiti = once(
+	(): Promise<typeof createJiti> =>
+		(usesEmbeddedModules ? import("./jiti-static-loader.ts") : import("./jiti-loader.ts")).then(
+			(module) => module.createJiti,
+		),
+);
 
-function getVirtualModules(): Promise<Record<string, unknown>> {
-	virtualModulesPromise ??= import("./virtual-modules.ts").then(
-		(module) => module.VIRTUAL_MODULES,
-	);
-	return virtualModulesPromise;
-}
+const getVirtualModules = once(
+	(): Promise<Record<string, unknown>> =>
+		import("./virtual-modules.ts").then((module) => module.VIRTUAL_MODULES),
+);
 
-let aliases: Record<string, string> | null = null;
-
-function getAliases(): Record<string, string> {
-	if (aliases) return aliases;
-
+const getAliases = once((): Record<string, string> => {
 	const __dirname = path.dirname(fileURLToPath(import.meta.url));
 	const entryExtension = isTypeScriptSourceRuntime ? ".ts" : ".js";
 	const packageIndex = path.resolve(__dirname, "../..", `index${entryExtension}`);
@@ -102,14 +108,14 @@ function getAliases(): Record<string, string> {
 	);
 	const gamaAiProvidersEntry = resolveWorkspaceOrImport(
 		"ai/dist/providers/all.js",
-		"@huranth/gama-ai/providers/all",
+		"@huranth/gama-ai/catalog/all",
 	);
 
-	aliases = {
+	return {
 		"@huranth/gama-harness": gamaCodingAgentEntry,
 		"@huranth/gama-agent-core": gamaAgentCoreEntry,
 		"@huranth/gama-tui": gamaTuiEntry,
-		"@huranth/gama-ai/providers/all": gamaAiProvidersEntry,
+		"@huranth/gama-ai/catalog/all": gamaAiProvidersEntry,
 		"@huranth/gama-ai/compat": gamaAiCompatEntry,
 		"@huranth/gama-ai": gamaAiCompatEntry,
 		typebox: typeboxEntry,
@@ -119,12 +125,12 @@ function getAliases(): Record<string, string> {
 		"@sinclair/typebox/compile": typeboxCompileEntry,
 		"@sinclair/typebox/value": typeboxValueEntry,
 	};
-
-	return aliases;
-}
+});
 
 let extensionCacheCwd: string | undefined;
+
 let extensionCacheGeneration = 0;
+
 const extensionCache = new Map<string, ExtensionFactory>();
 
 export function clearExtensionCache(): void {
@@ -144,16 +150,14 @@ function useExtensionCacheCwd(cwd: string): ExtensionCacheToken {
 
 export function createExtensionRuntime(): ExtensionRuntime {
 	const notInitialized = () => {
-		throw new Error(
-			"Extension runtime not initialized. Action methods cannot be called during extension loading.",
-		);
+		throw new Error("Extension not loaded");
 	};
+
 	const state: { staleMessage?: string } = {};
 	const eventBusUnsubscribers = new Set<() => void>();
+
 	const assertActive = () => {
-		if (state.staleMessage) {
-			throw new Error(state.staleMessage);
-		}
+		if (state.staleMessage) throw new Error(state.staleMessage);
 	};
 
 	const runtime: ExtensionRuntime = {
@@ -169,7 +173,7 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		setActiveTools: notInitialized,
 		refreshTools: () => {},
 		getCommands: notInitialized,
-		setModel: () => Promise.reject(new Error("Extension runtime not initialized")),
+		setModel: () => Promise.reject(new Error("Extension not loaded")),
 		getThinkingLevel: notInitialized,
 		setThinkingLevel: notInitialized,
 		flagValues: new Map(),
@@ -180,13 +184,9 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		assertActive,
 		invalidate: (message) => {
 			if (state.staleMessage) return;
-			state.staleMessage =
-				message ??
-				"This extension ctx is stale after session replacement or reload. " +
-					"Do not use a captured gama or command ctx after ctx.newSession(), ctx.fork(), " +
-					"ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, " +
-					"move post-replacement work into withSession and use the ctx passed to withSession. " +
-					"For reload, do not use the old ctx after await ctx.reload().";
+
+			state.staleMessage = message ?? STALE_CONTEXT_MESSAGE;
+
 			for (const unsubscribe of eventBusUnsubscribers) {
 				unsubscribe();
 			}
@@ -194,29 +194,35 @@ export function createExtensionRuntime(): ExtensionRuntime {
 		},
 		trackEventBusSubscription: (unsubscribe) => {
 			let active = true;
+
 			const trackedUnsubscribe = () => {
 				if (!active) return;
+
 				active = false;
 				eventBusUnsubscribers.delete(trackedUnsubscribe);
 				unsubscribe();
 			};
+
 			eventBusUnsubscribers.add(trackedUnsubscribe);
+
 			return trackedUnsubscribe;
 		},
-		registerProvider: (name, config, extensionPath = "<unknown>") => {
+		registerProvider: (name, config, extensionPath = UNKNOWN_PATH) => {
 			runtime.pendingProviderRegistrations.push({ name, config, extensionPath });
 		},
-		registerNativeProvider: (provider, extensionPath = "<unknown>") => {
+		registerNativeProvider: (provider, extensionPath = UNKNOWN_PATH) => {
 			runtime.pendingNativeProviderRegistrations.push({ provider, extensionPath });
 		},
 		unregisterProvider: (name) => {
 			runtime.pendingProviderRegistrations = runtime.pendingProviderRegistrations.filter(
-				(r) => r.name !== name,
+				(registration) => registration.name !== name,
 			);
 			runtime.pendingNativeProviderRegistrations =
-				runtime.pendingNativeProviderRegistrations.filter((r) => r.provider.id !== name);
+				runtime.pendingNativeProviderRegistrations.filter(
+					(registration) => registration.provider.id !== name,
+				);
 		},
-		registerVirtualModel: (definition, extensionPath = "<unknown>") => {
+		registerVirtualModel: (definition, extensionPath = UNKNOWN_PATH) => {
 			runtime.pendingVirtualModelRegistrations.push({ definition, extensionPath });
 		},
 		unregisterVirtualModel: (provider, id) => {
@@ -241,9 +247,7 @@ function createExtensionAPI(
 	let state: "loading" | "active" | "failed" = "loading";
 	const assertActive = () => {
 		if (state === "failed") {
-			throw new Error(
-				`Extension "${extension.path}" failed to load and its API is no longer active.`,
-			);
+			throw new Error(`Extension load failed: ${extension.path}`);
 		}
 		runtime.assertActive();
 	};
@@ -277,15 +281,18 @@ function createExtensionAPI(
 
 		registerTool(tool: ToolDefinition): void {
 			assertActive();
+			if (typeof tool.name !== "string" || tool.name.length === 0) {
+				throw new Error(`Missing tool name: ${extension.path}`);
+			}
+			if (typeof tool.execute !== "function") {
+				throw new Error(`Missing execute: ${tool.name}`);
+			}
 			if (
 				typeof tool.parameters !== "object" ||
 				tool.parameters === null ||
 				Array.isArray(tool.parameters)
 			) {
-				throw new Error(
-					`Tool "${tool.name}" registered by extension "${extension.path}" ` +
-						"must define an object parameter schema.",
-				);
+				throw new Error(`Missing parameters: ${tool.name}`);
 			}
 			extension.tools.set(tool.name, {
 				definition: tool,
@@ -297,15 +304,10 @@ function createExtensionAPI(
 		registerCommand(name: string, options: Omit<RegisteredCommand, "name" | "sourceInfo">): void {
 			assertActive();
 			if (typeof name !== "string" || name.length === 0) {
-				throw new Error(
-					`Command registered by extension "${extension.path}" must have a non-empty ` +
-						'string name. Use gama.registerCommand("name", { description, handler }).',
-				);
+				throw new Error(`Missing command name: ${extension.path}`);
 			}
 			if (typeof options?.handler !== "function") {
-				throw new Error(
-					`Command "/${name}" registered by extension "${extension.path}" must define handler().`,
-				);
+				throw new Error(`Missing handler: ${name}`);
 			}
 			extension.commands.set(name, {
 				name,
@@ -331,9 +333,7 @@ function createExtensionAPI(
 		): void {
 			assertActive();
 			if (options.default !== undefined && typeof options.default !== options.type) {
-				throw new Error(
-					`Invalid default for flag "${name}": expected ${options.type}, got ${typeof options.default}`,
-				);
+				throw new Error(`Invalid flag default: ${name}`);
 			}
 			extension.flags.set(name, { name, extensionPath: extension.path, ...options });
 			if (options.default !== undefined && !runtime.flagValues.has(name)) {
@@ -453,7 +453,7 @@ function createExtensionAPI(
 		registerProvider(providerOrName: Provider | string, config?: ProviderConfig) {
 			assertActive();
 			if (typeof providerOrName === "string") {
-				if (!config) throw new Error("Provider config is required when registering by name");
+				if (!config) throw new Error("Provider config required");
 				applyRuntimeChange(() =>
 					runtime.registerProvider(providerOrName, config, extension.path),
 				);
@@ -720,6 +720,15 @@ function isExtensionFile(name: string): boolean {
 	return name.endsWith(".ts") || name.endsWith(".js");
 }
 
+function isInsideDirectory(root: string, candidate: string): boolean {
+	try {
+		const rel = path.relative(fs.realpathSync(root), fs.realpathSync(candidate));
+		return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+	} catch {
+		return false;
+	}
+}
+
 function resolveExtensionEntries(dir: string): string[] | null {
 	const packageJsonPath = path.join(dir, "package.json");
 	if (fs.existsSync(packageJsonPath)) {
@@ -728,7 +737,7 @@ function resolveExtensionEntries(dir: string): string[] | null {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
 				const resolvedExtPath = path.resolve(dir, extPath);
-				if (fs.existsSync(resolvedExtPath)) {
+				if (isInsideDirectory(dir, resolvedExtPath) && fs.existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}
@@ -740,10 +749,10 @@ function resolveExtensionEntries(dir: string): string[] | null {
 
 	const indexTs = path.join(dir, "index.ts");
 	const indexJs = path.join(dir, "index.js");
-	if (fs.existsSync(indexTs)) {
+	if (isInsideDirectory(dir, indexTs) && fs.existsSync(indexTs)) {
 		return [indexTs];
 	}
-	if (fs.existsSync(indexJs)) {
+	if (isInsideDirectory(dir, indexJs) && fs.existsSync(indexJs)) {
 		return [indexJs];
 	}
 

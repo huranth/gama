@@ -11,7 +11,7 @@ import type {
 	AnyModel,
 	Api,
 	AssistantMessageEvent,
-	AssistantMessageEventStream,
+	ReplyStream,
 	ClassifierApi,
 	ConstrainedSamplingConfig,
 	ImageApi,
@@ -43,16 +43,16 @@ import type {
 	TUI,
 } from "@huranth/gama-tui";
 import type { Static, TSchema } from "typebox";
-import type { Theme } from "../../modes/tui/theme/theme.ts";
+import type { Theme } from "../../term/theme/theme.ts";
 import type { BashResult } from "../bash-executor.ts";
 import type { CompactionPreparation, CompactionResult } from "../comp/index.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
 import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
-import type { KeybindingsManager } from "../keybindings.ts";
-import type { CustomMessage } from "../messages.ts";
-import type { ModelRegistry } from "../model-registry.ts";
-import type { ScopedModel } from "../model-resolver.ts";
+import type { Keymap } from "../hotkeys.ts";
+import type { CustomMessage } from "../msg.ts";
+import type { ModelRegistry } from "../roster.ts";
+import type { ScopedModel } from "../pick.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -61,11 +61,11 @@ import type {
 	ProjectedSessionEntry,
 	ReadonlySessionManager,
 	SessionEntry,
-	SessionManager,
-} from "../session-manager.ts";
-import type { Settings } from "../settings-manager.ts";
+	SessionStore,
+} from "../sessions.ts";
+import type { Settings } from "../settings.ts";
 import type { SlashCommandInfo } from "../slash-commands.ts";
-import type { SourceInfo } from "../source-info.ts";
+import type { SourceInfo } from "../origin.ts";
 import type {
 	BuildSystemPromptOptions,
 	NormalizedBuildSystemPromptOptions,
@@ -88,7 +88,7 @@ import type {
 	ReadToolInput,
 	WriteToolInput,
 } from "../tools/index.ts";
-import type { ModelRoute, ModelRouteRequest, VirtualModelDefinition } from "../virtual-models.ts";
+import type { ModelRoute, ModelRouteRequest, VirtualModelDefinition } from "../fake-models.ts";
 
 export type { ExecOptions, ExecResult } from "../exec.ts";
 
@@ -99,7 +99,7 @@ export type {
 
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
 
-export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
+export type { AppKeybinding, Keymap } from "../hotkeys.ts";
 
 export interface ExtensionUIDialogOptions {
 	signal?: AbortSignal;
@@ -126,7 +126,7 @@ export type AutocompleteProviderFactory = (current: AutocompleteProvider) => Aut
 export type EditorFactory = (
 	tui: TUI,
 	theme: EditorTheme,
-	keybindings: KeybindingsManager,
+	keybindings: Keymap,
 ) => EditorComponent;
 
 export interface ExtensionUIContext {
@@ -185,7 +185,7 @@ export interface ExtensionUIContext {
 		factory: (
 			tui: TUI,
 			theme: Theme,
-			keybindings: KeybindingsManager,
+			keybindings: Keymap,
 			done: (result: T) => void,
 		) => (Component & { dispose?(): void }) | Promise<Component & { dispose?(): void }>,
 		options?: {
@@ -243,7 +243,7 @@ export interface ExtensionContext {
 	cwd: string;
 	sessionManager: ReadonlySessionManager;
 	modelRegistry: ModelRegistry;
-	model: Model<any> | undefined;
+	model: Model<Api> | undefined;
 	scopedModels: readonly ScopedModel[];
 	thinkingLevel?: ThinkingLevel;
 	isIdle(): boolean;
@@ -278,7 +278,7 @@ export interface ExtensionCommandContext extends ExtensionContext {
 
 	newSession(options?: {
 		parentSession?: string;
-		setup?: (sessionManager: SessionManager) => Promise<void>;
+		setup?: (sessionManager: SessionStore) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }>;
 
@@ -391,6 +391,9 @@ export interface ToolDefinition<
 	namespace?: ToolNamespace;
 
 	annotations?: ToolAnnotations;
+
+	/** Release resources. */
+	dispose?(): void;
 
 	defaultActive?: boolean;
 
@@ -750,8 +753,8 @@ export type ModelSelectSource = "set" | "cycle" | "restore";
 
 export interface ModelSelectEvent {
 	type: "model_select";
-	model: Model<any>;
-	previousModel: Model<any> | undefined;
+	model: Model<Api>;
+	previousModel: Model<Api> | undefined;
 	source: ModelSelectSource;
 }
 
@@ -1232,7 +1235,7 @@ export interface ExtensionAPI {
 
 	getCommands(): SlashCommandInfo[];
 
-	setModel(model: Model<any>): Promise<boolean>;
+	setModel(model: Model<Api>): Promise<boolean>;
 
 	getThinkingLevel(): ThinkingLevel;
 
@@ -1267,7 +1270,7 @@ export interface ProviderConfig {
 		model: Model<Api>,
 		context: TranscriptContext,
 		options?: SimpleStreamOptions,
-	) => AssistantMessageEventStream;
+	) => ReplyStream;
 	images?: Partial<Record<ImageApi, ProviderImages>>;
 	classifiers?: Partial<Record<ClassifierApi, ProviderClassifier>>;
 	headers?: Record<string, string>;
@@ -1388,7 +1391,7 @@ export type SetActiveToolsHandler = (toolNames: string[]) => void;
 
 export type RefreshToolsHandler = () => void;
 
-export type SetModelHandler = (model: Model<any>) => Promise<boolean>;
+export type SetModelHandler = (model: Model<Api>) => Promise<boolean>;
 
 export type GetThinkingLevelHandler = () => ThinkingLevel;
 
@@ -1438,7 +1441,7 @@ export interface ExtensionActions {
 }
 
 export interface ExtensionContextActions {
-	getModel: () => Model<any> | undefined;
+	getModel: () => Model<Api> | undefined;
 	getScopedModels: () => readonly ScopedModel[];
 	isIdle: () => boolean;
 	isProjectTrusted: () => boolean;
@@ -1463,7 +1466,7 @@ export interface ExtensionCommandContextActions {
 	waitForIdle: () => Promise<void>;
 	newSession: (options?: {
 		parentSession?: string;
-		setup?: (sessionManager: SessionManager) => Promise<void>;
+		setup?: (sessionManager: SessionStore) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}) => Promise<{ cancelled: boolean }>;
 	fork: (
@@ -1515,6 +1518,16 @@ export interface LoadExtensionsResult {
 	runtime: ExtensionRuntime;
 }
 
+// Stale ctx
+export const STALE_CONTEXT_MESSAGE = [
+	"This extension ctx is stale after session replacement or reload.",
+	"Do not use a captured gama or command ctx after ctx.newSession(), ctx.fork(),",
+	"ctx.switchSession(), or ctx.reload().",
+	"For newSession, fork, and switchSession, move post-replacement work into",
+	"withSession and use the ctx passed to withSession.",
+	"For reload, do not use the old ctx after await ctx.reload().",
+].join(" ");
+
 export interface ExtensionError {
 	extensionPath: string;
 	event: string;
@@ -1564,35 +1577,44 @@ export function isToolCallEventType(
 	toolName: "bash",
 	event: ToolCallEvent,
 ): event is BashToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "powershell",
 	event: ToolCallEvent,
 ): event is PowerShellToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "read",
 	event: ToolCallEvent,
 ): event is ReadToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "edit",
 	event: ToolCallEvent,
 ): event is EditToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "write",
 	event: ToolCallEvent,
 ): event is WriteToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "grep",
 	event: ToolCallEvent,
 ): event is GrepToolCallEvent;
+
 export function isToolCallEventType(
 	toolName: "find",
 	event: ToolCallEvent,
 ): event is FindToolCallEvent;
+
 export function isToolCallEventType(toolName: "ls", event: ToolCallEvent): event is LsToolCallEvent;
+
 export function isToolCallEventType<TName extends string, TInput extends Record<string, unknown>>(
 	toolName: TName,
 	event: ToolCallEvent,
 ): event is ToolCallEvent & { toolName: TName; input: TInput };
+
 export function isToolCallEventType(toolName: string, event: ToolCallEvent): boolean {
 	return event.toolName === toolName;
 }

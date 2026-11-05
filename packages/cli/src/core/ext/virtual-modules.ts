@@ -1,6 +1,6 @@
 import * as bundledGamaAgentCore from "@huranth/gama-agent-core";
 import * as bundledGamaAiCompat from "@huranth/gama-ai/compat";
-import * as bundledGamaAiProviders from "@huranth/gama-ai/providers/all";
+import * as bundledGamaAiProviders from "@huranth/gama-ai/catalog/all";
 import * as bundledGamaTui from "@huranth/gama-tui";
 import * as bundledTypebox from "typebox";
 import * as bundledTypeboxCompile from "typebox/compile";
@@ -18,6 +18,6 @@ export const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@huranth/gama-tui": bundledGamaTui,
 	"@huranth/gama-ai": bundledGamaAiCompat,
 	"@huranth/gama-ai/compat": bundledGamaAiCompat,
-	"@huranth/gama-ai/providers/all": bundledGamaAiProviders,
+	"@huranth/gama-ai/catalog/all": bundledGamaAiProviders,
 	"@huranth/gama-harness": bundledGamaCodingAgent,
 };

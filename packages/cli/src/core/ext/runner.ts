@@ -2,24 +2,25 @@ import type { AgentMessage, AgentTool } from "@huranth/gama-agent-core";
 import {
 	getCurrentSystemMessage,
 	type ImageContent,
+	type Api,
 	type Model,
 	type Provider,
 	type ProviderHeaders,
 } from "@huranth/gama-ai";
 import type { KeyId } from "@huranth/gama-tui";
-import { type Theme, theme } from "../../modes/tui/theme/theme.ts";
+import { type Theme, theme } from "../../term/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
-import type { KeybindingsConfig } from "../keybindings.ts";
-import type { ModelRegistry } from "../model-registry.ts";
-import type { ScopedModel } from "../model-resolver.ts";
-import type { SessionManager } from "../session-manager.ts";
+import type { KeybindingsConfig } from "../hotkeys.ts";
+import type { ModelRegistry } from "../roster.ts";
+import type { ScopedModel } from "../pick.ts";
+import type { SessionStore } from "../sessions.ts";
 import {
 	type BuildSystemPromptOptions,
 	buildSystemPrompt,
 	type NormalizedBuildSystemPromptOptions,
 	normalizeBuildSystemPromptOptions,
 } from "../system-prompt.ts";
-import type { VirtualModelDefinition } from "../virtual-models.ts";
+import type { VirtualModelDefinition } from "../fake-models.ts";
 import type {
 	AgentBeforeSettleEvent,
 	BeforeAgentStartEvent,
@@ -83,6 +84,7 @@ import type {
 	UserBashEvent,
 	UserBashEventResult,
 } from "./types.ts";
+import { STALE_CONTEXT_MESSAGE } from "./types.ts";
 
 type BuiltInKeyBindings = Partial<Record<KeyId, { keybinding: string; restrictOverride: boolean }>>;
 
@@ -153,7 +155,7 @@ interface BoundaryDispatchResult {
 
 export type NewSessionHandler = (options?: {
 	parentSession?: string;
-	setup?: (sessionManager: SessionManager) => Promise<void>;
+	setup?: (sessionManager: SessionStore) => Promise<void>;
 	withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 }) => Promise<{ cancelled: boolean }>;
 
@@ -184,7 +186,8 @@ export type ReloadHandler = () => Promise<void>;
 
 export type ShutdownHandler = () => void;
 
-const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
+// Reserved binds
+const RESERVED_KEYS = [
 	"app.interrupt",
 	"app.clear",
 	"app.exit",
@@ -260,7 +263,7 @@ const buildBuiltinKeybindings = (resolvedKeybindings: KeybindingsConfig): BuiltI
 		if (keys === undefined) continue;
 		const keyList = Array.isArray(keys) ? keys : [keys];
 		const restrictOverride = (
-			RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS as readonly string[]
+			RESERVED_KEYS as readonly string[]
 		).includes(keybinding);
 		for (const key of keyList) {
 			const normalizedKey = key.toLowerCase() as KeyId;
@@ -302,7 +305,7 @@ function isUserBashEventResult(value: unknown): value is UserBashEventResult {
 }
 
 export async function emitSessionShutdownEvent(
-	extensionRunner: ExtensionRunner,
+	extensionRunner: PluginHost,
 	event: SessionShutdownEvent,
 ): Promise<boolean> {
 	if (extensionRunner.hasHandlers("session_shutdown")) {
@@ -345,16 +348,16 @@ const noOpUIContext: ExtensionUIContext = {
 	setToolsExpanded: () => {},
 };
 
-export class ExtensionRunner {
+export class PluginHost {
 	private extensions: Extension[];
 	private runtime: ExtensionRuntime;
 	private uiContext: ExtensionUIContext;
 	private mode: ExtensionMode = "print";
 	private cwd: string;
-	private sessionManager: SessionManager;
+	private sessionManager: SessionStore;
 	private modelRegistry: ModelRegistry;
 	private errorListeners: Set<ExtensionErrorListener> = new Set();
-	private getModel: () => Model<any> | undefined = () => undefined;
+	private getModel: () => Model<Api> | undefined = () => undefined;
 	private getScopedModels: () => readonly ScopedModel[] = () => [];
 	private isIdleFn: () => boolean = () => true;
 	private isProjectTrustedFn: () => boolean = () => true;
@@ -378,14 +381,15 @@ export class ExtensionRunner {
 	private shortcutDiagnostics: ResourceDiagnostic[] = [];
 	private commandDiagnostics: ResourceDiagnostic[] = [];
 	private staleMessage: string | undefined;
-	private uiPromptDepth = 0;
+	private nextUIPromptId = 0;
+	private activeUIPrompts = new Map<number, { kind: UIPromptKind; title?: string }>();
 	private activeUIPrompt: { kind: UIPromptKind; title?: string } | undefined;
 
 	constructor(
 		extensions: Extension[],
 		runtime: ExtensionRuntime,
 		cwd: string,
-		sessionManager: SessionManager,
+		sessionManager: SessionStore,
 		modelRegistry: ModelRegistry,
 	) {
 		this.extensions = extensions;
@@ -449,12 +453,7 @@ export class ExtensionRunner {
 					this.modelRegistry.registerProvider(name, config);
 				}
 			} catch (err) {
-				this.emitError({
-					extensionPath,
-					event: "register_provider",
-					error: err instanceof Error ? err.message : String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
+				this.fail(extensionPath, "register_provider", err);
 			}
 		}
 		this.runtime.pendingProviderRegistrations = [];
@@ -467,12 +466,7 @@ export class ExtensionRunner {
 					this.modelRegistry.registerProvider(provider);
 				}
 			} catch (err) {
-				this.emitError({
-					extensionPath,
-					event: "register_provider",
-					error: err instanceof Error ? err.message : String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
+				this.fail(extensionPath, "register_provider", err);
 			}
 		}
 		this.runtime.pendingNativeProviderRegistrations = [];
@@ -487,12 +481,7 @@ export class ExtensionRunner {
 			try {
 				registerVirtualModel(definition);
 			} catch (err) {
-				this.emitError({
-					extensionPath,
-					event: "register_virtual_model",
-					error: err instanceof Error ? err.message : String(err),
-					stack: err instanceof Error ? err.stack : undefined,
-				});
+				this.fail(extensionPath, "register_virtual_model", err);
 			}
 		}
 		this.runtime.pendingVirtualModelRegistrations = [];
@@ -572,8 +561,10 @@ export class ExtensionRunner {
 		title: string | undefined,
 		run: () => Promise<T>,
 	): Promise<T> {
-		const outerPrompt = this.uiPromptDepth++ === 0;
-		if (outerPrompt) {
+		const promptId = this.nextUIPromptId++;
+		const firstPrompt = this.activeUIPrompts.size === 0;
+		this.activeUIPrompts.set(promptId, { kind, title });
+		if (firstPrompt) {
 			this.activeUIPrompt = { kind, title };
 			this.emitUIPromptEvent({
 				type: "ui_prompt_start",
@@ -583,9 +574,12 @@ export class ExtensionRunner {
 			});
 		}
 
+		let finished = false;
 		const finish = () => {
-			if (--this.uiPromptDepth > 0) return;
-			this.uiPromptDepth = 0;
+			if (finished) return;
+			finished = true;
+			this.activeUIPrompts.delete(promptId);
+			if (this.activeUIPrompts.size > 0) return;
 
 			const prompt = this.activeUIPrompt ?? { kind, title };
 			this.activeUIPrompt = undefined;
@@ -634,10 +628,13 @@ export class ExtensionRunner {
 				}
 			}
 		}
-		// Stable order.
-		return Array.from(toolsByName.values()).sort((a, b) =>
-			a.definition.name < b.definition.name ? -1 : a.definition.name > b.definition.name ? 1 : 0,
-		);
+		// Stable order
+		return Array.from(toolsByName.values()).sort((a, b) => {
+			const left = a.definition.name;
+			const right = b.definition.name;
+			if (left === right) return 0;
+			return left < right ? -1 : 1;
+		});
 	}
 
 	getToolDefinition(toolName: string): RegisteredTool["definition"] | undefined {
@@ -725,11 +722,7 @@ export class ExtensionRunner {
 	}
 
 	invalidate(
-		message = "This extension ctx is stale after session replacement or reload. " +
-			"Do not use a captured gama or command ctx after ctx.newSession(), ctx.fork(), " +
-			"ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, " +
-			"move post-replacement work into withSession and use the ctx passed to withSession. " +
-			"For reload, do not use the old ctx after await ctx.reload().",
+		message = STALE_CONTEXT_MESSAGE,
 	): void {
 		if (!this.staleMessage) {
 			this.staleMessage = message;
@@ -748,9 +741,24 @@ export class ExtensionRunner {
 		return () => this.errorListeners.delete(listener);
 	}
 
+	private fail(extensionPath: string, event: string, error: unknown): void {
+		this.emitError({
+			extensionPath,
+			event,
+			error: error instanceof Error ? error.message : String(error),
+			stack: error instanceof Error ? error.stack : undefined,
+		});
+	}
+
 	emitError(error: ExtensionError): void {
-		for (const listener of this.errorListeners) {
-			listener(error);
+		// Snapshot listeners
+		for (const listener of [...this.errorListeners]) {
+			try {
+				listener(error);
+			} catch (listenerError) {
+				// Broken listener
+				console.error("Extension error listener failed:", listenerError);
+			}
 		}
 	}
 
@@ -1026,6 +1034,15 @@ export class ExtensionRunner {
 		let shouldContinue = false;
 		let context = await buildContext(entries);
 		let valid = true;
+		const abortedResult = (): BoundaryDispatchResult => ({
+			entries: [],
+			continue: false,
+			context,
+			valid: false,
+		});
+
+		// Abort guard
+		if (ctx.signal?.aborted) return abortedResult();
 
 		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, baseEvent.type)) {
 			for (const handler of handlers) {
@@ -1040,13 +1057,10 @@ export class ExtensionRunner {
 					if (handlerResult?.entries !== undefined) entries = handlerResult.entries;
 					if (handlerResult?.continue !== undefined) shouldContinue = handlerResult.continue;
 				} catch (err) {
-					this.emitError({
-						extensionPath: ext.path,
-						event: baseEvent.type,
-						error: err instanceof Error ? err.message : String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
+					this.fail(ext.path, baseEvent.type, err);
 				}
+
+				if (ctx.signal?.aborted) return abortedResult();
 
 				try {
 					context = await buildContext(entries);
@@ -1093,14 +1107,7 @@ export class ExtensionRunner {
 						}
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: event.type,
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, event.type, err);
 				}
 			}
 		}
@@ -1126,7 +1133,7 @@ export class ExtensionRunner {
 						this.emitError({
 							extensionPath: ext.path,
 							event: "message_end",
-							error: "message_end handlers must return a message with the same role",
+							error: "Role mismatch",
 						});
 						continue;
 					}
@@ -1134,14 +1141,7 @@ export class ExtensionRunner {
 					currentMessage = handlerResult.message;
 					modified = true;
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "message_end",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "message_end", err);
 				}
 			}
 		}
@@ -1185,14 +1185,7 @@ export class ExtensionRunner {
 						modified = true;
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "tool_result",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "tool_result", err);
 				}
 			}
 		}
@@ -1214,15 +1207,16 @@ export class ExtensionRunner {
 		const ctx = this.createContext();
 		let result: ToolCallEventResult | undefined;
 
-		for (const { handlers } of snapshotEventHandlers(this.extensions, "tool_call")) {
+		for (const { ext, handlers } of snapshotEventHandlers(this.extensions, "tool_call")) {
 			for (const handler of handlers) {
-				const handlerResult = await handler(event, ctx);
+				try {
+					const handlerResult = await handler(event, ctx);
 
-				if (handlerResult) {
+					if (!handlerResult) continue;
 					result = handlerResult as ToolCallEventResult;
-					if (result.block) {
-						return result;
-					}
+					if (result.block) return result;
+				} catch (err) {
+					this.fail(ext.path, "tool_call", err);
 				}
 			}
 		}
@@ -1239,21 +1233,11 @@ export class ExtensionRunner {
 					const handlerResult = await handler(event, ctx);
 					if (handlerResult === undefined) continue;
 					if (!isUserBashEventResult(handlerResult)) {
-						throw new Error(
-							"Invalid user_bash handler result: return undefined for local execution " +
-								"or exactly one valid { operations } or { result } object",
-						);
+						throw new Error("Invalid handler result");
 					}
 					return handlerResult;
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "user_bash",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "user_bash", err);
 					throw err;
 				}
 			}
@@ -1282,14 +1266,7 @@ export class ExtensionRunner {
 					if (!returned) continue;
 					currentMessages = restoreSystemMessages(currentMessages, visibleSnapshot, returned);
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "context",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "context", err);
 				}
 			}
 		}
@@ -1318,14 +1295,7 @@ export class ExtensionRunner {
 						});
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "context_with_system",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "context_with_system", err);
 				}
 			}
 		}
@@ -1352,14 +1322,7 @@ export class ExtensionRunner {
 						currentPayload = handlerResult;
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_request",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "before_provider_request", err);
 				}
 			}
 		}
@@ -1382,14 +1345,7 @@ export class ExtensionRunner {
 					};
 					await handler(event, ctx);
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_provider_headers",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "before_provider_headers", err);
 				}
 			}
 		}
@@ -1439,14 +1395,7 @@ export class ExtensionRunner {
 						}
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "before_agent_start",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "before_agent_start", err);
 				}
 			}
 		}
@@ -1493,14 +1442,7 @@ export class ExtensionRunner {
 						);
 					}
 				} catch (err) {
-					const message = err instanceof Error ? err.message : String(err);
-					const stack = err instanceof Error ? err.stack : undefined;
-					this.emitError({
-						extensionPath: ext.path,
-						event: "resources_discover",
-						error: message,
-						stack,
-					});
+					this.fail(ext.path, "resources_discover", err);
 				}
 			}
 		}
@@ -1535,12 +1477,7 @@ export class ExtensionRunner {
 						currentImages = result.images ?? currentImages;
 					}
 				} catch (err) {
-					this.emitError({
-						extensionPath: ext.path,
-						event: "input",
-						error: err instanceof Error ? err.message : String(err),
-						stack: err instanceof Error ? err.stack : undefined,
-					});
+					this.fail(ext.path, "input", err);
 				}
 			}
 		}
