@@ -2,16 +2,16 @@ import { setTimeout } from "node:timers/promises";
 import { stripVTControlCharacters } from "node:util";
 import type { AssistantMessage } from "@huranth/gama-ai";
 import {
-	type AgentSession,
-	AgentSessionRuntime,
+	type RunSession,
+	SessionRuntime,
 	type AgentSessionServices,
-	InteractiveMode,
-	SessionManager,
+	TermApp,
+	SessionStore,
 	createAgentSessionFromServices,
 } from "@huranth/gama-harness";
 import { Levenshtein } from "autoevals";
 import { createJudge, describeEval } from "vitest-evals";
-import { createGamaDocumentationEvalHarness, type GamaCodingAgentInput } from "../src/harness.ts";
+import { createGamaDocumentationEvalHarness, type GamaCodingAgentInput } from "../src/runner.ts";
 
 const CONTEXT_WINDOW = 272_000;
 const BUILT_IN_CONTEXT_PATTERN = /\d+(?:\.\d+)?%\/272k(?: \(auto\))?/;
@@ -90,7 +90,7 @@ function lines(output: string): string[] {
 }
 
 function createContextMessage(
-	model: NonNullable<AgentSession["model"]>,
+	model: NonNullable<RunSession["model"]>,
 	percent: number,
 ): AssistantMessage {
 	const tokens = Math.round((model.contextWindow * percent) / 100);
@@ -114,7 +114,7 @@ function createContextMessage(
 }
 
 async function inspectContextFooter(
-	session: AgentSession,
+	session: RunSession,
 	agentDir: string,
 ): Promise<TuiFooterOutput> {
 	const activeModel = session.model;
@@ -131,17 +131,17 @@ async function inspectContextFooter(
 	const oracleSession = (
 		await createAgentSessionFromServices({
 			services,
-			sessionManager: SessionManager.inMemory(services.cwd),
+			sessionManager: SessionStore.inMemory(services.cwd),
 			model,
 			thinkingLevel: "high",
 			noTools: "all",
 		})
 	).session;
-	const runtime = new AgentSessionRuntime(oracleSession, services, async () => {
+	const runtime = new SessionRuntime(oracleSession, services, async () => {
 		throw new Error("The TUI footer oracle does not replace sessions.");
 	});
 	const terminal = new RecordingTerminal();
-	const mode = new InteractiveMode(runtime, { tuiMode: "regular", terminal });
+	const mode = new TermApp(runtime, { tuiMode: "regular", terminal });
 	const previousOffline = process.env.GAMA_OFFLINE;
 	process.env.GAMA_OFFLINE = "1";
 	try {
@@ -268,7 +268,8 @@ describeEval(
 					type: "prompt",
 					content:
 						"Change the Gama footer replacing the built-in context info, e.g. `42.2%/272k (auto)`, " +
-						"with a ten-cell progress bar to make it show ████░░░░░░ 42% instead. Clamp " +
+						"with a ten-cell progress bar to make it show " +
+							"████░░░░░░ 42% instead. Clamp " +
 						"percentages to the 0-100 range. Just replace the context. Otherwise leave " +
 						"everything else the same.",
 				},

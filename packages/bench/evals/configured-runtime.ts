@@ -6,7 +6,7 @@ import {
 	type Model,
 	type ModelsSimpleStreamOptions,
 } from "@huranth/gama-ai";
-import { ModelRuntime } from "@huranth/gama-harness";
+import { ModelHub } from "@huranth/gama-harness";
 
 type ModelFields = {
 	id: string;
@@ -59,8 +59,8 @@ function modelFields(model: Model<Api>): ModelFields {
 	};
 }
 
-export function loadConfiguredModelRuntime(agentDir: string): Promise<ModelRuntime> {
-	return ModelRuntime.create({
+export function loadConfiguredModelRuntime(agentDir: string): Promise<ModelHub> {
+	return ModelHub.create({
 		modelsPath: join(agentDir, "models.json"),
 		authPath: join(agentDir, "auth.json"),
 		modelsStorePath: join(agentDir, "models-store.json"),
@@ -69,7 +69,7 @@ export function loadConfiguredModelRuntime(agentDir: string): Promise<ModelRunti
 }
 
 export async function inspectProvider(
-	runtime: ModelRuntime,
+	runtime: ModelHub,
 	scenario: ProviderScenario,
 ): Promise<ProviderRuntimeOutput> {
 	await runtime.refresh({ allowNetwork: false });
@@ -100,7 +100,7 @@ export async function inspectProvider(
 }
 
 export async function inspectAddedModel(
-	runtime: ModelRuntime,
+	runtime: ModelHub,
 	providerId: string,
 	modelId: string,
 ): Promise<AddedModelOutput> {

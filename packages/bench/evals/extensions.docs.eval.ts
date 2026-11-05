@@ -1,6 +1,6 @@
 import { contentText } from "@huranth/gama-ai";
 import { describeEval, StructuredOutputJudge, ToolCallJudge } from "vitest-evals";
-import { createGamaDocumentationEvalHarness, DOCUMENTATION_EVAL_TOOLS } from "../src/harness.ts";
+import { createGamaDocumentationEvalHarness, DOCUMENTATION_EVAL_TOOLS } from "../src/runner.ts";
 
 const TOOL_NAME = "hello";
 const TOOL_ARGUMENTS = { name: "Bob" };

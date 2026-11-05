@@ -9,7 +9,7 @@ import {
 	STREAM_PROVIDER_ID,
 } from "./acme-server.ts";
 import { inspectProvider, type ProviderRuntimeOutput } from "./configured-runtime.ts";
-import { createGamaDocumentationEvalHarness } from "../src/harness.ts";
+import { createGamaDocumentationEvalHarness } from "../src/runner.ts";
 
 const DOCUMENTATION_PATH = "fixtures/acme-stream-api.json";
 const STREAM_API_KEY = "resolved-stream-key";

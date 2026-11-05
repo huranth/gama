@@ -1,6 +1,6 @@
 import { expect } from "vitest";
 import { describeEval } from "vitest-evals";
-import { createGamaCodingAgentHarness } from "../src/harness.ts";
+import { createGamaCodingAgentHarness } from "../src/runner.ts";
 
 const harness = createGamaCodingAgentHarness({ noTools: "all" });
 
