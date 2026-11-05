@@ -21,7 +21,7 @@ export function buildInitialMessage({
 }: InitialMessageInput): InitialMessageResult {
 	const parts: string[] = [];
 
-	// Join lines
+	// Join parts
 	const append = (part: string) => {
 		if (part.length === 0) return;
 		const previous = parts[parts.length - 1];
