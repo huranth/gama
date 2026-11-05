@@ -1,8 +1,8 @@
 import { estimateProjectedContextTokens } from "./comp/index.ts";
 import type { SessionBoundaryDraft } from "./ext/index.ts";
-import { type SessionEntry, SessionManager } from "./session-manager.ts";
+import { type SessionEntry, SessionStore } from "./sessions.ts";
 
-function appendDraft(manager: SessionManager, draft: SessionBoundaryDraft): string {
+function appendDraft(manager: SessionStore, draft: SessionBoundaryDraft): string {
 	switch (draft.type) {
 		case "custom":
 			return manager.appendCustomEntry(draft.customType, draft.data);
@@ -34,7 +34,7 @@ function appendDraft(manager: SessionManager, draft: SessionBoundaryDraft): stri
 }
 
 export function applyBoundaryDrafts(
-	manager: SessionManager,
+	manager: SessionStore,
 	drafts: SessionBoundaryDraft[],
 ): SessionEntry[] {
 	const appended: SessionEntry[] = [];
@@ -46,15 +46,15 @@ export function applyBoundaryDrafts(
 }
 
 export function createBoundaryPreviewManager(
-	sessionManager: SessionManager,
+	sessionManager: SessionStore,
 	cwd: string,
 	drafts: SessionBoundaryDraft[],
-): SessionManager {
+): SessionStore {
 	const header = sessionManager.getHeader();
-	if (!header) throw new Error("Session header is missing");
+	if (!header) throw new Error("Missing session header");
 
 	const branch = sessionManager.getBranch();
-	const manager = SessionManager.inMemory(cwd, undefined, [header, ...branch]);
+	const manager = SessionStore.inMemory(cwd, undefined, [header, ...branch]);
 	applyBoundaryDrafts(manager, drafts);
 	return manager;
 }

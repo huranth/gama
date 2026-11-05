@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 
 export interface SessionCwdIssue {
 	sessionFile?: string;
@@ -20,6 +20,7 @@ export function formatMissingSessionCwdPrompt(issue: SessionCwdIssue): string {
 
 export function formatMissingSessionCwdError(issue: SessionCwdIssue): string {
 	const sessionFile = issue.sessionFile ? `\nSession file: ${issue.sessionFile}` : "";
+
 	return (
 		`Stored session working directory does not exist: ${issue.sessionCwd}${sessionFile}\n` +
 		`Current working directory: ${issue.fallbackCwd}`
@@ -36,7 +37,7 @@ export function getMissingSessionCwdIssue(
 	}
 
 	const sessionCwd = sessionManager.getCwd();
-	if (!sessionCwd || existsSync(sessionCwd)) {
+	if (!sessionCwd || isDirectory(sessionCwd)) {
 		return undefined;
 	}
 
@@ -64,5 +65,18 @@ export class MissingSessionCwdError extends Error {
 		super(formatMissingSessionCwdError(issue));
 		this.name = "MissingSessionCwdError";
 		this.issue = issue;
+	}
+}
+
+const MISSING_PATH_CODES = new Set(["ENOENT", "ENOTDIR"]);
+
+function isDirectory(path: string): boolean {
+	try {
+		return statSync(path).isDirectory();
+	} catch (error) {
+		const code = (error as NodeJS.ErrnoException).code;
+		if (MISSING_PATH_CODES.has(code ?? "")) return false;
+
+		throw new Error(`Session dir unavailable: ${path}`, { cause: error });
 	}
 }

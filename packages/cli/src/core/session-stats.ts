@@ -6,8 +6,8 @@ import {
 	getLatestCompactionEntry,
 	type SessionEntry,
 	type SessionProjection,
-} from "./session-manager.ts";
-import { addUsageToTotals, createUsageTotals, type UsageTotals } from "./usage-totals.ts";
+} from "./sessions.ts";
+import { addUsageToTotals, createUsageTotals, type UsageTotals } from "./usage.ts";
 
 export interface SessionStats {
 	sessionFile: string | undefined;
