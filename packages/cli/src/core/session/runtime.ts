@@ -1,21 +1,21 @@
-import { constants, copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { constants, copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join, parse, resolve } from "node:path";
-import { resolvePath } from "../utils/paths.ts";
-import type { AgentSession } from "./agent-session.ts";
+import { resolvePath } from "../../utils/paths.ts";
+import type { RunSession } from "./session.ts";
 import type {
 	AgentSessionRuntimeDiagnostic,
 	AgentSessionServices,
-} from "./agent-session-services.ts";
+} from "./services.ts";
 import type {
 	ProjectTrustContext,
 	ReplacedSessionContext,
 	SessionShutdownEvent,
 	SessionStartEvent,
-} from "./ext/index.ts";
-import { emitSessionShutdownEvent } from "./ext/runner.ts";
-import type { CreateAgentSessionResult } from "./sdk.ts";
-import { assertSessionCwdExists } from "./session-cwd.ts";
-import { SessionManager } from "./session-manager.ts";
+} from "../ext/index.ts";
+import { emitSessionShutdownEvent } from "../ext/runner.ts";
+import type { CreateAgentSessionResult } from "../kit.ts";
+import { assertSessionCwdExists } from "../session-cwd.ts";
+import { SessionStore } from "../sessions.ts";
 
 export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResult {
 	services: AgentSessionServices;
@@ -25,10 +25,12 @@ export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResul
 export type CreateAgentSessionRuntimeFactory = (options: {
 	cwd: string;
 	agentDir: string;
-	sessionManager: SessionManager;
+	sessionManager: SessionStore;
 	sessionStartEvent?: SessionStartEvent;
 	projectTrustContext?: ProjectTrustContext;
 }) => Promise<CreateAgentSessionRuntimeResult>;
+
+const IMPORT_SUFFIX_START = 1;
 
 function extractUserMessageText(content: string | Array<{ type: string; text?: string }>): string {
 	if (typeof content === "string") return content;
@@ -42,6 +44,19 @@ function extractUserMessageText(content: string | Array<{ type: string; text?: s
 		.join("");
 }
 
+function uniqueSessionPath(sessionDir: string, fileName: string): string {
+	const { name, ext } = parse(fileName);
+
+	let suffix = IMPORT_SUFFIX_START;
+	let target = join(sessionDir, fileName);
+
+	while (existsSync(target)) {
+		target = join(sessionDir, `${name}-${suffix++}${ext}`);
+	}
+
+	return target;
+}
+
 export class SessionImportFileNotFoundError extends Error {
 	readonly filePath: string;
 
@@ -52,17 +67,17 @@ export class SessionImportFileNotFoundError extends Error {
 	}
 }
 
-export class AgentSessionRuntime {
-	private rebindSession?: (session: AgentSession) => Promise<void>;
+export class SessionRuntime {
+	private rebindSession?: (session: RunSession) => Promise<void>;
 	private beforeSessionInvalidate?: () => void;
-	private _session: AgentSession;
+	private _session: RunSession;
 	private _services: AgentSessionServices;
 	private readonly createRuntime: CreateAgentSessionRuntimeFactory;
 	private _diagnostics: AgentSessionRuntimeDiagnostic[];
 	private _modelFallbackMessage?: string;
 
 	constructor(
-		_session: AgentSession,
+		_session: RunSession,
 		_services: AgentSessionServices,
 		createRuntime: CreateAgentSessionRuntimeFactory,
 		_diagnostics: AgentSessionRuntimeDiagnostic[] = [],
@@ -75,11 +90,12 @@ export class AgentSessionRuntime {
 		this._modelFallbackMessage = _modelFallbackMessage;
 	}
 
+	// Getters
 	get services(): AgentSessionServices {
 		return this._services;
 	}
 
-	get session(): AgentSession {
+	get session(): RunSession {
 		return this._session;
 	}
 
@@ -95,7 +111,8 @@ export class AgentSessionRuntime {
 		return this._modelFallbackMessage;
 	}
 
-	setRebindSession(rebindSession?: (session: AgentSession) => Promise<void>): void {
+	// Mutators
+	setRebindSession(rebindSession?: (session: RunSession) => Promise<void>): void {
 		this.rebindSession = rebindSession;
 	}
 
@@ -103,11 +120,17 @@ export class AgentSessionRuntime {
 		this.beforeSessionInvalidate = beforeSessionInvalidate;
 	}
 
+	async dispose(): Promise<void> {
+		await this.teardownCurrent("quit");
+	}
+
+	// Guards
 	private async emitBeforeSwitch(
 		reason: "new" | "resume",
 		targetSessionFile?: string,
 	): Promise<{ cancelled: boolean }> {
 		const runner = this.session.extensionRunner;
+
 		if (!runner.hasHandlers("session_before_switch")) {
 			return { cancelled: false };
 		}
@@ -117,6 +140,7 @@ export class AgentSessionRuntime {
 			reason,
 			targetSessionFile,
 		});
+
 		return { cancelled: result?.cancel === true };
 	}
 
@@ -125,6 +149,7 @@ export class AgentSessionRuntime {
 		options: { position: "before" | "at" },
 	): Promise<{ cancelled: boolean }> {
 		const runner = this.session.extensionRunner;
+
 		if (!runner.hasHandlers("session_before_fork")) {
 			return { cancelled: false };
 		}
@@ -134,19 +159,23 @@ export class AgentSessionRuntime {
 			entryId,
 			...options,
 		});
+
 		return { cancelled: result?.cancel === true };
 	}
 
+	// Lifecycle
 	private async teardownCurrent(
 		reason: SessionShutdownEvent["reason"],
 		targetSessionFile?: string,
 	): Promise<void> {
 		await this.session.abort();
+
 		await emitSessionShutdownEvent(this.session.extensionRunner, {
 			type: "session_shutdown",
 			reason,
 			targetSessionFile,
 		});
+
 		this.beforeSessionInvalidate?.();
 		this.session.dispose();
 	}
@@ -160,20 +189,38 @@ export class AgentSessionRuntime {
 
 	private async startSession(
 		reason: "new" | "resume" | "fork",
-		sessionManager: SessionManager,
+		sessionManager: SessionStore,
 		cwd: string,
 		previousSessionFile: string | undefined,
+		projectTrustContext?: ProjectTrustContext,
 	): Promise<void> {
-		await this.teardownCurrent(reason, sessionManager.getSessionFile());
+		const next = await this.createRuntime({
+			cwd,
+			agentDir: this.services.agentDir,
+			sessionManager,
+			sessionStartEvent: { type: "session_start", reason, previousSessionFile },
+			projectTrustContext,
+		});
 
-		this.apply(
-			await this.createRuntime({
-				cwd,
-				agentDir: this.services.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason, previousSessionFile },
-			}),
-		);
+		try {
+			await this.teardownCurrent(reason, sessionManager.getSessionFile());
+		} catch (error) {
+			next.session.dispose();
+			throw error;
+		}
+
+		this.apply(next);
+	}
+
+	private async replaceSession(
+		reason: "new" | "resume" | "fork",
+		sessionManager: SessionStore,
+		cwd: string,
+		previousSessionFile: string | undefined,
+		withSession?: (ctx: ReplacedSessionContext) => Promise<void>,
+	): Promise<void> {
+		await this.startSession(reason, sessionManager, cwd, previousSessionFile);
+		await this.finishSessionReplacement(withSession);
 	}
 
 	private async finishSessionReplacement(
@@ -187,6 +234,7 @@ export class AgentSessionRuntime {
 		}
 	}
 
+	// Switch
 	async switchSession(
 		sessionPath: string,
 		options?: {
@@ -196,44 +244,49 @@ export class AgentSessionRuntime {
 		},
 	): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("resume", sessionPath);
+
 		if (beforeResult.cancelled) {
 			return beforeResult;
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionManager = SessionManager.open(sessionPath, undefined, options?.cwdOverride);
+		const sessionManager = SessionStore.open(sessionPath, undefined, options?.cwdOverride);
 		assertSessionCwdExists(sessionManager, this.cwd);
 
-		await this.teardownCurrent("resume", sessionManager.getSessionFile());
-		this.apply(
-			await this.createRuntime({
-				cwd: sessionManager.getCwd(),
-				agentDir: this.services.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason: "resume", previousSessionFile },
-				projectTrustContext: options?.projectTrustContextFactory?.(sessionManager.getCwd()),
-			}),
+		const cwd = sessionManager.getCwd();
+		const projectTrustContext = options?.projectTrustContextFactory?.(cwd);
+
+		await this.startSession(
+			"resume",
+			sessionManager,
+			cwd,
+			previousSessionFile,
+			projectTrustContext,
 		);
 		await this.finishSessionReplacement(options?.withSession);
 
 		return { cancelled: false };
 	}
 
+	// Create
 	async newSession(options?: {
 		parentSession?: string;
-		setup?: (sessionManager: SessionManager) => Promise<void>;
+		setup?: (sessionManager: SessionStore) => Promise<void>;
 		withSession?: (ctx: ReplacedSessionContext) => Promise<void>;
 	}): Promise<{ cancelled: boolean }> {
 		const beforeResult = await this.emitBeforeSwitch("new");
+
 		if (beforeResult.cancelled) {
 			return beforeResult;
 		}
 
 		const previousSessionFile = this.session.sessionFile;
-		const sessionDir = this.session.sessionManager.getSessionDir();
-		const sessionManager = this.session.sessionManager.isPersisted()
-			? SessionManager.create(this.cwd, sessionDir)
-			: SessionManager.inMemory(this.cwd);
+		const previousSessionManager = this.session.sessionManager;
+		const sessionDir = previousSessionManager.getSessionDir();
+
+		const sessionManager = previousSessionManager.isPersisted()
+			? SessionStore.create(this.cwd, sessionDir)
+			: SessionStore.inMemory(this.cwd);
 
 		if (options?.parentSession) {
 			sessionManager.newSession({ parentSession: options.parentSession });
@@ -241,16 +294,26 @@ export class AgentSessionRuntime {
 
 		await this.startSession("new", sessionManager, this.cwd, previousSessionFile);
 
-		if (options?.setup) {
-			await options.setup(this.session.sessionManager);
-			this.session.refreshContext();
+		try {
+			if (options?.setup) {
+				await options.setup(this.session.sessionManager);
+				this.session.refreshContext();
+			}
+			await this.finishSessionReplacement(options?.withSession);
+		} catch (error) {
+			try {
+				await this.startSession("resume", previousSessionManager, this.cwd, previousSessionFile);
+				await this.finishSessionReplacement();
+			} catch (restoreError) {
+				throw new AggregateError([error, restoreError], "Session replacement failed");
+			}
+			throw error;
 		}
-
-		await this.finishSessionReplacement(options?.withSession);
 
 		return { cancelled: false };
 	}
 
+	// Fork
 	async fork(
 		entryId: string,
 		options?: {
@@ -260,6 +323,7 @@ export class AgentSessionRuntime {
 	): Promise<{ cancelled: boolean; selectedText?: string }> {
 		const position = options?.position ?? "before";
 		const beforeResult = await this.emitBeforeFork(entryId, { position });
+
 		if (beforeResult.cancelled) {
 			return { cancelled: true };
 		}
@@ -268,16 +332,18 @@ export class AgentSessionRuntime {
 		let selectedText: string | undefined;
 
 		const selectedEntry = this.session.sessionManager.getEntry(entryId);
+
 		if (!selectedEntry) {
-			throw new Error("Invalid entry ID for forking");
+			throw new Error("Invalid forking entry");
 		}
 
 		if (position === "at") {
 			targetLeafId = selectedEntry.id;
 		} else {
 			if (selectedEntry.type !== "message" || selectedEntry.message.role !== "user") {
-				throw new Error("Invalid entry ID for forking");
+				throw new Error("Invalid forking entry");
 			}
+
 			targetLeafId = selectedEntry.parentId;
 			selectedText = extractUserMessageText(selectedEntry.message.content);
 		}
@@ -287,46 +353,55 @@ export class AgentSessionRuntime {
 
 		if (persisted) {
 			const currentSessionFile = this.session.sessionFile;
+
 			if (!currentSessionFile) {
-				throw new Error("Persisted session is missing a session file");
+				throw new Error("Missing session file");
 			}
 
 			const sessionDir = this.session.sessionManager.getSessionDir();
+
 			if (!targetLeafId) {
-				const sessionManager = SessionManager.create(this.cwd, sessionDir);
+				const sessionManager = SessionStore.create(this.cwd, sessionDir);
 				sessionManager.newSession({ parentSession: currentSessionFile });
 
-				await this.startSession("fork", sessionManager, this.cwd, previousSessionFile);
-				await this.finishSessionReplacement(options?.withSession);
+				await this.replaceSession(
+					"fork",
+					sessionManager,
+					this.cwd,
+					previousSessionFile,
+					options?.withSession,
+				);
 
 				return { cancelled: false, selectedText };
 			}
 
 			if (!existsSync(currentSessionFile)) {
-				throw new Error(
-					"This session has not been saved yet. Send a message before cloning or forking it.",
-				);
+				throw new Error("Session not saved");
 			}
 
-			const sessionManager = SessionManager.open(currentSessionFile, sessionDir);
+			const sessionManager = SessionStore.open(currentSessionFile, sessionDir);
 			const forkedSessionPath = sessionManager.createBranchedSession(targetLeafId);
+
 			if (!forkedSessionPath) {
-				throw new Error("Failed to create forked session");
+				throw new Error("Fork failed");
 			}
 
-			await this.startSession(
+			await this.replaceSession(
 				"fork",
 				sessionManager,
 				sessionManager.getCwd(),
 				previousSessionFile,
+				options?.withSession,
 			);
-			await this.finishSessionReplacement(options?.withSession);
 
 			return { cancelled: false, selectedText };
 		}
 
-		const sessionManager = this.session.sessionManager;
-		await this.teardownCurrent("fork", sessionManager.getSessionFile());
+		const sessionManager = SessionStore.inMemory(
+			this.cwd,
+			undefined,
+			this.session.sessionManager.getEntries(),
+		);
 
 		if (targetLeafId) {
 			sessionManager.createBranchedSession(targetLeafId);
@@ -334,70 +409,70 @@ export class AgentSessionRuntime {
 			sessionManager.newSession({ parentSession: previousSessionFile });
 		}
 
-		this.apply(
-			await this.createRuntime({
-				cwd: this.cwd,
-				agentDir: this.services.agentDir,
-				sessionManager,
-				sessionStartEvent: { type: "session_start", reason: "fork", previousSessionFile },
-			}),
+		await this.replaceSession(
+			"fork",
+			sessionManager,
+			this.cwd,
+			previousSessionFile,
+			options?.withSession,
 		);
-		await this.finishSessionReplacement(options?.withSession);
 
 		return { cancelled: false, selectedText };
 	}
 
+	// Import
 	async importFromJsonl(inputPath: string, cwdOverride?: string): Promise<{ cancelled: boolean }> {
 		const resolvedPath = resolvePath(inputPath);
+
 		if (!existsSync(resolvedPath)) {
 			throw new SessionImportFileNotFoundError(resolvedPath);
 		}
 
 		const sessionDir = this.session.sessionManager.getSessionDir();
+
 		if (!existsSync(sessionDir)) {
 			mkdirSync(sessionDir, { recursive: true });
 		}
 
-		let destinationPath = join(sessionDir, basename(resolvedPath));
-		const sourceAlreadyStored = resolve(destinationPath) === resolvedPath;
-		if (!sourceAlreadyStored) {
-			const { name, ext } = parse(destinationPath);
-			let suffix = 1;
-			while (existsSync(destinationPath)) {
-				destinationPath = join(sessionDir, `${name}-${suffix++}${ext}`);
-			}
-		}
+		const fileName = basename(resolvedPath);
+		const storedPath = join(sessionDir, fileName);
+		const sourceAlreadyStored = resolve(storedPath) === resolvedPath;
+		const destinationPath = sourceAlreadyStored
+			? storedPath
+			: uniqueSessionPath(sessionDir, fileName);
+
 		const beforeResult = await this.emitBeforeSwitch("resume", destinationPath);
+
 		if (beforeResult.cancelled) {
 			return beforeResult;
 		}
 
 		const previousSessionFile = this.session.sessionFile;
+		let copied = false;
+
 		if (!sourceAlreadyStored) {
 			copyFileSync(resolvedPath, destinationPath, constants.COPYFILE_EXCL);
+			copied = true;
 		}
 
-		const sessionManager = SessionManager.open(destinationPath, sessionDir, cwdOverride);
-		assertSessionCwdExists(sessionManager, this.cwd);
+		let sessionManager: SessionStore;
 
-		await this.startSession(
+		try {
+			sessionManager = SessionStore.open(destinationPath, sessionDir, cwdOverride);
+			assertSessionCwdExists(sessionManager, this.cwd);
+		} catch (error) {
+			if (copied) rmSync(destinationPath, { force: true });
+			throw error;
+		}
+
+		await this.replaceSession(
 			"resume",
 			sessionManager,
 			sessionManager.getCwd(),
 			previousSessionFile,
 		);
-		await this.finishSessionReplacement();
 
 		return { cancelled: false };
-	}
-
-	async dispose(): Promise<void> {
-		await emitSessionShutdownEvent(this.session.extensionRunner, {
-			type: "session_shutdown",
-			reason: "quit",
-		});
-		this.beforeSessionInvalidate?.();
-		this.session.dispose();
 	}
 }
 
@@ -406,13 +481,13 @@ export async function createAgentSessionRuntime(
 	options: {
 		cwd: string;
 		agentDir: string;
-		sessionManager: SessionManager;
+		sessionManager: SessionStore;
 		sessionStartEvent?: SessionStartEvent;
 	},
-): Promise<AgentSessionRuntime> {
+): Promise<SessionRuntime> {
 	assertSessionCwdExists(options.sessionManager, options.cwd);
 	const result = await createRuntime(options);
-	return new AgentSessionRuntime(
+	return new SessionRuntime(
 		result.session,
 		result.services,
 		createRuntime,
@@ -428,4 +503,4 @@ export {
 	type CreateAgentSessionServicesOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
-} from "./agent-session-services.ts";
+} from "./services.ts";

@@ -1,23 +1,23 @@
 import { join } from "node:path";
 import type { ThinkingLevel } from "@huranth/gama-agent-core";
 import type { Model } from "@huranth/gama-ai";
-import { getAgentDir } from "../config.ts";
-import { resolvePath } from "../utils/paths.ts";
-import type { SessionStartEvent, ToolDefinition } from "./ext/index.ts";
-import { ModelRuntime } from "./model-runtime.ts";
+import { getAgentDir } from "../../config.ts";
+import { resolvePath } from "../../utils/paths.ts";
+import type { SessionStartEvent, ToolDefinition } from "../ext/index.ts";
+import { ModelHub } from "../model-run.ts";
 import {
 	DefaultResourceLoader,
 	type DefaultResourceLoaderOptions,
 	type ResourceLoader,
 	type ResourceLoaderReloadOptions,
-} from "./resource-loader.ts";
+} from "../resource-loader.ts";
 import {
 	type CreateAgentSessionOptions,
 	type CreateAgentSessionResult,
 	createAgentSession,
-} from "./sdk.ts";
-import type { SessionManager } from "./session-manager.ts";
-import { SettingsManager } from "./settings-manager.ts";
+} from "../kit.ts";
+import type { SessionStore } from "../sessions.ts";
+import { SettingsStore } from "../settings.ts";
 
 export interface AgentSessionRuntimeDiagnostic {
 	type: "info" | "warning" | "error";
@@ -27,8 +27,8 @@ export interface AgentSessionRuntimeDiagnostic {
 export interface CreateAgentSessionServicesOptions {
 	cwd: string;
 	agentDir?: string;
-	settingsManager?: SettingsManager;
-	modelRuntime?: ModelRuntime;
+	settingsManager?: SettingsStore;
+	modelRuntime?: ModelHub;
 	modelRuntimeSignal?: AbortSignal;
 	extensionFlagValues?: Map<string, boolean | string>;
 	resourceLoaderOptions?: Omit<
@@ -40,7 +40,7 @@ export interface CreateAgentSessionServicesOptions {
 
 export interface CreateAgentSessionFromServicesOptions {
 	services: AgentSessionServices;
-	sessionManager: SessionManager;
+	sessionManager: SessionStore;
 	sessionStartEvent?: SessionStartEvent;
 	model?: Model<any>;
 	thinkingLevel?: ThinkingLevel;
@@ -49,17 +49,19 @@ export interface CreateAgentSessionFromServicesOptions {
 	excludeTools?: CreateAgentSessionOptions["excludeTools"];
 	noTools?: CreateAgentSessionOptions["noTools"];
 	customTools?: ToolDefinition[];
+	enableHands?: boolean;
 }
 
 export interface AgentSessionServices {
 	cwd: string;
 	agentDir: string;
-	modelRuntime: ModelRuntime;
-	settingsManager: SettingsManager;
+	modelRuntime: ModelHub;
+	settingsManager: SettingsStore;
 	resourceLoader: ResourceLoader;
 	diagnostics: AgentSessionRuntimeDiagnostic[];
 }
 
+// Safe register
 function runRegistration(
 	diagnostics: AgentSessionRuntimeDiagnostic[],
 	extensionPath: string,
@@ -77,17 +79,17 @@ function runRegistration(
 	}
 }
 
+// Flag values
 function applyExtensionFlagValues(
 	resourceLoader: ResourceLoader,
 	extensionFlagValues: Map<string, boolean | string> | undefined,
 ): AgentSessionRuntimeDiagnostic[] {
-	if (!extensionFlagValues) {
-		return [];
-	}
+	if (!extensionFlagValues) return [];
 
 	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
 	const extensionsResult = resourceLoader.getExtensions();
 	const registeredFlags = new Map<string, { type: "boolean" | "string" }>();
+
 	for (const extension of extensionsResult.extensions) {
 		for (const [name, flag] of extension.flags) {
 			registeredFlags.set(name, { type: flag.type });
@@ -95,8 +97,10 @@ function applyExtensionFlagValues(
 	}
 
 	const unknownFlags: string[] = [];
+
 	for (const [name, value] of extensionFlagValues) {
 		const flag = registeredFlags.get(name);
+
 		if (!flag) {
 			unknownFlags.push(name);
 			continue;
@@ -130,6 +134,33 @@ function applyExtensionFlagValues(
 	return diagnostics;
 }
 
+function registerPendingProviders(
+	modelRuntime: ModelHub,
+	runtime: ReturnType<ResourceLoader["getExtensions"]>["runtime"],
+	diagnostics: AgentSessionRuntimeDiagnostic[],
+): void {
+	for (const item of runtime.pendingProviderRegistrations) {
+		runRegistration(diagnostics, item.extensionPath, () =>
+			modelRuntime.registerProvider(item.name, item.config),
+		);
+	}
+	runtime.pendingProviderRegistrations = [];
+
+	for (const item of runtime.pendingNativeProviderRegistrations) {
+		runRegistration(diagnostics, item.extensionPath, () =>
+			modelRuntime.registerNativeProvider(item.provider),
+		);
+	}
+	runtime.pendingNativeProviderRegistrations = [];
+
+	for (const item of runtime.pendingVirtualModelRegistrations) {
+		runRegistration(diagnostics, item.extensionPath, () =>
+			modelRuntime.registerVirtualModel(item.definition),
+		);
+	}
+	runtime.pendingVirtualModelRegistrations = [];
+}
+
 export async function createAgentSessionFromServices(
 	options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
@@ -147,6 +178,7 @@ export async function createAgentSessionFromServices(
 		excludeTools: options.excludeTools,
 		noTools: options.noTools,
 		customTools: options.customTools,
+		enableHands: options.enableHands,
 		sessionStartEvent: options.sessionStartEvent,
 	});
 }
@@ -159,12 +191,13 @@ export async function createAgentSessionServices(
 
 	const modelRuntime =
 		options.modelRuntime ??
-		(await ModelRuntime.create({
+		(await ModelHub.create({
 			authPath: join(agentDir, "auth.json"),
 			modelsPath: join(agentDir, "models.json"),
 			signal: options.modelRuntimeSignal,
 		}));
-	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+
+	const settingsManager = options.settingsManager ?? SettingsStore.create(cwd, agentDir);
 
 	const resourceLoader = new DefaultResourceLoader({
 		...(options.resourceLoaderOptions ?? {}),
@@ -175,31 +208,9 @@ export async function createAgentSessionServices(
 	await resourceLoader.reload(options.resourceLoaderReloadOptions);
 
 	const diagnostics: AgentSessionRuntimeDiagnostic[] = [];
-	const extensionsResult = resourceLoader.getExtensions();
+	const runtime = resourceLoader.getExtensions().runtime;
 
-	for (const { name, config, extensionPath } of extensionsResult.runtime
-		.pendingProviderRegistrations) {
-		runRegistration(diagnostics, extensionPath, () =>
-			modelRuntime.registerProvider(name, config),
-		);
-	}
-	extensionsResult.runtime.pendingProviderRegistrations = [];
-
-	for (const { provider, extensionPath } of extensionsResult.runtime
-		.pendingNativeProviderRegistrations) {
-		runRegistration(diagnostics, extensionPath, () =>
-			modelRuntime.registerNativeProvider(provider),
-		);
-	}
-	extensionsResult.runtime.pendingNativeProviderRegistrations = [];
-
-	for (const { definition, extensionPath } of extensionsResult.runtime
-		.pendingVirtualModelRegistrations) {
-		runRegistration(diagnostics, extensionPath, () =>
-			modelRuntime.registerVirtualModel(definition),
-		);
-	}
-	extensionsResult.runtime.pendingVirtualModelRegistrations = [];
+	registerPendingProviders(modelRuntime, runtime, diagnostics);
 
 	await modelRuntime.refresh({ allowNetwork: false });
 	diagnostics.push(...applyExtensionFlagValues(resourceLoader, options.extensionFlagValues));
