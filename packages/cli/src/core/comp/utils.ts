@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@huranth/gama-agent-core";
 import { contentText, type Message } from "@huranth/gama-ai";
 
-const TOOL_RESULT_MAX_CHARS = 2000;
+const TOOL_RESULT_MAX_CHARS = 1000;
 
 export interface FileOperations {
 	read: Set<string>;
@@ -10,12 +10,12 @@ export interface FileOperations {
 }
 
 export const SUMMARIZATION_SYSTEM_PROMPT =
-	"You are a context summarization assistant. Your task is to read a conversation " +
-	"between a user and an AI assistant, then produce a structured summary following " +
-	`the exact format specified.
+	`You are a context summarization assistant.
+Read a conversation between a user and an AI assistant, then ` +
+	`produce a structured summary following the exact format specified.
 
-Do NOT continue the conversation. Do NOT respond to any questions in the ` +
-	`conversation. ONLY output the structured summary.`;
+Do NOT continue the conversation. Do NOT ` +
+	`respond to any questions in the conversation. ONLY output the structured summary.`;
 
 export function createFileOps(): FileOperations {
 	return {
@@ -36,17 +36,19 @@ export function computeFileLists(fileOps: FileOperations): {
 	return { readFiles: readOnly, modifiedFiles };
 }
 
+function filePathOf(args: Record<string, unknown> | undefined): string | undefined {
+	if (typeof args?.path === "string") return args.path;
+	if (typeof args?.file_path === "string") return args.file_path;
+
+	return undefined;
+}
+
 function addFileOp(
 	toolName: string,
 	args: Record<string, unknown> | undefined,
 	fileOps: FileOperations,
 ): void {
-	const path =
-		typeof args?.path === "string"
-			? args.path
-			: typeof args?.file_path === "string"
-				? args.file_path
-				: undefined;
+	const path = filePathOf(args);
 	if (!path) return;
 
 	switch (toolName) {
@@ -74,17 +76,13 @@ function truncateForSummary(text: string, maxChars: number): string {
 }
 
 export function formatFileOperations(readFiles: string[], modifiedFiles: string[]): string {
-	const sections: string[] = [];
+	const lines = [
+		...modifiedFiles.map((file) => `- ${file} (edited)`),
+		...readFiles.map((file) => `- ${file} (read)`),
+	];
 
-	if (readFiles.length > 0) {
-		sections.push(`<read-files>\n${readFiles.join("\n")}\n</read-files>`);
-	}
-	if (modifiedFiles.length > 0) {
-		sections.push(`<modified-files>\n${modifiedFiles.join("\n")}\n</modified-files>`);
-	}
-
-	if (sections.length === 0) return "";
-	return `\n\n${sections.join("\n\n")}`;
+	if (lines.length === 0) return "";
+	return `\n\n## Files\n${lines.join("\n")}`;
 }
 
 export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOperations): void {
@@ -106,42 +104,48 @@ export function extractFileOpsFromMessage(message: AgentMessage, fileOps: FileOp
 	}
 }
 
+type AssistantContent = Extract<Message, { role: "assistant" }>["content"];
+
+function assistantParts(content: AssistantContent): string[] {
+	const parts: string[] = [];
+	const toolCalls: string[] = [];
+
+	for (const block of content) {
+		if (block.type !== "toolCall") continue;
+
+		const args = block.arguments as Record<string, unknown>;
+		const argsText = Object.entries(args)
+			.map(([key, value]) => `${key}=${JSON.stringify(value)}`)
+			.join(", ");
+		toolCalls.push(`${block.name}(${argsText})`);
+	}
+
+	if (content.some((block) => block.type === "text")) {
+		parts.push(`[Assistant]: ${contentText(content)}`);
+	}
+
+	if (toolCalls.length > 0) parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
+
+	return parts;
+}
+
 export function serializeConversation(messages: Message[]): string {
 	const parts: string[] = [];
 
-	for (const msg of messages) {
-		if (msg.role === "user") {
-			const content = contentText(msg.content, "");
+	for (const message of messages) {
+		if (message.role === "user") {
+			const content = contentText(message.content, "");
 			if (content) parts.push(`[User]: ${content}`);
-		} else if (msg.role === "assistant") {
-			const thinkingParts: string[] = [];
-			const toolCalls: string[] = [];
+			continue;
+		}
 
-			for (const block of msg.content) {
-				if (block.type === "thinking") {
-					thinkingParts.push(block.thinking);
-				} else if (block.type === "toolCall") {
-					const args = block.arguments as Record<string, unknown>;
-					const argsStr = Object.entries(args)
-						.map(([k, v]) => `${k}=${JSON.stringify(v)}`)
-						.join(", ");
-					toolCalls.push(`${block.name}(${argsStr})`);
-				}
-			}
+		if (message.role === "assistant") {
+			parts.push(...assistantParts(message.content));
+			continue;
+		}
 
-			if (thinkingParts.length > 0) {
-				parts.push(`[Assistant thinking]: ${thinkingParts.join("\n")}`);
-			}
-
-			if (msg.content.some((block) => block.type === "text")) {
-				parts.push(`[Assistant]: ${contentText(msg.content)}`);
-			}
-
-			if (toolCalls.length > 0) {
-				parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
-			}
-		} else if (msg.role === "toolResult") {
-			const content = contentText(msg.content, "");
+		if (message.role === "toolResult") {
+			const content = contentText(message.content, "");
 			if (content) {
 				parts.push(`[Tool result]: ${truncateForSummary(content, TOOL_RESULT_MAX_CHARS)}`);
 			}

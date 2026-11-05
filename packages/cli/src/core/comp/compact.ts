@@ -11,6 +11,7 @@ import {
 } from "@huranth/gama-ai";
 import type {
 	AssistantMessage,
+	Api,
 	Model,
 	SimpleStreamOptions,
 	SystemMessage,
@@ -18,7 +19,7 @@ import type {
 	Usage,
 } from "@huranth/gama-ai/compat";
 import { completeSimple } from "@huranth/gama-ai/compat";
-import { convertToLlm } from "../messages.ts";
+import { convertToLlm } from "../msg.ts";
 import {
 	buildSessionProjection,
 	type CompactionEntry,
@@ -26,20 +27,33 @@ import {
 	type SessionEntry,
 	type SessionProjection,
 	sessionEntryToContextMessages,
-} from "../session-manager.ts";
-import { combineUsage } from "../usage-totals.ts";
+} from "../sessions.ts";
+import { combineUsage } from "../usage.ts";
+import { buildCompactionMemory } from "./memory.ts";
 import {
 	computeFileLists,
 	createFileOps,
 	extractFileOpsFromMessage,
 	type FileOperations,
-	formatFileOperations,
 	SUMMARIZATION_SYSTEM_PROMPT,
 	serializeConversation,
 } from "./utils.ts";
 
+const CHARS_PER_TOKEN = 4;
+
 const MIN_SUMMARY_TOKENS = 1024;
+
+const MAX_SUMMARY_TOKENS = 2000;
+
 const MAX_RESERVE_RATIO = 0.9;
+
+const ESTIMATED_IMAGE_CHARS = 4800;
+
+const MAX_MEMORY_CHARS = 6000;
+
+const MIN_MEMORY_CHARS = 1200;
+
+const MEMORY_RESERVE_RATIO = 0.75;
 
 export interface CompactionDetails {
 	readFiles: string[];
@@ -101,11 +115,6 @@ function extractFileOperations(
 		const prevCompaction = entries[prevCompactionIndex] as CompactionEntry;
 		if (!prevCompaction.fromHook && prevCompaction.details) {
 			const details = prevCompaction.details as CompactionDetails;
-			if (Array.isArray(details.readFiles)) {
-				for (const f of details.readFiles) {
-					fileOps.read.add(f);
-				}
-			}
 			if (Array.isArray(details.modifiedFiles)) {
 				for (const f of details.modifiedFiles) {
 					fileOps.edited.add(f);
@@ -131,6 +140,11 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	reserveTokens: 16384,
 	keepRecentTokens: 20000,
 };
+
+function memoryBudget(reserveTokens: number): number {
+	const scaled = Math.floor(reserveTokens * MEMORY_RESERVE_RATIO);
+	return Math.min(MAX_MEMORY_CHARS, Math.max(MIN_MEMORY_CHARS, scaled));
+}
 
 export function calculateContextTokens(usage: Usage): number {
 	return usage.totalTokens || usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
@@ -172,14 +186,19 @@ function getLastAssistantUsageInfo(
 	return undefined;
 }
 
+function estimateMessagesTokens(messages: AgentMessage[]): number {
+	let tokens = 0;
+	for (const message of messages) {
+		tokens += estimateTokens(message);
+	}
+	return tokens;
+}
+
 export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
-		let estimated = 0;
-		for (const message of messages) {
-			estimated += estimateTokens(message);
-		}
+		const estimated = estimateMessagesTokens(messages);
 		return {
 			tokens: estimated,
 			usageTokens: 0,
@@ -241,6 +260,11 @@ export function estimateProjectedContextTokens(
 	return { tokens, usageTokens: 0, trailingTokens: tokens, lastUsageIndex: null };
 }
 
+function clampReserveTokens(configured: number, contextWindow: number): number {
+	const wanted = Math.max(0, configured);
+	return Math.min(wanted, Math.floor(contextWindow * MAX_RESERVE_RATIO));
+}
+
 export function shouldCompact(
 	contextTokens: number,
 	contextWindow: number,
@@ -248,14 +272,9 @@ export function shouldCompact(
 ): boolean {
 	if (!settings.enabled) return false;
 	if (contextWindow <= 0) return false;
-	const reserve = Math.min(
-		Math.max(0, settings.reserveTokens),
-		Math.floor(contextWindow * MAX_RESERVE_RATIO),
-	);
+	const reserve = clampReserveTokens(settings.reserveTokens, contextWindow);
 	return contextTokens > contextWindow - reserve;
 }
-
-const ESTIMATED_IMAGE_CHARS = 4800;
 
 function estimateTextAndImageContentChars(
 	content: string | Array<{ type: string; text?: string }>,
@@ -288,13 +307,13 @@ export function estimateTokens(message: AgentMessage): number {
 				}
 			}
 			if (system.toolsAdded) chars += JSON.stringify(system.toolsAdded).length;
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 		case "user": {
 			chars = estimateTextAndImageContentChars(
 				(message as { content: string | Array<{ type: string; text?: string }> }).content,
 			);
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 		case "assistant": {
 			const assistant = message as AssistantMessage;
@@ -307,21 +326,21 @@ export function estimateTokens(message: AgentMessage): number {
 					chars += block.name.length + JSON.stringify(block.arguments).length;
 				}
 			}
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 		case "custom":
 		case "toolResult": {
 			chars = estimateTextAndImageContentChars(message.content);
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 		case "bashExecution": {
 			chars = message.command.length + message.output.length;
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 		case "branchSummary":
 		case "compactionSummary": {
 			chars = message.summary.length;
-			return Math.ceil(chars / 4);
+			return Math.ceil(chars / CHARS_PER_TOKEN);
 		}
 	}
 
@@ -365,22 +384,82 @@ function isTurnStartEntry(entry: SessionEntry): boolean {
 	return sessionEntryToContextMessages(entry).some(isTurnStartMessage);
 }
 
+function collectCutPoints<T>(
+	entries: T[],
+	startIndex: number,
+	endIndex: number,
+	isSkipped: (entry: T) => boolean,
+	hasCutPoint: (entry: T) => boolean,
+): number[] {
+	const cutPoints: number[] = [];
+	for (let i = startIndex; i < endIndex; i++) {
+		const entry = entries[i];
+		if (isSkipped(entry)) continue;
+		if (hasCutPoint(entry)) cutPoints.push(i);
+	}
+	return cutPoints;
+}
+
+function scanBackForCutIndex<T>(
+	entries: T[],
+	startIndex: number,
+	endIndex: number,
+	keepRecentTokens: number,
+	cutPoints: number[],
+	tokensAt: (entry: T) => number,
+): { cutIndex: number; exceededBudget: boolean } {
+	let accumulatedTokens = 0;
+	let cutIndex = cutPoints[0];
+	for (let i = endIndex - 1; i >= startIndex; i--) {
+		const messageTokens = tokensAt(entries[i]);
+		if (messageTokens === 0) continue;
+		accumulatedTokens += messageTokens;
+		if (accumulatedTokens >= keepRecentTokens) {
+			const nextCut = cutPoints.find((candidate) => candidate >= i);
+			cutIndex = nextCut ?? cutPoints[cutPoints.length - 1];
+			return { cutIndex, exceededBudget: true };
+		}
+	}
+	return { cutIndex, exceededBudget: false };
+}
+
+function trimEmptyPrefix<T>(
+	entries: T[],
+	cutIndex: number,
+	startIndex: number,
+	isStopping: (entry: T) => boolean,
+): number {
+	while (cutIndex > startIndex) {
+		if (isStopping(entries[cutIndex - 1])) break;
+		cutIndex--;
+	}
+	return cutIndex;
+}
+
+function findTurnStart<T>(
+	entries: T[],
+	entryIndex: number,
+	startIndex: number,
+	isStart: (entry: T) => boolean,
+): number {
+	for (let i = entryIndex; i >= startIndex; i--) {
+		if (isStart(entries[i])) return i;
+	}
+	return -1;
+}
+
 function findValidCutPoints(
 	entries: SessionEntry[],
 	startIndex: number,
 	endIndex: number,
 ): number[] {
-	const cutPoints: number[] = [];
-	for (let i = startIndex; i < endIndex; i++) {
-		const entry = entries[i];
-		if (entry.type === "compaction") {
-			continue;
-		}
-		if (sessionEntryToContextMessages(entry).some(isCutPointMessage)) {
-			cutPoints.push(i);
-		}
-	}
-	return cutPoints;
+	return collectCutPoints(
+		entries,
+		startIndex,
+		endIndex,
+		(entry) => entry.type === "compaction",
+		(entry) => sessionEntryToContextMessages(entry).some(isCutPointMessage),
+	);
 }
 
 export function findTurnStartIndex(
@@ -388,12 +467,7 @@ export function findTurnStartIndex(
 	entryIndex: number,
 	startIndex: number,
 ): number {
-	for (let i = entryIndex; i >= startIndex; i--) {
-		if (isTurnStartEntry(entries[i])) {
-			return i;
-		}
-	}
-	return -1;
+	return findTurnStart(entries, entryIndex, startIndex, isTurnStartEntry);
 }
 
 export function findCutPoint(
@@ -408,32 +482,21 @@ export function findCutPoint(
 		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
 	}
 
-	let accumulatedTokens = 0;
-	let cutIndex = cutPoints[0];
-
-	for (let i = endIndex - 1; i >= startIndex; i--) {
-		const entry = entries[i];
-		const messageTokens = sessionEntryToContextMessages(entry).reduce(
-			(sum, message) => sum + estimateTokens(message),
-			0,
-		);
-		if (messageTokens === 0) continue;
-		accumulatedTokens += messageTokens;
-
-		if (accumulatedTokens >= keepRecentTokens) {
-			cutIndex =
-				cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
-			break;
-		}
-	}
-
-	while (cutIndex > startIndex) {
-		const prevEntry = entries[cutIndex - 1];
-		if (prevEntry.type === "compaction" || sessionEntryToContextMessages(prevEntry).length > 0) {
-			break;
-		}
-		cutIndex--;
-	}
+	const scan = scanBackForCutIndex(
+		entries,
+		startIndex,
+		endIndex,
+		keepRecentTokens,
+		cutPoints,
+		(entry) => estimateMessagesTokens(sessionEntryToContextMessages(entry)),
+	);
+	const cutIndex = trimEmptyPrefix(
+		entries,
+		scan.cutIndex,
+		startIndex,
+		(entry) =>
+			entry.type === "compaction" || sessionEntryToContextMessages(entry).length > 0,
+	);
 
 	const cutEntry = entries[cutIndex];
 	const startsTurn = isTurnStartEntry(cutEntry);
@@ -446,85 +509,63 @@ export function findCutPoint(
 	};
 }
 
+export const SUMMARY_FORMAT = `## Goal
+[What the user wants, in one or two sentences. Keep their wording where it defines scope.]
+
+## Now
+- Done: [finished work]
+- Active: [work in progress]
+- Next: [the next concrete action]
+
+## Rules
+- [User constraints or preferences that still apply]
+
+## Decisions
+- [What was decided and why]
+
+## Open
+- [Unanswered questions, blockers, or unfinished requests, in the user's words]
+
+## Verified
+- [Command or check and its result. Say what has not been run yet.]`;
+
+const CHECKPOINT_RULES = `Checkpoint rules:
+- One line per item, 20 words or less. No nested lists, no code blocks, no file contents.
+- Preserve exact paths, names, commands, numbers, and error text.
+- Write only what the next agent cannot recover by reading the files or running the code.
+- Do not describe the conversation, this checkpoint, or that context was compacted.
+- Newer information wins. Drop anything the work has moved past.
+- An exact appendix (requests, file excerpts, commands, answers) is added after your checkpoint.
+  Do not repeat it; add meaning, not inventory.
+- Aim for 400 tokens. Stop at 800.`;
+
 const SUMMARIZATION_PROMPT =
-	"The messages above are a conversation to summarize. Create a structured context " +
-	`checkpoint summary that another LLM will use to continue the work.
+	`The messages above are a conversation to summarize.
+Write a handoff checkpoint that another agent will read instead ` +
+	`of this history when it resumes the work.
 
-Use this EXACT format:
+Use this exact format. Leave out any section that has nothing to say:
 
-## Goal
-[What is the user trying to accomplish? Can be multiple items if the session ` +
-	`covers different tasks.]
+${SUMMARY_FORMAT}
 
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
-- [Or "(none)" if none were mentioned]
+${CHECKPOINT_RULES}`;
 
-## Progress
-### Done
-- [x] [Completed tasks/changes]
+const UPDATE_SUMMARIZATION_INSTRUCTIONS = `Rewrite the existing checkpoint as one current state.
+Rules:
+- Merge the new messages into the existing sections.
+- Move finished work into Done and drop stale or resolved items.
+- Keep unresolved requests and their exact wording.
+- Newer information wins over older information.
 
-### In Progress
-- [ ] [Current work]
+Use this exact format. Leave out any section that has nothing to say:
 
-### Blocked
-- [Issues preventing progress, if any]
+${SUMMARY_FORMAT}
 
-## Key Decisions
-- **[Decision]**: [Brief rationale]
-
-## Next Steps
-1. [Ordered list of what should happen next]
-
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
-
-const UPDATE_SUMMARIZATION_INSTRUCTIONS =
-	"Update the existing structured summary with new information. " +
-	`RULES:
-- PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when ` +
-	`completed
-- UPDATE "Next Steps" based on what was accomplished
-- PRESERVE exact file paths, function names, and error messages
-- If something is no longer relevant, you may remove it
-
-Use this EXACT format:
-
-## Goal
-[Preserve existing goals, add new ones if the task expanded]
-
-## Constraints & Preferences
-- [Preserve existing, add new ones discovered]
-
-## Progress
-### Done
-- [x] [Include previously done items AND newly completed items]
-
-### In Progress
-- [ ] [Current work - update based on progress]
-
-### Blocked
-- [Current blockers - remove if resolved]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale] (preserve all previous, add new)
-
-## Next Steps
-1. [Update based on current state]
-
-## Critical Context
-- [Preserve important context, add new if needed]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+${CHECKPOINT_RULES}`;
 
 const UPDATE_SUMMARIZATION_PROMPT =
-	"The messages above are NEW conversation messages to incorporate into the existing " +
-	`summary provided in <previous-summary> tags.
+	`The messages above are new conversation since the checkpoint in ` +
+	`<previous-summary>.
 
 ${UPDATE_SUMMARIZATION_INSTRUCTIONS}`;
 
@@ -545,7 +586,7 @@ export function getSummarizationFailure(
 }
 
 function createSummarizationOptions(
-	model: Model<any>,
+	model: Model<Api>,
 	maxTokens: number,
 	apiKey: string | undefined,
 	headers: Record<string, string> | undefined,
@@ -562,7 +603,7 @@ function createSummarizationOptions(
 }
 
 export async function completeSummarization(
-	model: Model<any>,
+	model: Model<Api>,
 	context: TranscriptContext,
 	options: SimpleStreamOptions,
 	streamFn?: StreamFn,
@@ -574,16 +615,20 @@ export async function completeSummarization(
 		cacheRetention: "none",
 		sessionId: options.sessionId ?? uuidv7(),
 	};
+	// Abort guard
+	requestOptions.signal?.throwIfAborted();
 	const produce = async (): Promise<AssistantMessage> =>
 		streamFn
 			? (await streamFn(model, context, requestOptions)).result()
 			: completeSimple(model, context, requestOptions);
-	return retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
+	const response = await retryAssistantCall(produce, retry, requestOptions.signal, callbacks);
+	requestOptions.signal?.throwIfAborted();
+	return response;
 }
 
 export async function generateSummary(
 	currentMessages: AgentMessage[],
-	model: Model<any>,
+	model: Model<Api>,
 	reserveTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
@@ -634,7 +679,7 @@ function buildSummarizationContext(promptText: string): TranscriptContext {
 
 export async function generateSummaryWithUsage(
 	currentMessages: AgentMessage[],
-	model: Model<any>,
+	model: Model<Api>,
 	reserveTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
@@ -649,13 +694,15 @@ export async function generateSummaryWithUsage(
 	sessionId?: string,
 	lineage?: SummarizationLineage,
 ): Promise<{ text: string; usage: Usage }> {
+	signal?.throwIfAborted();
 	const contextWindow = model.contextWindow > 0 ? model.contextWindow : Number.POSITIVE_INFINITY;
-	const reserve = Math.min(
-		Math.max(0, reserveTokens),
-		Math.floor(contextWindow * MAX_RESERVE_RATIO),
-	);
+	const reserve = clampReserveTokens(reserveTokens, contextWindow);
 	const budget = Math.max(MIN_SUMMARY_TOKENS, Math.floor(0.8 * reserve));
-	const maxTokens = model.maxTokens > 0 ? Math.min(budget, model.maxTokens) : budget;
+	const maxTokens = Math.min(
+		budget,
+		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
+		MAX_SUMMARY_TOKENS,
+	);
 
 	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
 	if (customInstructions) {
@@ -715,12 +762,12 @@ export async function generateSummaryWithUsage(
 		throw new Error(failure);
 	}
 	if (response.content.some((block) => block.type === "toolCall")) {
-		throw new Error("Summarization attempted to call a tool");
+		throw new Error("Summary used tool");
 	}
 
 	const textContent = contentText(response.content);
 	if (textContent.trim() === "") {
-		throw new Error("Summarization returned no content");
+		throw new Error("Empty summary");
 	}
 
 	return { text: textContent, usage: response.usage };
@@ -736,10 +783,7 @@ function findProjectedTurnStartIndex(
 	entryIndex: number,
 	startIndex: number,
 ): number {
-	for (let i = entryIndex; i >= startIndex; i--) {
-		if (isProjectedTurnStart(entries[i])) return i;
-	}
-	return -1;
+	return findTurnStart(entries, entryIndex, startIndex, isProjectedTurnStart);
 }
 
 function findProjectedCutPoint(
@@ -748,35 +792,27 @@ function findProjectedCutPoint(
 	endIndex: number,
 	keepRecentTokens: number,
 ): CutPointResult {
-	const cutPoints: number[] = [];
-	for (let i = startIndex; i < endIndex; i++) {
-		const entry = entries[i];
-		if (entry.sourceEntry.type === "compaction") continue;
-		if (entry.messages.some(isCutPointMessage)) {
-			cutPoints.push(i);
-		}
-	}
+	const cutPoints = collectCutPoints(
+		entries,
+		startIndex,
+		endIndex,
+		(entry) => entry.sourceEntry.type === "compaction",
+		(entry) => entry.messages.some(isCutPointMessage),
+	);
 	if (cutPoints.length === 0) {
 		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
 	}
 
-	let accumulatedTokens = 0;
-	let exceededBudget = false;
-	let cutIndex = cutPoints[0];
-	for (let i = endIndex - 1; i >= startIndex; i--) {
-		const messageTokens = entries[i].messages.reduce(
-			(sum, message) => sum + estimateTokens(message),
-			0,
-		);
-		if (messageTokens === 0) continue;
-		accumulatedTokens += messageTokens;
-		if (accumulatedTokens >= keepRecentTokens) {
-			exceededBudget = true;
-			cutIndex =
-				cutPoints.find((candidate) => candidate >= i) ?? cutPoints[cutPoints.length - 1];
-			break;
-		}
-	}
+	const scan = scanBackForCutIndex(
+		entries,
+		startIndex,
+		endIndex,
+		keepRecentTokens,
+		cutPoints,
+		(entry) => estimateMessagesTokens(entry.messages),
+	);
+	const exceededBudget = scan.exceededBudget;
+	let cutIndex = scan.cutIndex;
 
 	const suffix = entries.slice(cutIndex + 1, endIndex);
 	const isIntrinsicallyVisible = (entry: ProjectedSessionEntry): boolean =>
@@ -807,11 +843,12 @@ function findProjectedCutPoint(
 		);
 	if (isRecoveryOmissionSuffix) cutIndex++;
 
-	while (cutIndex > startIndex) {
-		const previous = entries[cutIndex - 1];
-		if (previous.sourceEntry.type === "compaction" || previous.messages.length > 0) break;
-		cutIndex--;
-	}
+	cutIndex = trimEmptyPrefix(
+		entries,
+		cutIndex,
+		startIndex,
+		(entry) => entry.sourceEntry.type === "compaction" || entry.messages.length > 0,
+	);
 	const startsTurn = isProjectedTurnStart(entries[cutIndex]);
 	const turnStartIndex = startsTurn
 		? -1
@@ -898,20 +935,16 @@ Create a concise checkpoint of the user's request and the progress shown above. 
 	`checkpoint will be placed before the later messages so the conversation can continue ` +
 	`with the necessary context.
 
-## Original Request
-[What did the user ask for?]
-
-## Progress So Far
-- [Key decisions and work completed in these messages]
-
-## Context Needed to Continue
-- [Information from these messages needed to understand the later work]
+Return 2 to 5 bullets, one line each, with no headings:
+- What the user asked for
+- Decisions and work completed
+- Facts needed to understand the later messages
 
 Only summarize information explicitly present above. Do not infer or recreate later messages.`;
 
 export async function compact(
 	preparation: CompactionPreparation,
-	model: Model<any>,
+	model: Model<Api>,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
 	customInstructions?: string,
@@ -962,6 +995,8 @@ export async function compact(
 			historyText = historyResult.text;
 			historyUsage = historyResult.usage;
 		}
+		// Cancel guard
+		signal?.throwIfAborted();
 		const turnPrefixResult = await generateTurnPrefixSummary(
 			turnPrefixMessages,
 			model,
@@ -976,7 +1011,7 @@ export async function compact(
 			callbacks,
 			sessionId,
 		);
-		summary = `${historyText}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult.text}`;
+		summary = `${historyText}\n\n## Earlier In This Turn\n\n${turnPrefixResult.text}`;
 		summaryUsage = historyUsage
 			? combineUsage(historyUsage, turnPrefixResult.usage)
 			: turnPrefixResult.usage;
@@ -1003,11 +1038,18 @@ export async function compact(
 	}
 
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
-	summary += formatFileOperations(readFiles, modifiedFiles);
+	summary += buildCompactionMemory({
+		messages: isSplitTurn ? [...messagesToSummarize, ...turnPrefixMessages] : messagesToSummarize,
+		fileOps,
+		maxChars: memoryBudget(settings.reserveTokens),
+	});
 
 	if (!firstKeptEntryId) {
-		throw new Error("First kept entry has no UUID - session may need migration");
+		throw new Error("Entry missing UUID");
 	}
+
+	// Abort guard
+	signal?.throwIfAborted();
 
 	return {
 		summary,
@@ -1020,7 +1062,7 @@ export async function compact(
 
 async function generateTurnPrefixSummary(
 	messages: AgentMessage[],
-	model: Model<any>,
+	model: Model<Api>,
 	reserveTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
@@ -1032,13 +1074,15 @@ async function generateTurnPrefixSummary(
 	callbacks?: RetryCallbacks,
 	sessionId?: string,
 ): Promise<{ text: string; usage: Usage }> {
+	signal?.throwIfAborted();
 	const contextWindow = model.contextWindow > 0 ? model.contextWindow : Number.POSITIVE_INFINITY;
-	const reserve = Math.min(
-		Math.max(0, reserveTokens),
-		Math.floor(contextWindow * MAX_RESERVE_RATIO),
-	);
+	const reserve = clampReserveTokens(reserveTokens, contextWindow);
 	const budget = Math.max(MIN_SUMMARY_TOKENS, Math.floor(0.5 * reserve));
-	const maxTokens = model.maxTokens > 0 ? Math.min(budget, model.maxTokens) : budget;
+	const maxTokens = Math.min(
+		budget,
+		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
+		MAX_SUMMARY_TOKENS,
+	);
 	const llmMessages = convertToLlm(messages);
 	const conversationText = serializeConversation(llmMessages);
 	const promptText = [
@@ -1072,11 +1116,13 @@ async function generateTurnPrefixSummary(
 		throw new Error(failure);
 	}
 	if (response.content.some((block) => block.type === "toolCall")) {
-		throw new Error("Turn prefix summarization attempted to call a tool");
+		throw new Error("Summary used tool");
 	}
 
-	return {
-		text: contentText(response.content),
-		usage: response.usage,
-	};
+	const text = contentText(response.content).trim();
+	if (!text) {
+		throw new Error("Empty summary");
+	}
+
+	return { text, usage: response.usage };
 }

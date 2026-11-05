@@ -1,15 +1,22 @@
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@huranth/gama-agent-core";
 import type { RetryCallbacks, RetryPolicy } from "@huranth/gama-ai";
 import { contentText, normalizeContext } from "@huranth/gama-ai";
-import type { Model, SimpleStreamOptions, Usage } from "@huranth/gama-ai/compat";
+import type { Api, Model, SimpleStreamOptions, Usage } from "@huranth/gama-ai/compat";
+import { DEFAULT_CONTEXT_WINDOW } from "../custom-provider.ts";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,
 	createCompactionSummaryMessage,
 	createCustomMessage,
-} from "../messages.ts";
-import type { ReadonlySessionManager, SessionEntry } from "../session-manager.ts";
-import { completeSummarization, estimateTokens, getSummarizationFailure } from "./compaction.ts";
+} from "../msg.ts";
+import type { ReadonlySessionManager, SessionEntry } from "../sessions.ts";
+import {
+	completeSummarization,
+	DEFAULT_COMPACTION_SETTINGS,
+	estimateTokens,
+	getSummarizationFailure,
+	SUMMARY_FORMAT,
+} from "./compact.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -23,39 +30,22 @@ import {
 export type { FileOperations } from "./utils.ts";
 
 const BRANCH_SUMMARY_PREAMBLE =
-	"The user explored a different conversation branch before returning here.\n" +
-	"Summary of that exploration:\n\n";
+	`The user explored a different conversation branch ` +
+	`before returning here.
+Summary of that exploration:
+
+`;
 
 const BRANCH_SUMMARY_PROMPT =
-	"Create a structured summary of this conversation branch for context when " +
-	`returning later.
+	`Create a checkpoint of this conversation branch for context ` +
+	`when returning later.
 
-Use this EXACT format:
+Use this exact format. Leave out any section that has nothing to say:
 
-## Goal
-[What was the user trying to accomplish in this branch?]
+${SUMMARY_FORMAT}
 
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned]
-- [Or "(none)" if none were mentioned]
-
-## Progress
-### Done
-- [x] [Completed tasks/changes]
-
-### In Progress
-- [ ] [Work that was started but not finished]
-
-### Blocked
-- [Issues preventing progress, if any]
-
-## Key Decisions
-- **[Decision]**: [Brief rationale]
-
-## Next Steps
-1. [What should happen next to continue this work]
-
-Keep each section concise. Preserve exact file paths, function names, and error messages.`;
+Keep each item to one line. Preserve exact paths, names, commands, and error text.
+Do not describe the branch or this summary.`;
 
 function getMessageFromEntry(entry: SessionEntry): AgentMessage | undefined {
 	switch (entry.type) {
@@ -113,7 +103,7 @@ export interface CollectEntriesResult {
 }
 
 export interface GenerateBranchSummaryOptions {
-	model: Model<any>;
+	model: Model<Api>;
 	apiKey?: string;
 	headers?: Record<string, string>;
 	env?: Record<string, string>;
@@ -175,7 +165,7 @@ export async function generateBranchSummary(
 		signal,
 		customInstructions,
 		replaceInstructions,
-		reserveTokens = 16384,
+		reserveTokens = DEFAULT_COMPACTION_SETTINGS.reserveTokens,
 		streamFn,
 		retry,
 		callbacks,
@@ -183,7 +173,9 @@ export async function generateBranchSummary(
 		thinkingLevel,
 	} = options;
 
-	const contextWindow = model.contextWindow || 128000;
+	if (signal.aborted) return { aborted: true };
+
+	const contextWindow = model.contextWindow || DEFAULT_CONTEXT_WINDOW;
 
 	const reserve = Math.max(0, Math.min(reserveTokens, Math.floor(contextWindow * 0.9)));
 	const tokenBudget = contextWindow - reserve;
@@ -216,7 +208,7 @@ export async function generateBranchSummary(
 	];
 
 	const maxTokens = Math.min(
-		4096,
+		1200,
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
 	);
 
@@ -246,7 +238,7 @@ export async function generateBranchSummary(
 		callbacks,
 	);
 
-	if (response.stopReason === "aborted") {
+	if (response.stopReason === "aborted" || signal.aborted) {
 		return { aborted: true };
 	}
 	const failure = getSummarizationFailure(response, "Branch summarization");
@@ -254,18 +246,23 @@ export async function generateBranchSummary(
 		return { error: failure };
 	}
 	if (response.content.some((block) => block.type === "toolCall")) {
-		return { error: "Branch summarization attempted to call a tool" };
+		return { error: "Tool call blocked" };
 	}
 
-	let summary = contentText(response.content);
+	// Stale guard
+	if (signal.aborted) return { aborted: true };
 
-	summary = BRANCH_SUMMARY_PREAMBLE + summary;
+	const text = contentText(response.content);
+	if (text.trim() === "") {
+		throw new Error("Empty summary");
+	}
 
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
-	summary += formatFileOperations(readFiles, modifiedFiles);
+	const filesText = formatFileOperations(readFiles, modifiedFiles);
+	const summary = BRANCH_SUMMARY_PREAMBLE + text + filesText;
 
 	return {
-		summary: summary || "No summary generated",
+		summary,
 		usage: response.usage,
 		readFiles,
 		modifiedFiles,
@@ -301,14 +298,13 @@ export function prepareBranchEntries(
 		const message = getMessageFromEntry(entry);
 		if (!message) continue;
 
-		extractFileOpsFromMessage(message, fileOps);
-
 		const tokens = estimateTokens(message);
 
 		if (tokenBudget > 0 && totalTokens + tokens > tokenBudget) {
 			if (entry.type === "compaction" || entry.type === "branch_summary") {
 				if (totalTokens < tokenBudget * 0.9) {
 					messages.unshift(message);
+					extractFileOpsFromMessage(message, fileOps);
 					totalTokens += tokens;
 				}
 			}
@@ -316,6 +312,7 @@ export function prepareBranchEntries(
 		}
 
 		messages.unshift(message);
+		extractFileOpsFromMessage(message, fileOps);
 		totalTokens += tokens;
 	}
 
