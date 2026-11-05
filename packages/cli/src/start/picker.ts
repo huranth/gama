@@ -1,9 +1,9 @@
-import { setKeybindings } from "@huranth/gama-tui";
-import { KeybindingsManager } from "../core/keybindings.ts";
-import type { SessionInfo, SessionListProgress } from "../core/session-manager.ts";
-import type { SettingsManager } from "../core/settings-manager.ts";
-import { SessionSelectorComponent } from "../modes/tui/parts/session-selector.ts";
-import { createStartupTui, startStartupTui } from "./startup-ui.ts";
+import { getKeybindings, setKeybindings } from "@huranth/gama-tui";
+import { Keymap } from "../core/hotkeys.ts";
+import type { SessionInfo, SessionListProgress } from "../core/sessions.ts";
+import type { SettingsStore } from "../core/settings.ts";
+import { SessionSelectorComponent } from "../term/parts/session-selector.ts";
+import { createStartupTui, startStartupTui } from "./ui.ts";
 
 type SessionsLoader = (
 	onProgress?: SessionListProgress,
@@ -13,26 +13,29 @@ type SessionsLoader = (
 export async function selectSession(
 	currentSessionsLoader: SessionsLoader,
 	allSessionsLoader: SessionsLoader,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 ): Promise<string | null> {
 	const ui = await createStartupTui(settingsManager);
-	return new Promise((resolve) => {
-		const keybindings = KeybindingsManager.create();
+	return new Promise((finishWith) => {
+		const previousKeybindings = getKeybindings();
+		const keybindings = Keymap.create();
 		setKeybindings(keybindings);
-		let resolved = false;
+		let settled = false;
 
 		// Settle once
 		const finish = (path: string | null) => {
-			if (resolved) return;
-			resolved = true;
+			if (settled) return;
+			settled = true;
+			setKeybindings(previousKeybindings);
+			selector.dispose();
 			ui.stop();
-			resolve(path);
+			finishWith(path);
 		};
 
 		const selector = new SessionSelectorComponent(
 			currentSessionsLoader,
 			allSessionsLoader,
-			(path) => finish(path),
+			finish,
 			() => finish(null),
 			() => {
 				ui.stop();

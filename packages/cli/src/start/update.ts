@@ -36,39 +36,45 @@ function runStep(command: string, args: string[]): Promise<number> {
 	});
 }
 
+function errorSuffix(error: unknown): string {
+	return error instanceof Error && error.message ? `: ${error.message}` : "";
+}
+
+function defaultGetCommand(version: string): SelfUpdateCommand | undefined {
+	return getSelfUpdateCommand(PACKAGE_NAME, undefined, {
+		packageName: PACKAGE_NAME,
+		installSpec: `${PACKAGE_NAME}@${version}`,
+	});
+}
+
 export async function runUpdateCommand(options: UpdateCommandOptions = {}): Promise<number> {
 	const currentVersion = options.currentVersion ?? VERSION;
-	const fetchLatest = options.fetchLatest ?? ((version: string) => getLatestGamaRelease(version));
-	const getCommand =
-		options.getCommand ??
-		((version: string) =>
-			getSelfUpdateCommand(PACKAGE_NAME, undefined, {
-				packageName: PACKAGE_NAME,
-				installSpec: `${PACKAGE_NAME}@${version}`,
-			}));
+	const fetchLatest = options.fetchLatest ?? getLatestGamaRelease;
+	const getCommand = options.getCommand ?? defaultGetCommand;
 	const run = options.run ?? runStep;
 
 	let release: LatestGamaRelease | undefined;
 	let reason = "";
+
 	try {
 		release = await fetchLatest(currentVersion);
 	} catch (error) {
 		release = undefined;
-		reason = error instanceof Error && error.message ? `: ${error.message}` : "";
+		reason = errorSuffix(error);
 	}
 
 	if (!release) {
-		console.error(`Could not check for updates${reason}`);
+		console.error(`Update check failed${reason}`);
 		return 1;
 	}
 
 	if (!valid(release.version)) {
-		console.error(`Update check returned an invalid version: ${release.version}`);
+		console.error(`Invalid version: ${release.version}`);
 		return 1;
 	}
 
 	if (!isNewerPackageVersion(release.version, currentVersion)) {
-		console.log(`${APP_NAME} is up to date (${currentVersion})`);
+		console.log(`Up to date: ${currentVersion}`);
 		return 0;
 	}
 
@@ -95,8 +101,7 @@ export async function runUpdateCommand(options: UpdateCommandOptions = {}): Prom
 			}
 		}
 	} catch (error) {
-		const message = error instanceof Error && error.message ? `: ${error.message}` : "";
-		console.error(`Update failed${message}`);
+		console.error(`Update failed${errorSuffix(error)}`);
 		return 1;
 	}
 

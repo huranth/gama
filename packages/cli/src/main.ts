@@ -1,7 +1,53 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { createInterface } from "node:readline";
 import { type ImageContent, modelsAreEqual } from "@huranth/gama-ai";
 import { setCapabilityOverrides } from "@huranth/gama-tui";
 import chalk from "chalk";
+import {
+	APP_NAME,
+	ENV_AGENT_DIR,
+	ENV_SESSION_DIR,
+	expandTildePath,
+	getAgentDir,
+	VERSION,
+} from "./config.ts";
+import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
+import type { InlineExtension } from "./core/ext/types.ts";
+import { exportFromFile } from "./core/html/index.ts";
+import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
+import type { CreateAgentSessionOptions } from "./core/kit.ts";
+import type { ModelHub } from "./core/model-run.ts";
+import { formatNotice } from "./core/notices.ts";
+import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
+import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/pick.ts";
+import { isTruthyEnvFlag } from "./core/ping.ts";
+import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
+import {
+	type CreateAgentSessionRuntimeFactory,
+	createAgentSessionRuntime,
+} from "./core/session/runtime.ts";
+import {
+	type AgentSessionRuntimeDiagnostic,
+	createAgentSessionFromServices,
+	createAgentSessionServices,
+} from "./core/session/services.ts";
+import {
+	formatMissingSessionCwdPrompt,
+	getMissingSessionCwdIssue,
+	MissingSessionCwdError,
+	type SessionCwdIssue,
+} from "./core/session-cwd.ts";
+import { assertValidSessionId, SessionStore } from "./core/sessions.ts";
+import { SettingsStore } from "./core/settings.ts";
+import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/settings-err.ts";
+import { printTimings, resetTimings, time } from "./core/timings.ts";
+import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
+import { builtInExtensions } from "./ext/index.ts";
+import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
+import { runPrintMode } from "./print.ts";
+import { runRpcMode } from "./rpc/server.ts";
 import {
 	type Args,
 	type Mode,
@@ -9,55 +55,31 @@ import {
 	parseArgs,
 	printHelp,
 	restoreBooleanFlagValues,
-} from "./cli/args.ts";
-import { processFileArguments } from "./cli/file-processor.ts";
-import { buildInitialMessage } from "./cli/initial-message.ts";
-import { listModels } from "./cli/list-models.ts";
-import { createProjectTrustContext } from "./cli/project-trust.ts";
-import { selectSession } from "./cli/session-picker.ts";
-import {
-	shouldRunFirstTimeSetup,
-	showFirstTimeSetup,
-	showStartupSelector,
-} from "./cli/startup-ui.ts";
-import { APP_NAME, ENV_SESSION_DIR, expandTildePath, getAgentDir, VERSION } from "./config.ts";
-import {
-	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionRuntime,
-} from "./core/agent-session-runtime.ts";
-import {
-	type AgentSessionRuntimeDiagnostic,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
-} from "./core/agent-session-services.ts";
-import { formatNoModelsAvailableMessage } from "./core/auth-guidance.ts";
-import type { InlineExtension } from "./core/ext/types.ts";
-import { exportFromFile } from "./core/html/index.ts";
-import { applyHttpProxySettings, configureHttpDispatcher } from "./core/http-dispatcher.ts";
-import { resolveCliModel, resolveModelScope, type ScopedModel } from "./core/model-resolver.ts";
-import type { ModelRuntime } from "./core/model-runtime.ts";
-import { restoreStdout, takeOverStdout } from "./core/output-guard.ts";
-import { type AppMode, resolveProjectTrusted } from "./core/project-trust.ts";
-import type { CreateAgentSessionOptions } from "./core/sdk.ts";
-import {
-	formatMissingSessionCwdPrompt,
-	getMissingSessionCwdIssue,
-	MissingSessionCwdError,
-	type SessionCwdIssue,
-} from "./core/session-cwd.ts";
-import { assertValidSessionId, SessionManager } from "./core/session-manager.ts";
-import { collectSettingsDiagnostics, deduplicateDiagnostics } from "./core/settings-diagnostics.ts";
-import { SettingsManager } from "./core/settings-manager.ts";
-import { printTimings, resetTimings, time } from "./core/timings.ts";
-import { hasTrustRequiringProjectResources, ProjectTrustStore } from "./core/trust-manager.ts";
-import { builtInExtensions } from "./ext/index.ts";
-import { runMigrations, showDeprecationWarnings } from "./migrations.ts";
-import { InteractiveMode, runPrintMode, runRpcMode } from "./modes/index.ts";
-import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./modes/tui/theme/theme.ts";
-import { validateThemeJson } from "./modes/tui/theme/theme-json.ts";
+} from "./start/args.ts";
+import { processFileArguments } from "./start/files.ts";
+import { buildInitialMessage } from "./start/message.ts";
+import { listModels } from "./start/models.ts";
+import { selectSession } from "./start/picker.ts";
+import { createProjectTrustContext } from "./start/trust.ts";
+import { showStartupSelector } from "./start/ui.ts";
+import { TermApp } from "./term/app.ts";
+import { initTheme, setThemeJsonValidator, stopThemeWatcher } from "./term/theme/theme.ts";
+import { validateThemeJson } from "./term/theme/theme-json.ts";
 import { isLocalPath, normalizePath, resolvePath } from "./utils/paths.ts";
 
 const MODEL_LOAD_TIMEOUT_MS = 15_000;
+
+const BENCH_SETTLE_MS = 150;
+
+const SESSION_FILE_EXTENSIONS = [".gama", ".jsonl"];
+
+const WINDOWS_DRIVE_PATH = /^[a-zA-Z]:/;
+
+const EXTENSION_LOAD_FAILURE_HINT = `Hint: Start without extensions using "${APP_NAME} -ne"`;
+
+function errorText(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
+}
 
 type ResolvedSession =
 	| { type: "path"; path: string }
@@ -69,8 +91,6 @@ export interface MainOptions {
 	extensionFactories?: InlineExtension[];
 }
 
-const EXTENSION_LOAD_FAILURE_HINT = `Hint: Start without extensions using "${APP_NAME} -ne".`;
-
 async function readPipedStdin(): Promise<string | undefined> {
 	if (process.stdin.isTTY) {
 		return undefined;
@@ -78,13 +98,24 @@ async function readPipedStdin(): Promise<string | undefined> {
 
 	return new Promise((resolve) => {
 		let data = "";
-		process.stdin.setEncoding("utf8");
-		process.stdin.on("data", (chunk) => {
+		let settled = false;
+		const finish = (value: string | undefined) => {
+			if (settled) return;
+			settled = true;
+			process.stdin.off("data", onData);
+			process.stdin.off("end", onEnd);
+			process.stdin.off("error", onError);
+			resolve(value);
+		};
+		const onData = (chunk: string) => {
 			data += chunk;
-		});
-		process.stdin.on("end", () => {
-			resolve(data.trim() || undefined);
-		});
+		};
+		const onEnd = () => finish(data.trim() || undefined);
+		const onError = () => finish(undefined);
+		process.stdin.setEncoding("utf8");
+		process.stdin.on("data", onData);
+		process.stdin.on("end", onEnd);
+		process.stdin.on("error", onError);
 		process.stdin.resume();
 	});
 }
@@ -96,7 +127,7 @@ function reportDiagnostics(diagnostics: readonly AgentSessionRuntimeDiagnostic[]
 		const color = isError ? chalk.red : isWarning ? chalk.yellow : chalk.dim;
 		const prefix = isError ? "Error: " : isWarning ? "Warning: " : "";
 
-		console.error(color(`${prefix}${diagnostic.message}`));
+		console.error(color(`${prefix}${formatNotice(diagnostic.message)}`));
 	}
 }
 
@@ -108,7 +139,7 @@ function reportArgsDiagnostics(parsed: Args): void {
 		const color = isError ? chalk.red : chalk.yellow;
 		const label = isError ? "Error" : "Warning";
 
-		console.error(color(`${label}: ${diagnostic.message}`));
+		console.error(color(`${label}: ${formatNotice(diagnostic.message)}`));
 	}
 
 	if (parsed.diagnostics.some((diagnostic) => diagnostic.type === "error")) {
@@ -122,7 +153,7 @@ async function exportSessionOrExit(sessionFile: string, outputPath?: string): Pr
 	try {
 		result = await exportFromFile(sessionFile, outputPath);
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : "Failed to export session";
+		const message = error instanceof Error ? error.message : "Export failed";
 		console.error(chalk.red(`Error: ${message}`));
 		process.exit(1);
 	}
@@ -131,11 +162,7 @@ async function exportSessionOrExit(sessionFile: string, outputPath?: string): Pr
 	process.exit(0);
 }
 
-/**
- * Whether project settings may be read at startup, before the trust prompt.
- * Only trust that is already known without asking counts; a project that has
- * trust-requiring resources and no recorded decision stays untrusted here.
- */
+// Trust check
 export function isProjectTrustedAtStartup(
 	cwd: string,
 	trustOverride: boolean | undefined,
@@ -146,7 +173,7 @@ export function isProjectTrustedAtStartup(
 	);
 }
 
-function resolveSessionDir(parsed: Args, settingsManager: SettingsManager): string | undefined {
+function resolveSessionDir(parsed: Args, settingsManager: SettingsStore): string | undefined {
 	const explicit = parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined;
 	if (explicit) return explicit;
 
@@ -154,11 +181,6 @@ function resolveSessionDir(parsed: Args, settingsManager: SettingsManager): stri
 	if (fromEnv) return expandTildePath(fromEnv);
 
 	return settingsManager.getSessionDir();
-}
-
-function isTruthyEnvFlag(value: string | undefined): boolean {
-	if (!value) return false;
-	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
 function resolveAppMode(parsed: Args, stdinIsTTY: boolean, stdoutIsTTY: boolean): AppMode {
@@ -179,16 +201,13 @@ function toPrintOutputMode(appMode: AppMode): Exclude<Mode, "rpc"> {
 }
 
 function isPlainRuntimeMetadataCommand(parsed: Args): boolean {
-	return (
-		!parsed.print &&
-		parsed.mode === undefined &&
-		(parsed.help === true || parsed.listModels !== undefined)
-	);
+	return parsed.mode === undefined && (parsed.help === true || parsed.listModels !== undefined);
 }
 
 async function prepareInitialMessage(
 	parsed: Args,
 	stdinContent?: string,
+	cwd?: string,
 ): Promise<{
 	initialMessage?: string;
 	initialImages?: ImageContent[];
@@ -199,6 +218,7 @@ async function prepareInitialMessage(
 
 	const { text, images } = await processFileArguments(parsed.fileArgs, {
 		autoResizeImages: false,
+		cwd,
 	});
 	return buildInitialMessage({
 		parsed,
@@ -213,8 +233,18 @@ function findLocalSessionByExactId(
 	cwd: string,
 	sessionDir?: string,
 ): { type: "local"; path: string } | undefined {
-	const path = SessionManager.findById(cwd, sessionId, sessionDir);
+	const path = SessionStore.findById(cwd, sessionId, sessionDir);
 	return path ? { type: "local", path } : undefined;
+}
+
+function looksLikeSessionPath(value: string): boolean {
+	const lower = value.toLowerCase();
+	return (
+		value.includes("/") ||
+		value.includes("\\") ||
+		WINDOWS_DRIVE_PATH.test(value) ||
+		SESSION_FILE_EXTENSIONS.some((extension) => lower.endsWith(extension))
+	);
 }
 
 async function resolveSessionPath(
@@ -222,7 +252,7 @@ async function resolveSessionPath(
 	cwd: string,
 	sessionDir?: string,
 ): Promise<ResolvedSession> {
-	if (sessionArg.includes("/") || sessionArg.includes("\\") || sessionArg.endsWith(".jsonl")) {
+	if (looksLikeSessionPath(sessionArg)) {
 		return { type: "path", path: resolvePath(sessionArg, cwd) };
 	}
 
@@ -231,17 +261,17 @@ async function resolveSessionPath(
 		return exactLocalMatch;
 	}
 
-	const localSessions = await SessionManager.list(cwd, sessionDir);
-	const localMatch = localSessions.find((s) => s.id.startsWith(sessionArg));
+	const localSessions = await SessionStore.list(cwd, sessionDir);
+	const localMatch = localSessions.find((session) => session.id.startsWith(sessionArg));
 
 	if (localMatch) {
 		return { type: "local", path: localMatch.path };
 	}
 
-	const allSessions = await SessionManager.listAll(sessionDir);
+	const allSessions = await SessionStore.listAll(sessionDir);
 	const globalMatch =
-		allSessions.find((s) => s.id === sessionArg) ??
-		allSessions.find((s) => s.id.startsWith(sessionArg));
+		allSessions.find((session) => session.id === sessionArg) ??
+		allSessions.find((session) => session.id.startsWith(sessionArg));
 
 	if (globalMatch) {
 		return { type: "global", path: globalMatch.path, cwd: globalMatch.cwd };
@@ -256,62 +286,70 @@ async function promptConfirm(message: string): Promise<boolean> {
 			input: process.stdin,
 			output: process.stdout,
 		});
+		let settled = false;
+		let interfaceClosed = false;
+		const finish = (value: boolean) => {
+			if (settled) return;
+			settled = true;
+			resolve(value);
+			if (!interfaceClosed) {
+				interfaceClosed = true;
+				rl.close();
+			}
+		};
+		// Handle close
+		rl.on("close", () => {
+			interfaceClosed = true;
+			finish(false);
+		});
 		rl.question(`${message} [y/N] `, (answer) => {
-			rl.close();
-			resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+			finish(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
 		});
 	});
+}
+
+function conflictingFlags(parsed: Args, includeNoSession: boolean): string[] {
+	const flags = [
+		parsed.session ? "--session" : undefined,
+		parsed.continue ? "--continue" : undefined,
+		parsed.resume ? "--resume" : undefined,
+		includeNoSession && parsed.noSession ? "--no-session" : undefined,
+	];
+
+	return flags.filter((flag): flag is string => flag !== undefined);
+}
+
+function assertNoConflicts(_owner: string, flags: string[]): void {
+	if (flags.length === 0) return;
+
+	console.error(chalk.red(`Conflicting flags: ${flags.join(", ")}`));
+	process.exit(1);
 }
 
 function validateForkFlags(parsed: Args): void {
 	if (!parsed.fork) return;
 
-	const conflictingFlags = [
-		parsed.session ? "--session" : undefined,
-		parsed.continue ? "--continue" : undefined,
-		parsed.resume ? "--resume" : undefined,
-		parsed.noSession ? "--no-session" : undefined,
-	].filter((flag): flag is string => flag !== undefined);
-
-	if (conflictingFlags.length > 0) {
-		console.error(
-			chalk.red(`Error: --fork cannot be combined with ${conflictingFlags.join(", ")}`),
-		);
-		process.exit(1);
-	}
+	assertNoConflicts("--fork", conflictingFlags(parsed, true));
 }
 
 function validateSessionIdFlags(parsed: Args): void {
 	if (parsed.sessionId === undefined) return;
 
-	const conflictingFlags = [
-		parsed.session ? "--session" : undefined,
-		parsed.continue ? "--continue" : undefined,
-		parsed.resume ? "--resume" : undefined,
-	].filter((flag): flag is string => flag !== undefined);
-
-	if (conflictingFlags.length > 0) {
-		console.error(
-			chalk.red(`Error: --session-id cannot be combined with ${conflictingFlags.join(", ")}`),
-		);
-		process.exit(1);
-	}
+	assertNoConflicts("--session-id", conflictingFlags(parsed, false));
 
 	try {
 		assertValidSessionId(parsed.sessionId);
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`Error: ${errorText(error)}`));
 		process.exit(1);
 	}
 }
 
-function openSessionOrExit(path: string, sessionDir?: string): SessionManager {
+function openSessionOrExit(path: string, sessionDir?: string): SessionStore {
 	try {
-		return SessionManager.open(path, sessionDir);
+		return SessionStore.open(path, sessionDir);
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`Error: ${errorText(error)}`));
 		process.exit(1);
 	}
 }
@@ -321,12 +359,11 @@ function forkSessionOrExit(
 	cwd: string,
 	sessionDir?: string,
 	sessionId?: string,
-): SessionManager {
+): SessionStore {
 	try {
-		return SessionManager.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
+		return SessionStore.forkFrom(sourcePath, cwd, sessionDir, { id: sessionId });
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`Error: ${errorText(error)}`));
 		process.exit(1);
 	}
 }
@@ -335,10 +372,10 @@ export async function createSessionManager(
 	parsed: Args,
 	cwd: string,
 	sessionDir: string | undefined,
-	settingsManager: SettingsManager,
-): Promise<SessionManager> {
+	settingsManager: SettingsStore,
+): Promise<SessionStore> {
 	if (parsed.noSession || parsed.help || parsed.listModels !== undefined) {
-		return SessionManager.inMemory(
+		return SessionStore.inMemory(
 			cwd,
 			parsed.sessionId !== undefined ? { id: parsed.sessionId } : undefined,
 		);
@@ -348,7 +385,7 @@ export async function createSessionManager(
 		if (parsed.sessionId) {
 			const existingTarget = findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
 			if (existingTarget) {
-				console.error(chalk.red(`Session already exists with id '${parsed.sessionId}'`));
+				console.error(chalk.red(`Session exists: ${parsed.sessionId}`));
 				process.exit(1);
 			}
 		}
@@ -362,7 +399,7 @@ export async function createSessionManager(
 				return forkSessionOrExit(resolved.path, cwd, sessionDir, parsed.sessionId);
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(chalk.red(`Session not found: ${resolved.arg}`));
 				process.exit(1);
 		}
 	}
@@ -376,17 +413,20 @@ export async function createSessionManager(
 				return openSessionOrExit(resolved.path, sessionDir);
 
 			case "global": {
-				console.log(chalk.yellow(`Session found in different project: ${resolved.cwd}`));
-				const shouldFork = await promptConfirm("Fork this session into current directory?");
+				console.log(chalk.yellow(`Other project: ${resolved.cwd}`));
+				// Keep stdin.
+				const shouldFork = process.stdin.isTTY
+					? await promptConfirm("Fork this session into current directory?")
+					: true;
 				if (!shouldFork) {
-					console.log(chalk.dim("Aborted."));
+					console.log(chalk.dim("Aborted"));
 					process.exit(0);
 				}
 				return forkSessionOrExit(resolved.path, cwd, sessionDir);
 			}
 
 			case "not_found":
-				console.error(chalk.red(`No session found matching '${resolved.arg}'`));
+				console.error(chalk.red(`Session not found: ${resolved.arg}`));
 				process.exit(1);
 		}
 	}
@@ -394,49 +434,43 @@ export async function createSessionManager(
 	if (parsed.resume) {
 		try {
 			const selectedPath = await selectSession(
-				(onProgress, signal) => SessionManager.list(cwd, sessionDir, onProgress, signal),
-				(onProgress, signal) => SessionManager.listAll(sessionDir, onProgress, signal),
+				(onProgress, signal) => SessionStore.list(cwd, sessionDir, onProgress, signal),
+				(onProgress, signal) => SessionStore.listAll(sessionDir, onProgress, signal),
 				settingsManager,
 			);
 			if (!selectedPath) {
 				console.log(chalk.dim("No session selected"));
 				process.exit(0);
 			}
-			return SessionManager.open(selectedPath, sessionDir);
+			return SessionStore.open(selectedPath, sessionDir);
 		} finally {
 			stopThemeWatcher();
 		}
 	}
 
 	if (parsed.continue) {
-		return SessionManager.continueRecent(cwd, sessionDir);
+		return SessionStore.continueRecent(cwd, sessionDir);
 	}
 
 	if (parsed.sessionId) {
 		const existingSession = findLocalSessionByExactId(parsed.sessionId, cwd, sessionDir);
 		if (existingSession) {
-			return SessionManager.open(existingSession.path, sessionDir);
+			return SessionStore.open(existingSession.path, sessionDir);
 		}
-		console.error(
-			chalk.yellow(
-				`Warning: No project session found with id '${parsed.sessionId}'; ` +
-					"creating a new session with that id.",
-			),
-		);
+		console.error(chalk.yellow(`Session missing: ${parsed.sessionId}`));
 	}
 
 	try {
-		return SessionManager.create(cwd, sessionDir, { id: parsed.sessionId });
+		return SessionStore.create(cwd, sessionDir, { id: parsed.sessionId });
 	} catch (error: unknown) {
-		const message = error instanceof Error ? error.message : String(error);
-		console.error(chalk.red(`Error: ${message}`));
+		console.error(chalk.red(`Error: ${errorText(error)}`));
 		process.exit(1);
 	}
 }
 
 function findSavedScopedModel(
-	settingsManager: SettingsManager,
-	modelRuntime: ModelRuntime,
+	settingsManager: SettingsStore,
+	modelRuntime: ModelHub,
 	scopedModels: ScopedModel[],
 ): ScopedModel | undefined {
 	const provider = settingsManager.getDefaultProvider();
@@ -453,8 +487,8 @@ function buildSessionOptions(
 	parsed: Args,
 	scopedModels: ScopedModel[],
 	hasExistingSession: boolean,
-	modelRuntime: ModelRuntime,
-	settingsManager: SettingsManager,
+	modelRuntime: ModelHub,
+	settingsManager: SettingsStore,
 ): {
 	options: CreateAgentSessionOptions;
 	cliThinkingFromModel: boolean;
@@ -539,7 +573,7 @@ function resolveCliPaths(cwd: string, paths: string[] | undefined): string[] | u
 
 async function promptForMissingSessionCwd(
 	issue: SessionCwdIssue,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 ): Promise<string | undefined> {
 	return showStartupSelector(settingsManager, formatMissingSessionCwdPrompt(issue), [
 		{ label: "Continue", value: issue.fallbackCwd },
@@ -547,10 +581,25 @@ async function promptForMissingSessionCwd(
 	]);
 }
 
+function useFirstRunState(): void {
+	const dir = mkdtempSync(join(tmpdir(), `${APP_NAME}-first-run-`));
+	process.env[ENV_AGENT_DIR] = dir;
+	process.once("exit", () => {
+		try {
+			rmSync(dir, { recursive: true, force: true });
+		} catch {}
+	});
+}
+
 export async function main(args: string[], options?: MainOptions) {
 	resetTimings();
+	const parsed = parseArgs(args);
+	reportArgsDiagnostics(parsed);
+	time("parseArgs");
+
+	if (parsed.firstRun) useFirstRunState();
 	const extensionFactories = [...builtInExtensions, ...(options?.extensionFactories ?? [])];
-	const offlineMode = args.includes("--offline") || isTruthyEnvFlag(process.env.GAMA_OFFLINE);
+	const offlineMode = parsed.offline === true || isTruthyEnvFlag(process.env.GAMA_OFFLINE);
 	if (offlineMode) {
 		process.env.GAMA_OFFLINE = "1";
 		process.env.GAMA_SKIP_VERSION_CHECK = "1";
@@ -558,15 +607,11 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const cwd = process.cwd();
 	const agentDir = getAgentDir();
-	const bootstrapSettingsManager = SettingsManager.create(cwd, agentDir, {
+	const bootstrapSettingsManager = SettingsStore.create(cwd, agentDir, {
 		projectTrusted: false,
 	});
 	applyHttpProxySettings(bootstrapSettingsManager.getGlobalSettings().httpProxy);
 	configureHttpDispatcher();
-
-	const parsed = parseArgs(args);
-	reportArgsDiagnostics(parsed);
-	time("parseArgs");
 
 	if (parsed.version) {
 		console.log(VERSION);
@@ -584,7 +629,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 
 	if (parsed.mode === "rpc" && parsed.fileArgs.length > 0) {
-		console.error(chalk.red("Error: @file arguments are not supported in RPC mode"));
+		console.error(chalk.red("Invalid @files"));
 		process.exit(1);
 	}
 
@@ -595,20 +640,10 @@ export async function main(args: string[], options?: MainOptions) {
 	time("runMigrations");
 
 	const trustStore = new ProjectTrustStore(agentDir);
-	const startupSettingsManager = SettingsManager.create(cwd, agentDir, {
+	const startupSettingsManager = SettingsStore.create(cwd, agentDir, {
 		projectTrusted: isProjectTrustedAtStartup(cwd, parsed.projectTrustOverride, trustStore),
 	});
 	const startupSettingsDiagnostics = collectSettingsDiagnostics(startupSettingsManager);
-
-	if (
-		appMode === "interactive" &&
-		!parsed.help &&
-		parsed.listModels === undefined &&
-		shouldRunFirstTimeSetup()
-	) {
-		await showFirstTimeSetup(startupSettingsManager);
-		time("firstTimeSetup");
-	}
 
 	if (appMode === "interactive" && parsed.useTheme !== undefined) {
 		startupSettingsManager.applyOverrides({ theme: parsed.useTheme });
@@ -626,7 +661,7 @@ export async function main(args: string[], options?: MainOptions) {
 			if (!selectedCwd) {
 				process.exit(0);
 			}
-			sessionManager = SessionManager.open(
+			sessionManager = SessionStore.open(
 				missingSessionCwdIssue.sessionFile!,
 				sessionDir,
 				selectedCwd,
@@ -639,10 +674,18 @@ export async function main(args: string[], options?: MainOptions) {
 	if (parsed.name !== undefined) {
 		const name = normalizeSessionName(parsed.name);
 		if (name === undefined) {
-			console.error(chalk.red("Error: --name requires a non-empty value"));
+			console.error(chalk.red("Name required"));
 			process.exit(1);
 		}
 		sessionManager.appendSessionInfo(name);
+	}
+
+	const skippedLines = sessionManager.getSkippedLines();
+	if (skippedLines > 0) {
+		startupSettingsDiagnostics.push({
+			type: "warning",
+			message: `Skipped lines: ${skippedLines}`,
+		});
 	}
 	time("createSessionManager");
 
@@ -679,7 +722,7 @@ export async function main(args: string[], options?: MainOptions) {
 			: (cachedProjectTrust ??
 				parsed.projectTrustOverride ??
 				(!hasTrustRequiringResources || trustStore.get(cwd) === true));
-		const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
+		const runtimeSettingsManager = SettingsStore.create(cwd, agentDir, { projectTrusted });
 		const services = await createAgentSessionServices({
 			cwd,
 			agentDir,
@@ -689,23 +732,39 @@ export async function main(args: string[], options?: MainOptions) {
 			resourceLoaderReloadOptions: shouldResolveProjectTrust
 				? {
 						resolveProjectTrust: async ({ extensionsResult }) => {
+							const trustContext =
+								projectTrustContext ??
+								createProjectTrustContext({
+									cwd,
+									mode: isInitialRuntime ? trustPromptMode : appMode,
+									settingsManager: startupSettingsManager,
+									hasUI: isInitialRuntime && trustPromptMode === "interactive",
+								});
 							const trusted = await resolveProjectTrusted({
 								cwd,
 								trustStore,
 								trustOverride: parsed.projectTrustOverride,
 								defaultProjectTrust: startupSettingsManager.getDefaultProjectTrust(),
 								extensionsResult,
-								projectTrustContext:
-									projectTrustContext ??
-									createProjectTrustContext({
-										cwd,
-										mode: isInitialRuntime ? trustPromptMode : appMode,
-										settingsManager: startupSettingsManager,
-										hasUI: isInitialRuntime && trustPromptMode === "interactive",
-									}),
+								projectTrustContext: trustContext,
 								onExtensionError: (message) =>
 									projectTrustDiagnostics.push({ type: "warning", message }),
 							});
+							if (
+								!trusted &&
+								parsed.projectTrustOverride === undefined &&
+								!trustContext.hasUI &&
+								startupSettingsManager.getDefaultProjectTrust() === "ask" &&
+								trustStore.get(cwd) === null
+							) {
+								projectTrustDiagnostics.push({
+									type: "warning",
+									message:
+										`Project ${cwd} is not trusted; project settings, extensions,` +
+										` and resources were skipped. Run interactively to approve it` +
+										` or pass --approve.`,
+								});
+							}
 							projectTrustByCwd.set(cwd, trusted);
 							return trusted;
 						},
@@ -731,13 +790,13 @@ export async function main(args: string[], options?: MainOptions) {
 			...projectTrustDiagnostics,
 			...services.diagnostics,
 			...collectSettingsDiagnostics(settingsManager),
-			...resourceLoader.getExtensions().errors.map(({ path, error }) => ({
+			...resourceLoader.getExtensions().errors.map(({ path }) => ({
 				type: "error" as const,
-				message: `Failed to load extension "${path}": ${error}`,
+				message: `Extension failed: ${path}`,
 			})),
-			...(resourceLoader.getExtensions().warnings ?? []).map(({ path, warning }) => ({
+			...(resourceLoader.getExtensions().warnings ?? []).map(({ path }) => ({
 				type: "warning" as const,
-				message: `Extension package "${path}": ${warning}`,
+				message: `Extension warning: ${path}`,
 			})),
 		];
 
@@ -784,6 +843,7 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			enableHands: sessionOptions.tools === undefined && sessionOptions.noTools !== "all",
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {
@@ -844,7 +904,11 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	time("readPipedStdin");
 
-	const { initialMessage, initialImages } = await prepareInitialMessage(parsed, stdinContent);
+	const { initialMessage, initialImages } = await prepareInitialMessage(
+		parsed,
+		stdinContent,
+		sessionManager.getCwd(),
+	);
 	time("prepareInitialMessage");
 	setThemeJsonValidator(validateThemeJson);
 	initTheme(settingsManager.getTheme(), appMode === "interactive");
@@ -865,9 +929,7 @@ export async function main(args: string[], options?: MainOptions) {
 	}
 	if (hasRuntimeErrors) {
 		if (
-			runtime.diagnostics.some((diagnostic) =>
-				diagnostic.message.includes("Failed to load extension"),
-			)
+			runtime.diagnostics.some((diagnostic) => diagnostic.message.includes("Extension failed"))
 		) {
 			console.error(chalk.yellow(EXTENSION_LOAD_FAILURE_HINT));
 		}
@@ -882,7 +944,7 @@ export async function main(args: string[], options?: MainOptions) {
 
 	const startupBenchmark = isTruthyEnvFlag(process.env.GAMA_STARTUP_BENCHMARK);
 	if (startupBenchmark && appMode !== "interactive") {
-		console.error(chalk.red("Error: GAMA_STARTUP_BENCHMARK only supports interactive mode"));
+		console.error(chalk.red("Interactive mode only"));
 		process.exit(1);
 	}
 
@@ -899,7 +961,7 @@ export async function main(args: string[], options?: MainOptions) {
 		printTimings();
 		await runRpcMode(runtime);
 	} else if (appMode === "interactive") {
-		const interactiveMode = new InteractiveMode(runtime, {
+		const interactiveMode = new TermApp(runtime, {
 			migratedProviders,
 			startupDiagnostics,
 			modelFallbackMessage,
@@ -914,7 +976,7 @@ export async function main(args: string[], options?: MainOptions) {
 		if (startupBenchmark) {
 			await interactiveMode.init();
 			time("interactiveMode.init");
-			await new Promise((resolve) => setTimeout(resolve, 150));
+			await new Promise((resolve) => setTimeout(resolve, BENCH_SETTLE_MS));
 			interactiveMode.stop();
 			stopThemeWatcher();
 			printTimings();

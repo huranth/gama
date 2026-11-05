@@ -1,4 +1,5 @@
-export { type Args, parseArgs } from "./cli/args.ts";
+export { type Args, parseArgs } from "./start/args.ts";
+
 export {
 	CONFIG_DIR_NAME,
 	getAgentDir,
@@ -8,19 +9,23 @@ export {
 	getReadmePath,
 	VERSION,
 } from "./config.ts";
+
 export {
-	AgentSession,
+	RunSession,
 	type AgentSessionConfig,
-	type AgentSessionEvent,
+	type SessionEvent,
 	type AgentSessionEventListener,
 	type ModelCycleResult,
 	type ParsedSkillBlock,
 	type PromptOptions,
 	parseSkillBlock,
 	type SessionStats,
-} from "./core/agent-session.ts";
-export { readStoredCredential } from "./core/auth-storage.ts";
+} from "./core/session/session.ts";
+
+export { readStoredCredential } from "./core/vault.ts";
+
 export * from "./core/cache/index.ts";
+
 export {
 	type BranchPreparation,
 	type BranchSummaryResult,
@@ -44,7 +49,9 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./core/comp/index.ts";
+
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
+
 export type {
 	AfterProviderResponseEvent,
 	AgentActivityOutcome,
@@ -108,7 +115,7 @@ export type {
 	InputEvent,
 	InputEventResult,
 	InputSource,
-	KeybindingsManager,
+	Keymap,
 	LoadExtensionsResult,
 	LsToolCallEvent,
 	MarkdownTransformContext,
@@ -187,11 +194,12 @@ export type {
 	WorkingIndicatorOptions,
 	WriteToolCallEvent,
 } from "./core/ext/index.ts";
+
 export {
 	createExtensionRuntime,
 	defineTool,
 	discoverAndLoadExtensions,
-	ExtensionRunner,
+	PluginHost,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,
@@ -204,9 +212,13 @@ export {
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 } from "./core/ext/index.ts";
+
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
-export { convertToLlm } from "./core/messages.ts";
-export { ModelRegistry } from "./core/model-registry.ts";
+
+export { convertToLlm } from "./core/msg.ts";
+
+export { ModelRegistry } from "./core/roster.ts";
+
 export {
 	type ModelScopeDiagnostic,
 	type ResolveCliModelResult,
@@ -214,14 +226,16 @@ export {
 	resolveCliModel,
 	resolveModelScopeWithDiagnostics,
 	type ScopedModel,
-} from "./core/model-resolver.ts";
+} from "./core/pick.ts";
+
 export {
 	type CreateModelRuntimeOptions,
 	CredentialSynchronizationError,
 	type CredentialSynchronizationOperation,
-	ModelRuntime,
+	ModelHub,
 	type ModelRuntimeAuthOverrides,
-} from "./core/model-runtime.ts";
+} from "./core/model-run.ts";
+
 export type {
 	PackageManager,
 	PathMetadata,
@@ -230,15 +244,19 @@ export type {
 	ResolvedPaths,
 	ResolvedResource,
 } from "./core/package-manager.ts";
+
 export { DefaultPackageManager } from "./core/package-manager.ts";
+
 export type {
 	ResourceCollision,
 	ResourceDiagnostic,
 	ResourceLoader,
 } from "./core/resource-loader.ts";
+
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
+
 export {
-	AgentSessionRuntime,
+	SessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
 	type AgentSessionServices,
 	type CreateAgentSessionFromServicesOptions,
@@ -260,9 +278,11 @@ export {
 	createPowerShellTool,
 	createReadOnlyTools,
 	createReadTool,
+	createWebFetchTool,
 	createWriteTool,
 	type PromptTemplate,
-} from "./core/sdk.ts";
+} from "./core/kit.ts";
+
 export {
 	type BranchSummaryEntry,
 	buildContextEntries,
@@ -287,13 +307,14 @@ export {
 	type SessionHeader,
 	type SessionInfo,
 	type SessionInfoEntry,
-	SessionManager,
+	SessionStore,
 	type SessionMessageEntry,
 	type SessionProjection,
 	type SessionTreeNode,
 	sessionEntryToContextMessages,
 	type ThinkingLevelChangeEntry,
-} from "./core/session-manager.ts";
+} from "./core/sessions.ts";
+
 export {
 	type CompactionModelOverride,
 	type CompactionSettings,
@@ -303,10 +324,11 @@ export {
 	type PackageSource,
 	type QuietStartup,
 	type RetrySettings,
-	SettingsManager,
+	SettingsStore,
 	type SettingsManagerCreateOptions,
 	type TuiMode,
-} from "./core/settings-manager.ts";
+} from "./core/settings.ts";
+
 export {
 	formatSkillsForPrompt,
 	type LoadSkillsFromDirOptions,
@@ -316,12 +338,15 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.ts";
-export { createSyntheticSourceInfo } from "./core/source-info.ts";
+
+export { createSyntheticSourceInfo } from "./core/origin.ts";
+
 export {
 	type EditDiffResult,
 	generateDiffString,
 	generateUnifiedPatch,
 } from "./core/tools/edit-diff.ts";
+
 export {
 	type BashOperations,
 	type BashSpawnContext,
@@ -379,6 +404,7 @@ export {
 	type WriteToolOptions,
 	withFileMutationQueue,
 } from "./core/tools/index.ts";
+
 export {
 	hasTrustRequiringProjectResources,
 	type ProjectTrustDecision,
@@ -386,6 +412,7 @@ export {
 	type ProjectTrustStoreEntry,
 	type ProjectTrustUpdate,
 } from "./core/trust-manager.ts";
+
 export {
 	type ModelRoute,
 	type ModelRouteReason,
@@ -393,28 +420,37 @@ export {
 	VIRTUAL_MODEL_STATE_ENTRY,
 	type VirtualModelDefinition,
 	type VirtualModelStateData,
-} from "./core/virtual-models.ts";
+} from "./core/fake-models.ts";
+
 export { type CodemodeExtensionOptions, createCodemodeExtension } from "./ext/codemode/index.ts";
+
 export type { CodemodeStoreEntryData, CodemodeToolDetails } from "./ext/codemode/tool.ts";
+
 export { createToolSearchExtension } from "./ext/search/index.ts";
+
 export { type MainOptions, main } from "./main.ts";
+
+export { type JsonAgentSessionEvent } from "./json-event.ts";
+
+export { type PrintModeOptions, runPrintMode } from "./print.ts";
+
 export {
-	InteractiveMode,
-	type InteractiveModeOptions,
-	type JsonAgentSessionEvent,
 	type ModelInfo,
-	type PrintModeOptions,
 	RpcClient,
 	type RpcClientOptions,
-	type RpcCommand,
 	type RpcEventListener,
-	type RpcExtensionUIRequest,
-	type RpcExtensionUIResponse,
-	type RpcResponse,
-	type RpcSessionState,
-	runPrintMode,
-	runRpcMode,
-} from "./modes/index.ts";
+} from "./rpc/client.ts";
+
+export { runRpcMode } from "./rpc/server.ts";
+
+export type {
+	RpcCommand,
+	RpcExtensionUIRequest,
+	RpcExtensionUIResponse,
+	RpcResponse,
+	RpcSessionState,
+} from "./rpc/types.ts";
+
 export {
 	AssistantMessageComponent,
 	BashExecutionComponent,
@@ -447,7 +483,10 @@ export {
 	UserMessageComponent,
 	UserMessageSelectorComponent,
 	type VisualTruncateResult,
-} from "./modes/tui/parts/index.ts";
+} from "./term/parts/index.ts";
+
+export { TermApp, type InteractiveModeOptions } from "./term/app.ts";
+
 export {
 	getLanguageFromPath,
 	getMarkdownTheme,
@@ -461,10 +500,16 @@ export {
 	type ThemeColor,
 	type ThemeStyle,
 	type ThemeToken,
-} from "./modes/tui/theme/theme.ts";
+} from "./term/theme/theme.ts";
+
 export { copyToClipboard } from "./utils/clipboard.ts";
+
 export { parseFrontmatter, stripFrontmatter } from "./utils/frontmatter.ts";
+
 export { convertToPng } from "./utils/image-convert.ts";
+
 export { formatDimensionNote, type ResizedImage, resizeImage } from "./utils/image-resize.ts";
+
 export { detectSupportedImageMimeTypeFromFile } from "./utils/mime.ts";
+
 export { getPowerShellConfig, getShellConfig } from "./utils/shell.ts";

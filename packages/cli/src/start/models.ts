@@ -1,7 +1,14 @@
 import { fuzzyFilter } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { formatNoModelsAvailableMessage } from "../core/auth-guidance.ts";
-import type { ModelRuntime } from "../core/model-runtime.ts";
+import type { ModelHub } from "../core/model-run.ts";
+import { formatNotice } from "../core/notices.ts";
+
+const COLUMNS = ["provider", "model", "context", "maxOut", "thinking", "images"] as const;
+
+type Column = (typeof COLUMNS)[number];
+
+type Row = Record<Column, string>;
 
 function formatTokenCount(count: number): string {
 	if (count >= 1_000_000) {
@@ -20,13 +27,15 @@ function columnWidth(header: string, values: string[]): number {
 }
 
 export async function listModels(
-	modelRuntime: ModelRuntime,
+	modelRuntime: ModelHub,
 	searchPattern?: string,
 	signal?: AbortSignal,
 ): Promise<void> {
 	const loadError = modelRuntime.getError();
 	if (loadError) {
-		console.error(chalk.yellow(`Warning: errors loading models.json:\n${loadError}`));
+		console.error(
+			chalk.yellow(`Warning: ${formatNotice(`Models failed: ${loadError}`)}`),
+		);
 	}
 
 	const models = [...(await modelRuntime.getAvailable(undefined, { signal }))];
@@ -42,7 +51,7 @@ export async function listModels(
 	}
 
 	if (filteredModels.length === 0) {
-		console.log(`No models matching "${searchPattern}"`);
+		console.log(`No matches: ${searchPattern}`);
 		return;
 	}
 
@@ -52,7 +61,7 @@ export async function listModels(
 		return a.id.localeCompare(b.id);
 	});
 
-	const rows = filteredModels.map((m) => ({
+	const rows: Row[] = filteredModels.map((m) => ({
 		provider: m.provider,
 		model: m.id,
 		context: formatTokenCount(m.contextWindow),
@@ -61,7 +70,7 @@ export async function listModels(
 		images: m.input.includes("image") ? "yes" : "no",
 	}));
 
-	const headers = {
+	const headers: Row = {
 		provider: "provider",
 		model: "model",
 		context: "context",
@@ -70,52 +79,18 @@ export async function listModels(
 		images: "images",
 	};
 
-	const widths = {
-		provider: columnWidth(
-			headers.provider,
-			rows.map((r) => r.provider),
-		),
-		model: columnWidth(
-			headers.model,
-			rows.map((r) => r.model),
-		),
-		context: columnWidth(
-			headers.context,
-			rows.map((r) => r.context),
-		),
-		maxOut: columnWidth(
-			headers.maxOut,
-			rows.map((r) => r.maxOut),
-		),
-		thinking: columnWidth(
-			headers.thinking,
-			rows.map((r) => r.thinking),
-		),
-		images: columnWidth(
-			headers.images,
-			rows.map((r) => r.images),
-		),
-	};
+	const widths = {} as Record<Column, number>;
 
-	const headerLine = [
-		headers.provider.padEnd(widths.provider),
-		headers.model.padEnd(widths.model),
-		headers.context.padEnd(widths.context),
-		headers.maxOut.padEnd(widths.maxOut),
-		headers.thinking.padEnd(widths.thinking),
-		headers.images.padEnd(widths.images),
-	].join("  ");
+	for (const column of COLUMNS) {
+		widths[column] = columnWidth(headers[column], rows.map((row) => row[column]));
+	}
 
-	console.log(headerLine);
+	const formatLine = (row: Row): string =>
+		COLUMNS.map((column) => row[column].padEnd(widths[column])).join("  ");
+
+	console.log(formatLine(headers));
+
 	for (const row of rows) {
-		const line = [
-			row.provider.padEnd(widths.provider),
-			row.model.padEnd(widths.model),
-			row.context.padEnd(widths.context),
-			row.maxOut.padEnd(widths.maxOut),
-			row.thinking.padEnd(widths.thinking),
-			row.images.padEnd(widths.images),
-		].join("  ");
-		console.log(line);
+		console.log(formatLine(row));
 	}
 }

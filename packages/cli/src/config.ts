@@ -33,6 +33,7 @@ interface PackageJson {
 }
 
 const __filename = fileURLToPath(import.meta.url);
+
 const __dirname = dirname(__filename);
 
 export const isBunBinary =
@@ -42,7 +43,16 @@ export const isBunBinary =
 
 export const isBunRuntime = !!process.versions.bun;
 
+// Ordered checks
+const INSTALL_SIGNATURES: ReadonlyArray<{ marker: string; method: InstallMethod }> = [
+	{ marker: "/pnpm/", method: "pnpm" },
+	{ marker: "/.pnpm/", method: "pnpm" },
+	{ marker: "/yarn/", method: "yarn" },
+	{ marker: "/.yarn/", method: "yarn" },
+];
+
 declare const GAMA_BUNDLED_NODE: boolean;
+
 export const isBundledNode = typeof GAMA_BUNDLED_NODE !== "undefined" && GAMA_BUNDLED_NODE;
 
 function normalizeSelfUpdatePackageTarget(target: SelfUpdatePackageTarget): {
@@ -85,15 +95,14 @@ export function detectInstallMethod(): InstallMethod {
 
 	const resolvedPath = `${__dirname}\0${process.execPath || ""}`.toLowerCase().replace(/\\/g, "/");
 
-	if (resolvedPath.includes("/pnpm/") || resolvedPath.includes("/.pnpm/")) {
-		return "pnpm";
+	for (const signature of INSTALL_SIGNATURES) {
+		if (resolvedPath.includes(signature.marker)) return signature.method;
 	}
-	if (resolvedPath.includes("/yarn/") || resolvedPath.includes("/.yarn/")) {
-		return "yarn";
-	}
+
 	if (isBunRuntime || resolvedPath.includes("/install/global/node_modules/")) {
 		return "bun";
 	}
+
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
 		return "npm";
 	}
@@ -107,6 +116,7 @@ function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
 	const path = useWindowsPaths ? win32 : { basename, dirname };
 	const parent = path.dirname(packageDir);
 	let root: string | undefined;
+
 	if (
 		path.basename(parent).startsWith("@") &&
 		path.basename(path.dirname(parent)) === "node_modules"
@@ -115,9 +125,12 @@ function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
 	} else if (path.basename(parent) === "node_modules") {
 		root = parent;
 	}
+
 	if (!root) return undefined;
+
 	const rootParent = path.dirname(root);
 	if (path.basename(rootParent) === "lib") return { root, prefix: path.dirname(rootParent) };
+
 	return undefined;
 }
 
@@ -138,7 +151,7 @@ function readCommandOutput(
 			result.stderr.trim() ||
 			`command ${exitCodeLabel(result.status ?? 1)}`;
 
-		throw new Error(`Failed to run ${[command, ...args].join(" ")}: ${reason}`);
+		throw new Error(`Command failed: ${command}: ${reason}`);
 	}
 
 	return undefined;
@@ -306,14 +319,12 @@ function normalizeExistingPathForComparison(
 }
 
 function getPathComparisonCandidates(path: string): string[] {
-	return Array.from(
-		new Set(
-			[
-				normalizeExistingPathForComparison(path, false),
-				normalizeExistingPathForComparison(path, true),
-			].filter((candidate): candidate is string => !!candidate),
-		),
-	);
+	const candidates = [
+		normalizeExistingPathForComparison(path, false),
+		normalizeExistingPathForComparison(path, true),
+	].filter((candidate): candidate is string => !!candidate);
+
+	return Array.from(new Set(candidates));
 }
 
 function getEntrypointPackageDir(): string | undefined {
@@ -459,7 +470,7 @@ export function getThemesDir(): string {
 	if (isBunBinary) {
 		return join(getPackageDir(), "theme");
 	}
-	return join(getCodeDir(), "modes", "tui", "theme");
+	return join(getCodeDir(), "term", "theme");
 }
 
 export function getExportTemplateDir(): string {
@@ -487,17 +498,6 @@ export function getExamplesPath(): string {
 
 export function getChangelogPath(): string {
 	return resolve(join(getPackageDir(), "CHANGELOG.md"));
-}
-
-export function getInteractiveAssetsDir(): string {
-	if (isBunBinary) {
-		return join(getPackageDir(), "assets");
-	}
-	return join(getCodeDir(), "modes", "tui", "assets");
-}
-
-export function getBundledInteractiveAssetPath(name: string): string {
-	return join(getInteractiveAssetsDir(), name);
 }
 
 let embeddedQuickJSWasmPath: string | undefined;
@@ -539,13 +539,19 @@ try {
 }
 
 const gamaConfigName: string | undefined = pkg.gamaConfig?.name;
+
 export const PACKAGE_NAME: string = pkg.name || "@huranth/gama-harness";
+
 export const APP_NAME: string = gamaConfigName || "gama";
+
 export const APP_TITLE: string = gamaConfigName ? APP_NAME : "γ";
+
 export const CONFIG_DIR_NAME: string = pkg.gamaConfig?.configDir || ".gama";
+
 export const VERSION: string = pkg.version || "0.0.0";
 
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
+
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
 
 export function expandTildePath(path: string): string {
@@ -572,20 +578,8 @@ export function getAuthPath(): string {
 	return join(getAgentDir(), "auth.json");
 }
 
-export function getSettingsPath(): string {
-	return join(getAgentDir(), "settings.json");
-}
-
-export function getToolsDir(): string {
-	return join(getAgentDir(), "tools");
-}
-
 export function getBinDir(): string {
 	return join(getAgentDir(), "bin");
-}
-
-export function getPromptsDir(): string {
-	return join(getAgentDir(), "prompts");
 }
 
 export function getSessionsDir(): string {
