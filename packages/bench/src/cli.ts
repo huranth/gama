@@ -1,15 +1,17 @@
 import { createHash, randomUUID } from "node:crypto";
 import { globSync } from "node:fs";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { dirname, relative, resolve } from "node:path";
+import { dirname, relative, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { stripVTControlCharacters } from "node:util";
 import {
 	buildImages,
+	CONTAINER_EVALS_PREFIX,
 	createDockerContext,
 	discoverCases,
 	requireEvalAuthFile,
 	runTask,
-} from "./docker.ts";
+} from "./container.ts";
 import {
 	createTaskPlan,
 	type DiscoveredEvalCase,
@@ -22,7 +24,7 @@ import {
 	formatEvalComparisonReport,
 	readTaskObservation,
 	summarizeEvalObservations,
-} from "./report.ts";
+} from "./output.ts";
 
 type EvalCliOptions = {
 	provider?: string;
@@ -33,6 +35,7 @@ type EvalCliOptions = {
 };
 
 const RUNNER_OPTIONS = new Set(["--provider", "--model", "--runs-per-variant"]);
+
 const FILTER_OPTIONS = new Set(["-t", "--testNamePattern"]);
 
 function parseEvalCli(
@@ -49,15 +52,10 @@ function parseEvalCli(
 	for (let index = 0; index < args.length; index += 1) {
 		const argument = args[index];
 
-		if (argument.endsWith(".docs.eval.ts")) {
-			requestedFiles.push(argument);
-			continue;
-		}
-
 		if (FILTER_OPTIONS.has(argument)) {
 			const value = args[index + 1];
 			if (!value) {
-				throw new Error(`Missing value for ${argument}.`);
+				throw new Error(`Missing value: ${argument}`);
 			}
 
 			discoveryArgs.push(argument, value);
@@ -68,7 +66,7 @@ function parseEvalCli(
 		if (argument.startsWith("--testNamePattern=")) {
 			const empty = argument.length === "--testNamePattern=".length;
 			if (empty) {
-				throw new Error("Missing value for --testNamePattern.");
+				throw new Error("Missing test pattern");
 			}
 
 			discoveryArgs.push(argument);
@@ -82,7 +80,7 @@ function parseEvalCli(
 			const value = equals === -1 ? args[index + 1] : argument.slice(equals + 1);
 
 			if (!value || (equals === -1 && value.startsWith("-"))) {
-				throw new Error(`Missing value for ${name}.`);
+				throw new Error(`Missing value: ${name}`);
 			}
 
 			if (name === "--provider") {
@@ -98,6 +96,11 @@ function parseEvalCli(
 			continue;
 		}
 
+		if (!argument.startsWith("-") && argument.endsWith(".docs.eval.ts")) {
+			requestedFiles.push(argument);
+			continue;
+		}
+
 		throw new Error(`Unsupported eval argument: ${argument}`);
 	}
 
@@ -106,14 +109,14 @@ function parseEvalCli(
 
 	if (cliSelectedModel) {
 		if (!provider || !model) {
-			throw new Error("CLI model selection requires both --provider and --model.");
+			throw new Error("Model flags required");
 		}
 	} else {
 		provider = environment.GAMA_PROVIDER?.trim() || undefined;
 		model = environment.GAMA_MODEL?.trim() || undefined;
 
 		if (Boolean(provider) !== Boolean(model)) {
-			throw new Error("Set both GAMA_PROVIDER and GAMA_MODEL, or neither.");
+			throw new Error("Incomplete model env");
 		}
 	}
 
@@ -121,7 +124,7 @@ function parseEvalCli(
 	const runsPerVariant = configuredRuns ? Number(configuredRuns) : 1;
 
 	if (!Number.isSafeInteger(runsPerVariant) || runsPerVariant < 1) {
-		throw new Error("Runs per variant must be a positive integer.");
+		throw new Error("Invalid run count");
 	}
 
 	return { provider, model, runsPerVariant, requestedFiles, discoveryArgs };
@@ -129,25 +132,30 @@ function parseEvalCli(
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
+const evalRoot = resolve(packageRoot, "evals");
+
 function artifactRunId(): string {
 	return `${new Date().toISOString().replaceAll(":", "-")}_${randomUUID()}`;
 }
 
 function containerPath(path: string): string {
 	const absolute = resolve(packageRoot, path);
-	const packageRelative = relative(packageRoot, absolute);
-	if (packageRelative.startsWith("..")) {
-		throw new Error(`Eval file must be inside ${packageRoot}: ${path}`);
+	const evalPrefix = `${evalRoot}${sep}`;
+	if (absolute !== evalRoot && !absolute.startsWith(evalPrefix)) {
+		throw new Error(`Bad eval path: ${path}`);
 	}
 
-	return packageRelative.replaceAll("\\", "/");
+	return relative(packageRoot, absolute).replaceAll("\\", "/");
 }
 
 function normalizeDiscoveredFile(path: string): string {
-	const prefix = "/repo/packages/evals/";
-	if (!path.startsWith(prefix))
-		throw new Error(`Discovered eval path is outside the container package: ${path}`);
-	return path.slice(prefix.length);
+	const prefix = CONTAINER_EVALS_PREFIX;
+
+	if (!path.startsWith(prefix)) {
+		throw new Error(`Path outside package: ${path}`);
+	}
+
+	return containerPath(path.slice(prefix.length));
 }
 
 function compareDiscovery(
@@ -159,15 +167,18 @@ function compareDiscovery(
 			.map(({ fullName, file }) => JSON.stringify([fullName, normalizeDiscoveredFile(file)]))
 			.sort();
 	if (JSON.stringify(identities(left)) !== JSON.stringify(identities(right))) {
-		throw new Error("Documentation variants discovered different eval cases.");
+		throw new Error("Variant case mismatch");
 	}
 }
 
 const cli = parseEvalCli(process.argv.slice(2));
 if (!cli.provider || !cli.model)
-	throw new Error("Set GAMA_PROVIDER and GAMA_MODEL, or pass --provider and --model.");
+	throw new Error("Missing model choice");
+
 const selectedModel = { provider: cli.provider, model: cli.model };
+
 const modelIdentity = `${selectedModel.provider}/${selectedModel.model}`;
+
 const files = (
 	cli.requestedFiles.length > 0
 		? cli.requestedFiles
@@ -175,18 +186,21 @@ const files = (
 )
 	.map(containerPath)
 	.sort();
-if (files.length === 0) throw new Error("No documentation eval files were selected.");
+if (files.length === 0) throw new Error("No eval files");
 for (const file of files) {
 	if (!file.endsWith(".docs.eval.ts"))
-		throw new Error(`Documentation runner cannot execute non-doc eval: ${file}`);
+		throw new Error(`Bad eval type: ${file}`);
 }
 
 const artifactDirectory = resolve(packageRoot, ".eval", artifactRunId());
+
 const authPath = requireEvalAuthFile(selectedModel.provider);
 await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
+
 const images = buildImages();
 if (images.with_docs.id === images.without_docs.id)
-	throw new Error("Documentation variants resolved to the same image.");
+	throw new Error("Duplicate variant image");
+
 const docker = createDockerContext(
 	images,
 	artifactDirectory,
@@ -202,11 +216,13 @@ for (const variant of DOCUMENTATION_VARIANTS) {
 	discoveries.push(parseDiscoveredCases(JSON.parse(await readFile(path, "utf8"))));
 }
 compareDiscovery(discoveries[0], discoveries[1]);
+
 const cases = discoveries[0].map((evalCase) => ({
 	...evalCase,
 	file: normalizeDiscoveredFile(evalCase.file),
 }));
-if (cases.length === 0) throw new Error("No documentation eval cases matched the selection.");
+if (cases.length === 0) throw new Error("No eval cases");
+
 const tasks = createTaskPlan(cases, modelIdentity, cli.runsPerVariant);
 
 const protocol = {
@@ -218,7 +234,9 @@ const protocol = {
 	cases: cases.map(({ evalSet, caseId, file }) => ({ evalSet, caseId, file })),
 	tasks,
 };
+
 const protocolText = JSON.stringify(protocol);
+
 const protocolDigest = createHash("sha256").update(protocolText).digest("hex");
 await writeFile(
 	resolve(artifactDirectory, "protocol.json"),
@@ -248,9 +266,11 @@ for (const [index, task] of tasks.entries()) {
 }
 
 const report = summarizeEvalObservations(protocolDigest, tasks, observations);
+
 const reportText = formatEvalComparisonReport(report);
 await writeFile(resolve(artifactDirectory, "report.json"), `${JSON.stringify(report, null, 2)}\n`);
-await writeFile(resolve(artifactDirectory, "report.txt"), `${reportText}\n`);
+const plainReportText = stripVTControlCharacters(reportText);
+await writeFile(resolve(artifactDirectory, "report.txt"), `${plainReportText}\n`);
 console.log(`\n${reportText}`);
 console.log(`\nArtifacts: ${artifactDirectory}`);
 if (report.blockedPairs.length > 0) process.exitCode = 1;

@@ -5,6 +5,9 @@ import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { DocumentationVariant, EvalTask } from "./plan.ts";
+import { DOCUMENTATION_VARIANTS } from "./plan.ts";
+
+export const CONTAINER_EVALS_PREFIX = "/repo/packages/bench/";
 
 export type BuiltImages = Record<DocumentationVariant, { name: string; id: string }>;
 
@@ -18,6 +21,7 @@ type DockerContext = {
 };
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+
 const repositoryRoot = resolve(packageRoot, "../..");
 
 function execute(
@@ -36,7 +40,7 @@ function execute(
 
 function requireSuccess(command: string, args: readonly string[]): void {
 	const { status } = execute(command, args);
-	if (status !== 0) throw new Error(`${command} exited with status ${status}.`);
+	if (status !== 0) throw new Error(`Command failed: ${command}`);
 }
 
 export function buildImages(): BuiltImages {
@@ -46,7 +50,7 @@ export function buildImages(): BuiltImages {
 		without_docs: { name: `${prefix}-without-docs:local`, id: "" },
 		with_docs: { name: `${prefix}-with-docs:local`, id: "" },
 	} satisfies BuiltImages;
-	for (const variant of ["without_docs", "with_docs"] as const) {
+	for (const variant of DOCUMENTATION_VARIANTS) {
 		requireSuccess("docker", [
 			"build",
 			"--target",
@@ -54,7 +58,7 @@ export function buildImages(): BuiltImages {
 			"--tag",
 			images[variant].name,
 			"--file",
-			join(packageRoot, "docker", "Dockerfile"),
+			join(packageRoot, "container", "Dockerfile"),
 			repositoryRoot,
 		]);
 		const inspected = execute(
@@ -64,7 +68,7 @@ export function buildImages(): BuiltImages {
 		);
 
 		if (inspected.status !== 0 || !inspected.stdout.trim()) {
-			throw new Error(`Cannot inspect ${images[variant].name}.`);
+			throw new Error(`Inspect failed: ${images[variant].name}`);
 		}
 
 		images[variant].id = inspected.stdout.trim();
@@ -83,14 +87,14 @@ export function requireEvalAuthFile(provider: string): string {
 	const path = join(agentDirectory, "auth.json");
 
 	if (!existsSync(path) || !statSync(path).isFile()) {
-		throw new Error(`Eval authentication file does not exist: ${path}`);
+		throw new Error(`Auth file missing: ${path}`);
 	}
 
 	let credentials: unknown;
 	try {
 		credentials = JSON.parse(readFileSync(path, "utf8"));
 	} catch (error) {
-		throw new Error(`Eval authentication file is invalid: ${path}`, { cause: error });
+		throw new Error(`Bad auth file: ${path}`, { cause: error });
 	}
 	if (
 		typeof credentials !== "object" ||
@@ -98,7 +102,7 @@ export function requireEvalAuthFile(provider: string): string {
 		Array.isArray(credentials) ||
 		!Object.hasOwn(credentials, provider)
 	) {
-		throw new Error(`Eval authentication file has no credential for provider ${provider}.`);
+		throw new Error(`No credential: ${provider}`);
 	}
 
 	return path;
@@ -168,7 +172,7 @@ export function discoverCases(
 		...vitestArgs,
 	]);
 	const { status } = execute("docker", args);
-	if (status !== 0) throw new Error(`${variant} eval discovery failed.`);
+	if (status !== 0) throw new Error(`Discovery failed: ${variant}`);
 	return join(outputDirectory, "discovered-tests.json");
 }
 

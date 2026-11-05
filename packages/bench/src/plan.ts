@@ -26,8 +26,10 @@ export function parseDiscoveredCases(value: unknown): DiscoveredEvalCase[] {
 		if (!isRecord(item) || typeof item.name !== "string" || typeof item.file !== "string") {
 			throw new TypeError("Discovered eval case is invalid.");
 		}
-		const [evalSet, caseId, ...extra] = item.name.split(" > ");
-		if (!evalSet?.trim() || !caseId?.trim() || extra.length > 0) {
+		const [rawEvalSet, rawCaseId, ...extra] = item.name.split(" > ");
+		const evalSet = rawEvalSet?.trim();
+		const caseId = rawCaseId?.trim();
+		if (!evalSet || !caseId || extra.length > 0) {
 			throw new TypeError(`Documentation eval must use "<eval set> > <case>": ${item.name}`);
 		}
 		const identity = JSON.stringify([evalSet, caseId]);
@@ -53,8 +55,8 @@ export function createTaskPlan(
 	const tasks: EvalTask[] = [];
 	for (const evalCase of cases) {
 		for (let runNumber = 1; runNumber <= runsPerVariant; runNumber += 1) {
-			const variants: DocumentationVariant[] =
-				runNumber % 2 === 1 ? ["without_docs", "with_docs"] : ["with_docs", "without_docs"];
+			const ordered: DocumentationVariant[] = [...DOCUMENTATION_VARIANTS];
+			const variants = runNumber % 2 === 1 ? ordered : ordered.reverse();
 
 			for (const variant of variants) {
 				tasks.push({ ...evalCase, variant, model, runNumber });

@@ -41,6 +41,13 @@ export type PairedMetricSummary = {
 	meanDelta: number | null;
 };
 
+export type ComparisonFlag =
+	| "no-lift"
+	| "negative-delta"
+	| "control-saturated"
+	| "treatment-saturated"
+	| "flaky";
+
 export type EvalSetComparison = {
 	evalSet: string;
 	totalPairs: number;
@@ -49,9 +56,7 @@ export type EvalSetComparison = {
 	controlPassRate: number | null;
 	treatmentPassRate: number | null;
 	lift: number | null;
-	flags: Array<
-		"no-lift" | "negative-delta" | "control-saturated" | "treatment-saturated" | "flaky"
-	>;
+	flags: Array<ComparisonFlag>;
 	totalTokens: PairedMetricSummary;
 	toolCalls: PairedMetricSummary;
 	totalMs: PairedMetricSummary;
@@ -232,8 +237,12 @@ export async function readTaskObservation(
 }
 
 const CONTROL = "without_docs";
+
 const TREATMENT = "with_docs";
+
 const VARIANTS = [CONTROL, TREATMENT] as const;
+
+const PASS_SCORE = 1;
 
 function mean(values: readonly number[]): number | null {
 	return values.length === 0
@@ -243,6 +252,14 @@ function mean(values: readonly number[]): number | null {
 
 function difference(treatment: number, control: number): number {
 	return Number((treatment - control).toPrecision(15));
+}
+
+function percentage(value: number | null): string {
+	return value === null ? "unavailable" : `${(value * 100).toFixed(1)}%`;
+}
+
+function signed(value: number, digits: number): string {
+	return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
 function pairKey(identity: Omit<EvalRunIdentity, "variant">): string {
@@ -296,9 +313,8 @@ function resolvePair(group: PairGroup): { pair?: Pair; blocked?: BlockedPair } {
 		if (expected !== 1) reasons.push(`${variant}: design expected 1 run, found ${expected}`);
 		if (observed.length !== expected) {
 			const plural = expected === 1 ? "" : "s";
-
 			reasons.push(
-				`${variant}: expected ${expected} observation${plural}, ` + `found ${observed.length}`,
+				`${variant}: expected ${expected} observation${plural}, found ${observed.length}`,
 			);
 		}
 		if (expected === 1 && observed.length === 1 && observed[0].outcome !== "scored") {
@@ -368,24 +384,29 @@ function operationalTotal(
 	};
 }
 
+const METRIC_KEYS = [
+	"inputTokens",
+	"outputTokens",
+	"cacheReadTokens",
+	"cacheWriteTokens",
+	"totalTokens",
+	"toolCalls",
+	"totalMs",
+	"estimatedCostUsd",
+] as const;
+
 function variantTotals(
 	observations: readonly EvalObservation[],
 	variant: DocumentationVariant,
 ): VariantTotals {
 	const runs = observations.filter((observation) => observation.variant === variant);
+	const totals = {} as Record<(typeof METRIC_KEYS)[number], OperationalMetricTotal>;
 
-	return {
-		variant,
-		runs: runs.length,
-		inputTokens: operationalTotal(runs, ({ inputTokens }) => inputTokens),
-		outputTokens: operationalTotal(runs, ({ outputTokens }) => outputTokens),
-		cacheReadTokens: operationalTotal(runs, ({ cacheReadTokens }) => cacheReadTokens),
-		cacheWriteTokens: operationalTotal(runs, ({ cacheWriteTokens }) => cacheWriteTokens),
-		totalTokens: operationalTotal(runs, ({ totalTokens }) => totalTokens),
-		toolCalls: operationalTotal(runs, ({ toolCalls }) => toolCalls),
-		totalMs: operationalTotal(runs, ({ totalMs }) => totalMs),
-		estimatedCostUsd: operationalTotal(runs, ({ estimatedCostUsd }) => estimatedCostUsd),
-	};
+	for (const key of METRIC_KEYS) {
+		totals[key] = operationalTotal(runs, (run) => run[key]);
+	}
+
+	return { variant, runs: runs.length, ...totals };
 }
 
 function comparisonFlags(
@@ -393,9 +414,7 @@ function comparisonFlags(
 	controlPassRate: number | null,
 	treatmentPassRate: number | null,
 ) {
-	const flags: Array<
-		"no-lift" | "negative-delta" | "control-saturated" | "treatment-saturated" | "flaky"
-	> = [];
+	const flags: Array<ComparisonFlag> = [];
 	if (controlPassRate !== null && treatmentPassRate !== null) {
 		if (controlPassRate === treatmentPassRate) flags.push("no-lift");
 		if (treatmentPassRate < controlPassRate) flags.push("negative-delta");
@@ -403,16 +422,16 @@ function comparisonFlags(
 		if (treatmentPassRate === 1) flags.push("treatment-saturated");
 	}
 	const outcomes = new Map<string, Set<string>>();
+
 	for (const pair of pairs) {
-		const key = JSON.stringify([pair.control.caseId, pair.control.variant]);
-		const control = outcomes.get(key) ?? new Set<string>();
-		control.add(String(pair.control.score >= 1));
-		outcomes.set(key, control);
-		const treatmentKey = JSON.stringify([pair.treatment.caseId, pair.treatment.variant]);
-		const treatment = outcomes.get(treatmentKey) ?? new Set<string>();
-		treatment.add(String(pair.treatment.score >= 1));
-		outcomes.set(treatmentKey, treatment);
+		for (const observation of [pair.control, pair.treatment]) {
+			const key = JSON.stringify([observation.caseId, observation.variant]);
+			const seen = outcomes.get(key) ?? new Set<string>();
+			seen.add(String(observation.score >= PASS_SCORE));
+			outcomes.set(key, seen);
+		}
 	}
+
 	if ([...outcomes.values()].some((values) => values.size > 1)) flags.push("flaky");
 	return flags;
 }
@@ -440,10 +459,10 @@ export function summarizeEvalObservations(
 			const blockedPairCount = totalPairs - pairs.length;
 			const publishHeadline = blockedPairCount === 0 && pairs.length > 0;
 			const controlPassRate = publishHeadline
-				? pairs.filter(({ control }) => control.score >= 1).length / pairs.length
+				? pairs.filter(({ control }) => control.score >= PASS_SCORE).length / pairs.length
 				: null;
 			const treatmentPassRate = publishHeadline
-				? pairs.filter(({ treatment }) => treatment.score >= 1).length / pairs.length
+				? pairs.filter(({ treatment }) => treatment.score >= PASS_SCORE).length / pairs.length
 				: null;
 			return {
 				evalSet,
@@ -475,14 +494,6 @@ export function summarizeEvalObservations(
 			variantTotals(observations, TREATMENT),
 		],
 	};
-}
-
-function percentage(value: number | null): string {
-	return value === null ? "unavailable" : `${(value * 100).toFixed(1)}%`;
-}
-
-function signed(value: number, digits: number): string {
-	return `${value >= 0 ? "+" : ""}${value.toFixed(digits)}`;
 }
 
 function pairedMetric(label: string, metric: PairedMetricSummary, unit = ""): string {

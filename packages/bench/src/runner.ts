@@ -18,15 +18,15 @@ import { performance } from "node:perf_hooks";
 import { contentText, InMemoryCredentialStore } from "@huranth/gama-ai";
 import { getCurrentSystemPrompt } from "@huranth/gama-ai/utils/transcript";
 import {
-	type AgentSession,
+	type RunSession,
 	type CreateAgentSessionOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 	getAgentDir,
 	type InlineExtension,
-	ModelRuntime,
+	ModelHub,
 	readStoredCredential,
-	SessionManager,
+	SessionStore,
 } from "@huranth/gama-harness";
 import {
 	attachHarnessRunToError,
@@ -42,7 +42,7 @@ import {
 	type UsageSummary,
 } from "vitest-evals/harness";
 import type { DocumentationVariant } from "./plan.ts";
-import { GAMA_SESSION_SNAPSHOT_ARTIFACT } from "./report.ts";
+import { GAMA_SESSION_SNAPSHOT_ARTIFACT } from "./output.ts";
 
 type GamaRunDiagnostics = {
 	events: TranscriptEvent[];
@@ -74,7 +74,7 @@ export type GamaCodingAgentHarnessWithOutput<TOutput extends JsonValue> =
 	GamaCodingAgentHarnessOptions & {
 		output: (args: {
 			response: string;
-			session: AgentSession;
+			session: RunSession;
 			systemPrompt: string;
 			agentDir: string;
 		}) => TOutput | Promise<TOutput>;
@@ -101,10 +101,14 @@ export function resolveModelSelection(
 
 	if (!provider || !id) {
 		throw new Error(
-			"Select a harness model explicitly or set both GAMA_PROVIDER and GAMA_MODEL as defaults.",
+			"Missing model selection",
 		);
 	}
 	return { provider, id };
+}
+
+export async function clearIsolatedCredential(agentDir: string): Promise<void> {
+	await rm(join(agentDir, "auth.json"), { force: true });
 }
 
 export function applyIsolatedEnvironment(home: string, agentDir: string): () => void {
@@ -136,7 +140,7 @@ function parseSandboxId(
 	if (value === undefined) return undefined;
 
 	const id = Number(value);
-	if (!Number.isSafeInteger(id) || id < 1) throw new Error(`${name} must be a positive integer.`);
+	if (!Number.isSafeInteger(id) || id < 1) throw new Error(`Bad number: ${name}`);
 	return id;
 }
 
@@ -146,7 +150,7 @@ function resolveSandboxIdentity(): SandboxIdentity | undefined {
 	if (uid === undefined && gid === undefined) return undefined;
 
 	if (uid === undefined || gid === undefined) {
-		throw new Error("Set both GAMA_EVAL_SANDBOX_UID and GAMA_EVAL_SANDBOX_GID, or neither.");
+		throw new Error("Incomplete sandbox ids");
 	}
 	return { uid, gid };
 }
@@ -197,11 +201,11 @@ async function enterToolSandbox(
 		typeof process.setgid !== "function" ||
 		typeof process.setgroups !== "function"
 	) {
-		throw new Error("The eval filesystem sandbox requires POSIX user APIs.");
+		throw new Error("POSIX required");
 	}
 	if (process.getuid() !== 0 || process.geteuid() !== 0) {
 		throw new Error(
-			"The eval runner must start as root before entering the unprivileged tool sandbox.",
+			"Root required",
 		);
 	}
 
@@ -211,7 +215,7 @@ async function enterToolSandbox(
 	process.setgid(identity.gid);
 	process.setuid(identity.uid);
 	if (process.getuid() !== identity.uid || process.geteuid() !== identity.uid) {
-		throw new Error("Failed to enter the unprivileged eval tool sandbox.");
+		throw new Error("Sandbox entry failed");
 	}
 	for (const path of protectedPaths) {
 		try {
@@ -226,11 +230,19 @@ async function enterToolSandbox(
 			}
 			throw error;
 		}
-		throw new Error(`The unprivileged eval process can read a transformed eval module: ${path}`);
+		throw new Error(`Eval file exposed: ${path}`);
 	}
 }
 
-function toTranscriptEvents(messages: AgentSession["messages"]): TranscriptEvent[] {
+async function collect(run: () => unknown, errors: unknown[]): Promise<void> {
+	try {
+		await run();
+	} catch (error) {
+		errors.push(error);
+	}
+}
+
+function toTranscriptEvents(messages: RunSession["messages"]): TranscriptEvent[] {
 	const events: TranscriptEvent[] = [];
 	for (const message of messages) {
 		if (message.role === "user") {
@@ -290,7 +302,7 @@ async function seedWorkspace(
 }
 
 async function promptAgent(
-	session: AgentSession,
+	session: RunSession,
 	input: string,
 	signal: AbortSignal | undefined,
 ): Promise<string> {
@@ -303,7 +315,7 @@ async function promptAgent(
 		.slice(previousMessageCount)
 		.reverse()
 		.find((message) => message.role === "assistant");
-	if (!assistant) throw new Error("Agent run completed without an assistant message.");
+	if (!assistant) throw new Error("No assistant message");
 
 	if (assistant.stopReason !== "stop" && assistant.stopReason !== "toolUse") {
 		throw new Error(
@@ -314,7 +326,7 @@ async function promptAgent(
 
 	const output = session.getLastAssistantText();
 	if (!output && assistant.stopReason === "stop") {
-		throw new Error("Agent run produced no assistant text.");
+		throw new Error("No assistant text");
 	}
 	return output ?? "";
 }
@@ -325,12 +337,12 @@ export function verifySystemPrompt(
 ): string {
 	if (options.expectedGamaDocumentation === undefined) return systemPrompt;
 	if (!systemPrompt.includes("\n<rules>\n")) {
-		throw new Error(`Gama system prompt lost its rules in the ${options.name} eval variant.`);
+		throw new Error(`Rules missing: ${options.name}`);
 	}
 
 	const hasDocumentation = systemPrompt.includes("\n<docs>\nGama documentation (read only");
 	if (hasDocumentation !== options.expectedGamaDocumentation) {
-		throw new Error(`Gama system prompt does not match the ${options.name} eval variant.`);
+		throw new Error(`Rules mismatch: ${options.name}`);
 	}
 	return systemPrompt;
 }
@@ -366,8 +378,8 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 		});
 	}
 
-	let sessionManager: SessionManager | undefined;
-	let session: AgentSession | undefined;
+	let sessionManager: SessionStore | undefined;
+	let session: RunSession | undefined;
 	let result: SimpleHarnessResult<string | TOutput> | undefined;
 	let runDiagnostics: GamaRunDiagnostics | undefined;
 	let runError: unknown;
@@ -380,7 +392,7 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 		const storedCredential = readStoredCredential(selection.provider, authPath);
 		if (storedCredential)
 			await credentials.modify(selection.provider, async () => storedCredential);
-		const modelRuntime = await ModelRuntime.create({ credentials });
+		const modelRuntime = await ModelHub.create({ credentials });
 		await Promise.all([mkdir(workspace), mkdir(agentDir, { recursive: true })]);
 		await seedWorkspace(workspace, options.workspaceFiles);
 		const model = modelRuntime.getModel(selection.provider, selection.id);
@@ -395,7 +407,7 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 			await modelRuntime.setRuntimeApiKey(selection.provider, auth.auth.apiKey);
 		}
 		if (sandboxIdentity) {
-			await rm(authPath, { force: true });
+			await clearIsolatedCredential(agentDir);
 			const credentialEnvironmentValue = auth.source ? process.env[auth.source] : undefined;
 			if (auth.source && /^[A-Z][A-Z0-9_]*$/.test(auth.source) && credentialEnvironmentValue) {
 				hiddenCredentialEnvironment = { name: auth.source, value: credentialEnvironmentValue };
@@ -409,7 +421,7 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 			resourceLoaderOptions: { extensionFactories },
 		});
 		signal?.throwIfAborted();
-		sessionManager = SessionManager.create(workspace, join(root, "sessions"));
+		sessionManager = SessionStore.create(workspace, join(root, "sessions"));
 		setArtifact("runId", sessionManager.getSessionId());
 		session = (
 			await createAgentSessionFromServices({
@@ -455,7 +467,7 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 			if (abortPromise) await abortPromise;
 		}
 		if (response === undefined) {
-			throw new Error("Gama eval input must include at least one prompt step.");
+			throw new Error("No prompt steps");
 		}
 		const systemPrompt = forcedSystemPrompt ?? getCurrentSystemPrompt(session.messages);
 		const stats = session.getSessionStats();
@@ -491,26 +503,23 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 	} finally {
 		if (sessionManager) {
 			const sessionPath = sessionManager.getSessionFile();
+
 			if (!sessionPath || !existsSync(sessionPath)) {
-				cleanupErrors.push(new Error("Gama eval produced no session file."));
+				cleanupErrors.push(new Error("No session file"));
 			} else {
-				try {
-					setArtifact(GAMA_SESSION_SNAPSHOT_ARTIFACT, await readFile(sessionPath, "utf8"));
-				} catch (error) {
-					cleanupErrors.push(error);
-				}
+				await collect(
+					() =>
+						readFile(sessionPath, "utf8").then((text) =>
+							setArtifact(GAMA_SESSION_SNAPSHOT_ARTIFACT, text),
+						),
+					cleanupErrors,
+				);
 			}
 		}
-		try {
-			session?.dispose();
-		} catch (error) {
-			cleanupErrors.push(error);
-		}
-		try {
-			await rm(root, { recursive: true, force: true });
-		} catch (error) {
-			cleanupErrors.push(error);
-		}
+
+		await collect(() => session?.dispose(), cleanupErrors);
+		await collect(() => rm(root, { recursive: true, force: true }), cleanupErrors);
+
 		restoreEnvironment();
 		if (hiddenCredentialEnvironment) {
 			process.env[hiddenCredentialEnvironment.name] = hiddenCredentialEnvironment.value;
@@ -539,16 +548,18 @@ async function runGamaCodingAgent<TOutput extends JsonValue>(
 		}
 		throw failure;
 	}
-	if (!result) throw new Error("Gama eval completed without a result.");
+	if (!result) throw new Error("No eval result");
 	return { ...result, timings: { totalMs: performance.now() - startedAt } };
 }
 
 export function createGamaCodingAgentHarness<TOutput extends JsonValue>(
 	options: GamaCodingAgentHarnessWithOutput<TOutput>,
 ): Harness<GamaCodingAgentInput, TOutput>;
+
 export function createGamaCodingAgentHarness(
 	options?: GamaCodingAgentHarnessOptions,
 ): Harness<GamaCodingAgentInput, string>;
+
 export function createGamaCodingAgentHarness<TOutput extends JsonValue>(
 	options: GamaCodingAgentHarnessOptions | GamaCodingAgentHarnessWithOutput<TOutput> = {},
 ): Harness<GamaCodingAgentInput, string | TOutput> {
@@ -573,13 +584,13 @@ export function excludeGamaDocumentation(defaultPrompt: string): string {
 	const documentationEndMarker = "\n</docs>";
 	const documentationStart = defaultPrompt.indexOf(documentationStartMarker);
 	if (documentationStart === -1)
-		throw new Error("Default Gama system prompt has no Gama documentation section.");
+		throw new Error("Missing docs section");
 	const documentationEnd = defaultPrompt.indexOf(documentationEndMarker, documentationStart);
 	if (documentationEnd === -1)
-		throw new Error("Default Gama system prompt has no complete Gama documentation section.");
+		throw new Error("Incomplete docs section");
 	const cwdStart = defaultPrompt.lastIndexOf("\n<cwd>\n");
 	if (cwdStart < documentationEnd)
-		throw new Error("Default Gama system prompt has no working-directory section.");
+		throw new Error("Missing cwd section");
 	return (
 		defaultPrompt.slice(0, documentationStart) +
 		defaultPrompt.slice(documentationEnd + documentationEndMarker.length)
@@ -589,14 +600,16 @@ export function excludeGamaDocumentation(defaultPrompt: string): string {
 export function createGamaDocumentationEvalHarness<TOutput extends JsonValue>(
 	options: DocumentationHarnessWithOutput<TOutput>,
 ): Harness<GamaCodingAgentInput, TOutput>;
+
 export function createGamaDocumentationEvalHarness(
 	options?: DocumentationHarnessOptions,
 ): Harness<GamaCodingAgentInput, string>;
+
 export function createGamaDocumentationEvalHarness<TOutput extends JsonValue>(
 	options: DocumentationHarnessOptions | DocumentationHarnessWithOutput<TOutput> = {},
 ) {
 	if (process.env.GAMA_EVAL_CONTAINER !== "1" || !resolveSandboxIdentity()) {
-		throw new Error("Documentation evals must run in the isolated container sandbox.");
+		throw new Error("Container sandbox required");
 	}
 	const variant = resolveDocumentationVariant();
 	return createGamaCodingAgentHarness({
