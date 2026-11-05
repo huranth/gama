@@ -7,7 +7,7 @@ import {
 	classifyCaseStatus,
 	GAMA_SESSION_SNAPSHOT_ARTIFACT,
 	readTaskObservation,
-} from "../src/report.ts";
+} from "../src/output.ts";
 
 const temporaryDirectories: string[] = [];
 afterEach(async () => {
@@ -50,7 +50,7 @@ async function writeTaskReport(assertion: ReportAssertion = {}) {
 			testResults: [
 				{
 					message: "",
-					name: "/repo/packages/evals/evals/example.docs.eval.ts",
+					name: "/repo/packages/bench/evals/example.docs.eval.ts",
 					status: "passed",
 					assertionResults: [
 						{

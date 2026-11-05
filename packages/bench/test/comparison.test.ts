@@ -5,7 +5,7 @@ import {
 	type ExpectedEvalRun,
 	formatEvalComparisonReport,
 	summarizeEvalObservations,
-} from "../src/report.ts";
+} from "../src/output.ts";
 
 function scored(
 	variant: EvalObservation["variant"],

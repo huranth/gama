@@ -85,7 +85,7 @@ function probe(content: string, apiKey: string) {
 }
 
 describe("inspectProvider", () => {
-	it("probes a models.json provider through ModelRuntime", async () => {
+	it("probes a models.json provider through ModelHub", async () => {
 		const runtime = await runtimeWith(acmeModelsJson());
 		await expect(
 			inspectProvider(runtime, probe(OPENAI_PROBE_PROMPT, "resolved-acme-key")),
@@ -235,21 +235,24 @@ describe("inspectAddedModel", () => {
 		expect(runtime.getModels(PROVIDER)).toEqual([]);
 	});
 
-	it("returns a structured error when the added model is missing from a configured provider", async () => {
-		const runtime = await runtimeWith(
-			providerConfig(modelEntry(EXISTING_ID, "Existing Chat", false)),
-		);
-		await expect(inspectAddedModel(runtime, PROVIDER, MODEL_ID)).resolves.toEqual({
-			result: { error: `Model ${PROVIDER}/${MODEL_ID} is unavailable after reload.` },
-		});
-	});
+	it(
+		"returns a structured error when the added model is missing from a configured provider",
+		async () => {
+			const runtime = await runtimeWith(
+				providerConfig(modelEntry(EXISTING_ID, "Existing Chat", false)),
+			);
+			await expect(inspectAddedModel(runtime, PROVIDER, MODEL_ID)).resolves.toEqual({
+				result: { error: `Model ${PROVIDER}/${MODEL_ID} is unavailable after reload.` },
+			});
+		},
+	);
 
 	it("returns a structured error when the provider omits api configuration", async () => {
 		const runtime = await runtimeWith({
 			providers: { [PROVIDER]: { models: [modelEntry(MODEL_ID, ADDED_MODEL.name, true)] } },
 		});
 		await expect(inspectAddedModel(runtime, PROVIDER, MODEL_ID)).resolves.toEqual({
-			result: { error: expect.stringContaining('no "api" specified') },
+			result: { error: expect.stringContaining("Missing API") },
 		});
 	});
 

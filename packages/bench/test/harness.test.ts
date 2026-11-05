@@ -1,16 +1,20 @@
-import { homedir } from "node:os";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { homedir, tmpdir } from "node:os";
+import { join } from "node:path";
 import { getExamplesPath, getReadmePath } from "@huranth/gama-harness";
 import { describe, expect, it, vi } from "vitest";
-import { buildSystemPrompt } from "../../coding-agent/src/core/system-prompt.ts";
+import { buildSystemPrompt } from "../../cli/src/core/system-prompt.ts";
 import {
 	applyIsolatedEnvironment,
+	clearIsolatedCredential,
 	createGamaDocumentationEvalHarness,
 	DOCUMENTATION_EVAL_TOOLS,
 	excludeGamaDocumentation,
 	resolveDocumentationVariant,
 	resolveModelSelection,
 	verifySystemPrompt,
-} from "../src/harness.ts";
+} from "../src/runner.ts";
 
 describe("resolveModelSelection", () => {
 	it("prefers an explicit harness model", () => {
@@ -38,7 +42,7 @@ describe("resolveModelSelection", () => {
 		"rejects incomplete model selection",
 		(environment) => {
 			expect(() => resolveModelSelection(undefined, environment)).toThrow(
-				"Select a harness model explicitly",
+				"Missing model selection",
 			);
 		},
 	);
@@ -63,6 +67,26 @@ describe("isolateProcessEnvironment", () => {
 			expect(process.env.GAMA_EVAL_VARIANT).toBe("with_docs");
 		} finally {
 			vi.unstubAllEnvs();
+		}
+	});
+});
+
+describe("sandbox credentials", () => {
+	it("clears only the isolated auth file", async () => {
+		const root = await mkdtemp(join(tmpdir(), "gama-eval-auth-"));
+		const host = join(root, "host");
+		const isolated = join(root, "isolated");
+		await mkdir(host);
+		await mkdir(isolated);
+		await writeFile(join(host, "auth.json"), "host");
+		await writeFile(join(isolated, "auth.json"), "isolated");
+
+		try {
+			await clearIsolatedCredential(isolated);
+			expect(existsSync(join(host, "auth.json"))).toBe(true);
+			expect(existsSync(join(isolated, "auth.json"))).toBe(false);
+		} finally {
+			await rm(root, { recursive: true, force: true });
 		}
 	});
 });
@@ -108,19 +132,19 @@ describe("documentation variant", () => {
 		).toBe(stripped);
 		expect(() =>
 			verifySystemPrompt(prompt, { name: "without_docs", expectedGamaDocumentation: false }),
-		).toThrow("does not match");
+		).toThrow("Rules mismatch");
 	});
 
 	it("fails closed when prompt markers are missing", () => {
 		expect(() => excludeGamaDocumentation("Instructions")).toThrow(
-			"no Gama documentation section",
+			"Missing docs section",
 		);
 		expect(() => excludeGamaDocumentation("\n<docs>\nGama documentation\n</docs>")).toThrow(
-			"no working-directory section",
+			"Missing cwd section",
 		);
 	});
 
 	it("rejects documentation harnesses outside the container sandbox", () => {
-		expect(() => createGamaDocumentationEvalHarness()).toThrow("isolated container sandbox");
+		expect(() => createGamaDocumentationEvalHarness()).toThrow("Container sandbox required");
 	});
 });
