@@ -1,13 +1,21 @@
 import type { ImageContent } from "@huranth/gama-ai";
-import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
-import { formatMoney, formatPercent } from "../core/cache/view.ts";
+import type { SessionRuntime } from "./core/session/runtime.ts";
+import { formatMoney, formatPercent } from "./core/cache/view.ts";
 import {
 	flushRawStdout,
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
-} from "../core/output-guard.ts";
-import { killTrackedDetachedChildren } from "../utils/shell.ts";
+} from "./core/output-guard.ts";
+import { disposeWithTimeout } from "./utils/dispose.ts";
+import { killTrackedDetachedChildren } from "./utils/shell.ts";
 import { toJsonEvent } from "./json-event.ts";
+
+function exitCodeForSignal(signal: NodeJS.Signals): number {
+	if (signal === "SIGHUP") return 129;
+	if (signal === "SIGINT") return 130;
+
+	return 143;
+}
 
 export interface PrintModeOptions {
 	mode: "text" | "json";
@@ -17,25 +25,42 @@ export interface PrintModeOptions {
 }
 
 export async function runPrintMode(
-	runtimeHost: AgentSessionRuntime,
+	runtimeHost: SessionRuntime,
 	options: PrintModeOptions,
 ): Promise<number> {
 	const { mode, messages = [], initialMessage, initialImages } = options;
 	let exitCode = 0;
+	let failureMessage: string | undefined;
 	let session = runtimeHost.session;
 	let unsubscribe: (() => void) | undefined;
 	let unsubscribeBackpressure: (() => void) | undefined;
-	let disposePromise: Promise<void> | undefined;
+	let disposePromise: Promise<boolean> | undefined;
 	const signalCleanupHandlers: Array<() => void> = [];
+
+	const rememberFailure = () => {
+		const last = session.state.messages[session.state.messages.length - 1];
+		if (last?.role !== "assistant") return;
+		if (last.stopReason !== "error" && last.stopReason !== "aborted") return;
+		failureMessage ??= last.errorMessage || `Request ${last.stopReason}`;
+	};
 
 	const disposeRuntime = () => {
 		if (disposePromise) return disposePromise;
 
 		unsubscribe?.();
 		unsubscribeBackpressure?.();
-		disposePromise = runtimeHost.dispose();
+		disposePromise = disposeWithTimeout(() => runtimeHost.dispose());
 		return disposePromise;
 	};
+
+	async function exitOnSignal(code: number): Promise<never> {
+		try {
+			await disposeRuntime();
+			await flushRawStdout();
+		} finally {
+			process.exit(code);
+		}
+	}
 
 	const registerSignalHandlers = () => {
 		const signals: NodeJS.Signals[] = ["SIGTERM", "SIGINT"];
@@ -46,9 +71,7 @@ export async function runPrintMode(
 		for (const signal of signals) {
 			const handler = () => {
 				killTrackedDetachedChildren();
-				void disposeRuntime().finally(() => {
-					process.exit(signal === "SIGHUP" ? 129 : signal === "SIGINT" ? 130 : 143);
-				});
+				void exitOnSignal(exitCodeForSignal(signal));
 			};
 			process.on(signal, handler);
 			signalCleanupHandlers.push(() => process.off(signal, handler));
@@ -84,8 +107,8 @@ export async function runPrintMode(
 					await session.reload();
 				},
 			},
-			onError: (err) => {
-				console.error(`Extension error (${err.extensionPath}): ${err.error}`);
+			onError: (error) => {
+				console.error(`Extension error: ${error.extensionPath}`);
 			},
 		});
 
@@ -121,25 +144,34 @@ export async function runPrintMode(
 
 		if (initialMessage) {
 			await session.prompt(initialMessage, { images: initialImages });
+			rememberFailure();
 		}
 
 		for (const message of messages) {
 			await session.prompt(message);
+			rememberFailure();
 		}
 
-		const state = session.state;
-		const lastMessage = state.messages[state.messages.length - 1];
-		if (lastMessage?.role === "assistant") {
-			const failed = lastMessage.stopReason === "error" || lastMessage.stopReason === "aborted";
+		if (failureMessage) {
+			if (mode === "text") console.error(failureMessage);
+			exitCode = 1;
+		} else {
+			const state = session.state;
+			const lastMessage = state.messages[state.messages.length - 1];
+			if (lastMessage?.role === "assistant") {
+				const failed =
+					lastMessage.stopReason === "error" ||
+					lastMessage.stopReason === "aborted";
 
-			if (failed) {
-				if (mode === "text") {
-					console.error(lastMessage.errorMessage || `Request ${lastMessage.stopReason}`);
-				}
-				exitCode = 1;
-			} else if (mode === "text") {
-				for (const content of lastMessage.content) {
-					if (content.type === "text") writeRawStdout(`${content.text}\n`);
+				if (failed) {
+					if (mode === "text") {
+						console.error(lastMessage.errorMessage || `Request ${lastMessage.stopReason}`);
+					}
+					exitCode = 1;
+				} else if (mode === "text") {
+					for (const content of lastMessage.content) {
+						if (content.type === "text") writeRawStdout(`${content.text}\n`);
+					}
 				}
 			}
 		}
