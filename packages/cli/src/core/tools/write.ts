@@ -1,8 +1,9 @@
+import { statSync } from "node:fs";
+import { mkdir as fsMkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import type { AgentTool } from "@huranth/gama-agent-core";
-import { existsSync } from "fs";
-import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
-import { dirname } from "path";
 import { type Static, Type } from "typebox";
+import { writeFileAtomicSync } from "../../utils/atomic-write.ts";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
 import { assertNotAborted } from "./abort.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
@@ -15,6 +16,17 @@ const writeSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to write (relative or absolute)" }),
 	content: Type.String({ description: "Content to write to the file" }),
 });
+
+// Error reasons
+const WRITE_ERROR_REASON: Record<string, string> = {
+	EACCES: "Write denied",
+	EPERM: "Write denied",
+	EISDIR: "Is directory",
+	ENOTDIR: "Bad parent",
+	EEXIST: "Bad parent",
+	ENOENT: "No parent",
+	ENOSPC: "Disk full",
+};
 
 export type WriteToolInput = Static<typeof writeSchema>;
 
@@ -42,9 +54,79 @@ export const writeToolSystemPromptContribution = {
 } as const;
 
 const defaultWriteOperations: WriteOperations = {
-	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
-	mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
+	writeFile: async (path, content) => {
+		writeFileAtomicSync(path, content);
+	},
+	mkdir: async (dir) => {
+		await fsMkdir(dir, { recursive: true });
+	},
 };
+
+function errorCode(error: unknown): string | undefined {
+	if (!(error instanceof Error) || !("code" in error)) return undefined;
+	if (typeof error.code !== "string") return undefined;
+
+	return error.code;
+}
+
+function describeWriteError(error: unknown): Error {
+	const code = errorCode(error);
+	if (code && WRITE_ERROR_REASON[code]) return new Error(WRITE_ERROR_REASON[code]);
+
+	return new Error("Write failed");
+}
+
+function directoryError(): Error {
+	return new Error(WRITE_ERROR_REASON.EISDIR);
+}
+
+type PathState = { isNew: boolean; isDirectory: boolean };
+
+function inspectPath(absolutePath: string): PathState {
+	try {
+		const stats = statSync(absolutePath);
+
+		return { isNew: false, isDirectory: stats.isDirectory() };
+	} catch (error) {
+		if (errorCode(error) !== "ENOENT") throw describeWriteError(error);
+
+		return { isNew: true, isDirectory: false };
+	}
+}
+
+async function writeFile(
+	absolutePath: string,
+	content: string,
+	ops: WriteOperations,
+	tracker: FileReadTracker | undefined,
+	signal: AbortSignal | undefined,
+): Promise<WriteToolDetails> {
+	assertNotAborted(signal);
+
+	const state = inspectPath(absolutePath);
+
+	if (state.isDirectory) throw directoryError();
+	if (!state.isNew) tracker?.assertRead(absolutePath);
+
+	try {
+		await ops.mkdir(dirname(absolutePath));
+	} catch (error) {
+		throw describeWriteError(error);
+	}
+
+	assertNotAborted(signal);
+	if (!state.isNew) tracker?.assertUnchanged(absolutePath);
+
+	try {
+		await ops.writeFile(absolutePath, content);
+	} catch (error) {
+		throw describeWriteError(error);
+	}
+
+	tracker?.markWritten(absolutePath);
+
+	return { created: state.isNew };
+}
 
 export function createWriteTool(
 	cwd: string,
@@ -59,6 +141,7 @@ export function createWriteToolDefinition(
 ): ToolDefinition<typeof writeSchema, WriteToolDetails> {
 	const ops = options?.operations ?? defaultWriteOperations;
 	const tracker = options?.tracker;
+
 	return {
 		name: "write",
 		label: "write",
@@ -77,70 +160,14 @@ export function createWriteToolDefinition(
 			ctx?: ExtensionContext,
 		) {
 			const absolutePath = resolveToCwd(path, ctx?.cwd || cwd);
-			const dir = dirname(absolutePath);
 
 			return withFileMutationQueue(absolutePath, async () => {
-				assertNotAborted(signal);
+				const details = await writeFile(absolutePath, content, ops, tracker, signal);
+				const text = details.created ? `Created ${path}` : `Wrote ${path}`;
 
-				const created = !existsSync(absolutePath);
-				if (!created) {
-					tracker?.assertRead(absolutePath);
-					tracker?.assertUnchanged(absolutePath);
-				}
-
-				try {
-					await ops.mkdir(dir);
-				} catch (error) {
-					throw describeWriteError(path, error);
-				}
-
-				assertNotAborted(signal);
-
-				try {
-					await ops.writeFile(absolutePath, content);
-				} catch (error) {
-					throw describeWriteError(path, error);
-				}
-
-				tracker?.markWritten(absolutePath);
-
-				return {
-					content: [{ type: "text", text: created ? `Created ${path}` : `Wrote ${path}` }],
-					details: { created },
-				};
+				return { content: [{ type: "text" as const, text }], details };
 			});
 		},
 		...writeRenderers,
 	};
-}
-
-function describeWriteError(path: string, error: unknown): Error {
-	const code = error instanceof Error && "code" in error ? error.code : undefined;
-
-	if (code === "EACCES" || code === "EPERM") {
-		return new Error(`Could not write ${path}, permission denied`);
-	}
-
-	if (code === "EISDIR") {
-		return new Error(`Could not write ${path}, it is a directory`);
-	}
-
-	if (code === "ENOTDIR" || code === "EEXIST") {
-		return new Error(`Could not write ${path}, a parent path is not a directory`);
-	}
-
-	if (code === "ENOENT") {
-		return new Error(`Could not write ${path}, a parent directory does not exist`);
-	}
-
-	if (code === "ENOSPC") {
-		return new Error(`Could not write ${path}, the disk is full`);
-	}
-
-	if (code) {
-		return new Error(`Could not write ${path}, the file failed with ${code}`);
-	}
-
-	const reason = error instanceof Error ? error.message : String(error);
-	return new Error(`Could not write ${path}, ${reason}`);
 }

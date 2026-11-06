@@ -1,7 +1,8 @@
 import type { AgentTool } from "@huranth/gama-agent-core";
 import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile, writeFile as fsWriteFile } from "fs/promises";
+import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
 import { type Static, Type } from "typebox";
+import { writeFileAtomicSync } from "../../utils/atomic-write.ts";
 import { splitBom } from "../../utils/text.ts";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
 import { assertNotAborted } from "./abort.ts";
@@ -20,14 +21,9 @@ import { resolveToCwd } from "./path-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import { type EditRenderState, editRenderers } from "./ui/edit.ts";
 
+const textEncoding = "utf-8";
+
 export type EditToolInput = Static<typeof editSchema>;
-
-type LegacyEditToolInput = EditToolInput & {
-	oldText?: unknown;
-	newText?: unknown;
-};
-
-type SingleEditInput = { oldText: string; newText: string };
 
 export interface EditToolDetails {
 	diff: string;
@@ -45,6 +41,13 @@ export interface EditToolOptions {
 	operations?: EditOperations;
 	tracker?: FileReadTracker;
 }
+
+type LegacyEditToolInput = EditToolInput & {
+	oldText?: unknown;
+	newText?: unknown;
+};
+
+type SingleEditInput = { oldText: string; newText: string };
 
 const replaceEditSchema = Type.Object(
 	{
@@ -99,7 +102,7 @@ function isSingleEditInput(value: unknown): value is SingleEditInput {
 
 const defaultEditOperations: EditOperations = {
 	readFile: (path) => fsReadFile(path),
-	writeFile: (path, content) => fsWriteFile(path, content, "utf-8"),
+	writeFile: async (path, content) => writeFileAtomicSync(path, content),
 	access: (path) => fsAccess(path, constants.R_OK | constants.W_OK),
 };
 
@@ -113,6 +116,7 @@ function prepareEditArguments(input: unknown): EditToolInput {
 	if (typeof args.edits === "string") {
 		try {
 			const parsed = JSON.parse(args.edits);
+
 			if (Array.isArray(parsed)) {
 				args.edits = parsed;
 			} else if (isSingleEditInput(parsed)) {
@@ -124,40 +128,70 @@ function prepareEditArguments(input: unknown): EditToolInput {
 	}
 
 	const legacy = args as LegacyEditToolInput;
+
 	if (typeof legacy.oldText !== "string" || typeof legacy.newText !== "string") {
 		return args as EditToolInput;
 	}
 
 	const edits = Array.isArray(legacy.edits) ? [...legacy.edits] : [];
 	edits.push({ oldText: legacy.oldText, newText: legacy.newText });
+
 	const { oldText: _oldText, newText: _newText, ...rest } = legacy;
 	return { ...rest, edits } as EditToolInput;
 }
 
 function validateEditInput(input: EditToolInput): { path: string; edits: Edit[] } {
 	if (!Array.isArray(input.edits) || input.edits.length === 0) {
-		throw new Error("The edit call needs at least one change in edits");
+		throw new Error("No edits");
 	}
+
 	return { path: input.path, edits: input.edits };
 }
 
-function describeEditError(path: string, error: unknown): Error {
+function describeEditError(error: unknown): Error {
 	const code = error instanceof Error && "code" in error ? error.code : undefined;
-	if (code === "ENOENT") return new Error(`Could not edit ${path}, the file does not exist`);
-	if (code === "EACCES" || code === "EPERM")
-		return new Error(`Could not edit ${path}, permission denied`);
-	if (code === "EISDIR") return new Error(`Could not edit ${path}, it is a directory`);
-	if (code) return new Error(`Could not edit ${path}, the file could not be opened with ${code}`);
-	const reason = error instanceof Error ? error.message : String(error);
-	return new Error(`Could not edit ${path}, ${reason}`);
+
+	if (code === "ENOENT") return new Error("File missing");
+
+	if (code === "EACCES" || code === "EPERM") return new Error("Edit denied");
+
+	if (code === "EISDIR") return new Error("Not a file");
+
+	if (code) return new Error("Open failed");
+
+	return new Error("Edit failed");
 }
 
+function decodeUtf8(buffer: Buffer): string {
+	try {
+		// Keep BOM
+		const options = { fatal: true, ignoreBOM: true };
+		return new TextDecoder(textEncoding, options).decode(buffer);
+	} catch {
+		throw new Error("Bad encoding");
+	}
+}
+
+function editedMessage(count: number, path: string): string {
+	const blockWord = count === 1 ? "block" : "blocks";
+	return `Edited ${count} ${blockWord} in ${path}`;
+}
+
+export function createEditTool(
+	cwd: string,
+	options?: EditToolOptions,
+): AgentTool<typeof editSchema> {
+	return wrapToolDefinition(createEditToolDefinition(cwd, options));
+}
+
+// Tool wiring
 export function createEditToolDefinition(
 	cwd: string,
 	options?: EditToolOptions,
 ): ToolDefinition<typeof editSchema, EditToolDetails | undefined, EditRenderState> {
 	const ops = options?.operations ?? defaultEditOperations;
 	const tracker = options?.tracker;
+
 	return {
 		name: "edit",
 		label: "edit",
@@ -190,11 +224,10 @@ export function createEditToolDefinition(
 					await ops.access(absolutePath);
 				} catch (error: unknown) {
 					assertNotAborted(signal);
-					throw describeEditError(path, error);
+					throw describeEditError(error);
 				}
 
 				assertNotAborted(signal);
-
 				tracker?.assertRead(absolutePath);
 				tracker?.assertUnchanged(absolutePath);
 
@@ -204,18 +237,10 @@ export function createEditToolDefinition(
 					buffer = await ops.readFile(absolutePath);
 				} catch (error) {
 					assertNotAborted(signal);
-					throw describeEditError(path, error);
+					throw describeEditError(error);
 				}
 
-				let rawContent: string;
-				try {
-					// ignoreBOM keeps a leading BOM in the text so splitBom can restore it on write.
-					rawContent = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(
-						buffer,
-					);
-				} catch {
-					throw new Error(`Could not edit ${path}, the file is not valid UTF-8; edit refused`);
-				}
+				const rawContent = decodeUtf8(buffer);
 				assertNotAborted(signal);
 
 				const { bom, text: content } = splitBom(rawContent);
@@ -225,32 +250,28 @@ export function createEditToolDefinition(
 				const { baseContent, newContent } = applyEditsToNormalizedContent(
 					normalizedContent,
 					edits,
-					path,
 				);
 				assertNotAborted(signal);
 
 				const finalContent = bom + (crlf ? restoreCrlf(newContent) : newContent);
 
+				// Re-check
+				tracker?.assertUnchanged(absolutePath);
+				assertNotAborted(signal);
+
 				try {
 					await ops.writeFile(absolutePath, finalContent);
 				} catch (error) {
-					throw describeEditError(path, error);
+					throw describeEditError(error);
 				}
 
 				tracker?.markWritten(absolutePath);
 
 				const diffResult = generateDiffString(baseContent, newContent);
 				const patch = generateUnifiedPatch(path, baseContent, newContent);
+
 				return {
-					content: [
-						{
-							type: "text",
-							text:
-								edits.length === 1
-									? `Edited 1 block in ${path}`
-									: `Edited ${edits.length} blocks in ${path}`,
-						},
-					],
+					content: [{ type: "text", text: editedMessage(edits.length, path) }],
 					details: {
 						diff: diffResult.diff,
 						patch,
@@ -261,11 +282,4 @@ export function createEditToolDefinition(
 		},
 		...editRenderers,
 	};
-}
-
-export function createEditTool(
-	cwd: string,
-	options?: EditToolOptions,
-): AgentTool<typeof editSchema> {
-	return wrapToolDefinition(createEditToolDefinition(cwd, options));
 }

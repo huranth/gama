@@ -6,14 +6,16 @@ import type {
 	ModelImageResizeOptions,
 	TextContent,
 } from "@huranth/gama-ai";
-import { constants } from "fs";
-import { access as fsAccess, readFile as fsReadFile } from "fs/promises";
+import { constants, createReadStream } from "node:fs";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { stripBom } from "../../utils/text.ts";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
 import type { FileReadTracker } from "./file-read-tracker.ts";
+import { assertNotAborted } from "./abort.ts";
 import { resolveReadPathAsync } from "./path-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import {
@@ -24,6 +26,10 @@ import {
 	truncateHead,
 } from "./truncate.ts";
 import { readRenderers } from "./ui/read.ts";
+
+const BYTES_PER_KB = 1024;
+
+const MAX_BUFFERED_TEXT_BYTES = 4 * BYTES_PER_KB * BYTES_PER_KB;
 
 const readSchema = Type.Object({
 	path: Type.String({ description: "Path to the file to read (relative or absolute)" }),
@@ -79,6 +85,13 @@ type ReadOutcome = {
 	isError?: true;
 };
 
+export function createReadTool(
+	cwd: string,
+	options?: ReadToolOptions,
+): AgentTool<typeof readSchema> {
+	return wrapToolDefinition(createReadToolDefinition(cwd, options));
+}
+
 export function createReadToolDefinition(
 	cwd: string,
 	options?: ReadToolOptions,
@@ -87,13 +100,14 @@ export function createReadToolDefinition(
 	const fallbackResizeOptions = options?.resizeOptions;
 	const ops = options?.operations ?? defaultReadOperations;
 	const tracker = options?.tracker;
+
 	return {
 		name: "read",
 		label: "read",
 		description:
 			"Read the contents of a file. Supports text files and images (jpg, png, gif, " +
 			"webp, bmp). Images are sent as attachments. For text files, output is truncated " +
-			`to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB ` +
+			`to ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / BYTES_PER_KB}KB ` +
 			"(whichever is hit first). Use offset/limit for large files. " +
 			"When you need the full file, continue with offset until complete.",
 		promptSnippet: readToolSystemPromptContribution.snippet,
@@ -106,85 +120,86 @@ export function createReadToolDefinition(
 			signal?: AbortSignal,
 			_onUpdate?,
 			ctx?: ExtensionContext,
-		) {
-			return new Promise<{
-				content: (TextContent | ImageContent)[];
-				details: ReadToolDetails | undefined;
-			}>((resolve, reject) => {
-				if (signal?.aborted) {
-					reject(new Error("Operation aborted"));
-					return;
-				}
+		): Promise<ReadOutcome> {
+			try {
+				const absolutePath = await resolveReadPathAsync(path, ctx?.cwd || cwd);
+				assertNotAborted(signal);
 
-				let aborted = false;
-				const onAbort = () => {
-					aborted = true;
-					reject(new Error("Operation aborted"));
+				await assertAccess(absolutePath, ops);
+				assertNotAborted(signal);
+
+				const model = ctx?.model;
+				const resizeOptions = model?.inputLimits?.images?.resize ?? fallbackResizeOptions;
+				const context: ReadContext = {
+					absolutePath,
+					displayPath: path,
+					ops,
+					tracker,
+					autoResizeImages,
+					resizeOptions,
+					model,
 				};
-				signal?.addEventListener("abort", onAbort, { once: true });
 
-				(async () => {
-					try {
-						const absolutePath = await resolveReadPathAsync(path, ctx?.cwd || cwd);
-						if (aborted) return;
+				const mimeType = ops.detectImageMimeType
+					? await ops.detectImageMimeType(absolutePath)
+					: undefined;
+				const result = mimeType
+					? await readImage(context, mimeType)
+					: await readText(context, offset, limit, signal);
 
-						await assertAccess(absolutePath, path, ops);
-						if (aborted) return;
+				assertNotAborted(signal);
 
-						const model = ctx?.model;
-						const resizeOptions = model?.inputLimits?.images?.resize ?? fallbackResizeOptions;
-						const context: ReadContext = {
-							absolutePath,
-							displayPath: path,
-							ops,
-							tracker,
-							autoResizeImages,
-							resizeOptions,
-							model,
-						};
+				return result;
+			} catch (error) {
+				const code = errorCode(error);
 
-						const mimeType = ops.detectImageMimeType
-							? await ops.detectImageMimeType(absolutePath)
-							: undefined;
-						const result = mimeType
-							? await readImage(context, mimeType)
-							: await readText(context, offset, limit);
-
-						if (aborted) return;
-
-						signal?.removeEventListener("abort", onAbort);
-						resolve(result);
-					} catch (error) {
-						signal?.removeEventListener("abort", onAbort);
-						if (aborted) return;
-
-						const code =
-							error && typeof error === "object" && "code" in error ? error.code : undefined;
-						reject(code ? describeReadError(path, error) : error);
-					}
-				})();
-			});
+				throw code ? describeReadError(error) : error;
+			}
 		},
 		...readRenderers,
 	};
 }
 
-export function createReadTool(
-	cwd: string,
-	options?: ReadToolOptions,
-): AgentTool<typeof readSchema> {
-	return wrapToolDefinition(createReadToolDefinition(cwd, options));
+function splitLines(text: string): string[] {
+	const lines = text.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+
+	if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+
+	return lines;
 }
 
-async function assertAccess(
-	absolutePath: string,
-	displayPath: string,
-	ops: ReadOperations,
-): Promise<void> {
+function errorCode(error: unknown): string | undefined {
+	if (!(error instanceof Error) || !("code" in error)) return undefined;
+	if (typeof error.code !== "string") return undefined;
+
+	return error.code;
+}
+
+function describeReadError(error: unknown): Error {
+	switch (errorCode(error)) {
+		case "ENOENT":
+			return new Error("File missing");
+		case "EACCES":
+		case "EPERM":
+			return new Error("Read denied");
+		case "EISDIR":
+			return new Error("Not a file");
+		default:
+			return new Error("Read failed");
+	}
+}
+
+function getNonVisionImageNote(model: Model<Api> | undefined): string | undefined {
+	if (!model || model.input.includes("image")) return undefined;
+
+	return "[Current model does not support images. The image will be omitted from this request.]";
+}
+
+async function assertAccess(absolutePath: string, ops: ReadOperations): Promise<void> {
 	try {
 		await ops.access(absolutePath);
 	} catch (error) {
-		throw describeReadError(displayPath, error);
+		throw describeReadError(error);
 	}
 }
 
@@ -192,14 +207,32 @@ async function readFileBuffer(context: ReadContext): Promise<Buffer> {
 	try {
 		return await context.ops.readFile(context.absolutePath);
 	} catch (error) {
-		throw describeReadError(context.displayPath, error);
+		throw describeReadError(error);
 	}
+}
+
+function isBinaryBuffer(buffer: Buffer): boolean {
+	const sample = buffer.subarray(0, 8000);
+	if (sample.includes(0)) return true;
+	const text = sample.toString("utf-8");
+	return (text.match(/\uFFFD/g)?.length ?? 0) > 4;
+}
+
+function binaryReadOutcome(context: ReadContext): ReadOutcome {
+	return {
+		content: [
+			{
+				type: "text",
+				text: `Could not read ${context.displayPath}, it looks like a binary file.`,
+			},
+		],
+		details: undefined,
+		isError: true,
+	};
 }
 
 async function readImage(context: ReadContext, mimeType: string): Promise<ReadOutcome> {
 	const buffer = await readFileBuffer(context);
-	context.tracker?.markRead(context.absolutePath);
-
 	const processed = await processImage(buffer, mimeType, {
 		autoResizeImages: context.autoResizeImages,
 		resizeOptions: context.resizeOptions,
@@ -207,7 +240,7 @@ async function readImage(context: ReadContext, mimeType: string): Promise<ReadOu
 	const note = getNonVisionImageNote(context.model);
 
 	if (!processed.ok) {
-		let text = `Could not read the image ${context.displayPath}, ${processed.message}`;
+		let text = "Image omitted";
 
 		if (note) text += `\n${note}`;
 
@@ -219,6 +252,7 @@ async function readImage(context: ReadContext, mimeType: string): Promise<ReadOu
 	if (processed.hints.length > 0) text += `\n${processed.hints.join("\n")}`;
 	if (note) text += `\n${note}`;
 
+	context.tracker?.markRead(context.absolutePath);
 	return {
 		content: [
 			{ type: "text", text },
@@ -232,22 +266,29 @@ async function readText(
 	context: ReadContext,
 	offset: number | undefined,
 	limit: number | undefined,
+	signal?: AbortSignal,
 ): Promise<ReadOutcome> {
 	if (offset !== undefined && (!Number.isInteger(offset) || offset < 1)) {
-		throw new Error(`Offset must be a positive line number, got ${offset}`);
+		throw new Error("Bad offset");
 	}
 	if (limit !== undefined && (!Number.isInteger(limit) || limit < 1)) {
-		throw new Error(`Limit must be a positive line count, got ${limit}`);
+		throw new Error("Bad limit");
+	}
+
+	if (context.ops === defaultReadOperations) {
+		const stats = await fsStat(context.absolutePath).catch(() => undefined);
+		if (stats && stats.size > MAX_BUFFERED_TEXT_BYTES) {
+			return readTextStream(context, offset, limit, signal);
+		}
 	}
 
 	const buffer = await readFileBuffer(context);
-	context.tracker?.markRead(context.absolutePath);
-
+	if (isBinaryBuffer(buffer)) return binaryReadOutcome(context);
 	const lines = splitLines(stripBom(buffer.toString("utf-8")));
 	const startLine = offset === undefined ? 0 : offset - 1;
 
 	if (startLine >= lines.length) {
-		throw new Error(`Offset ${offset} is past the end of the file, it has ${lines.length} lines`);
+		throw new Error("Offset too big");
 	}
 
 	const endLine = limit === undefined ? lines.length : Math.min(startLine + limit, lines.length);
@@ -255,37 +296,113 @@ async function readText(
 	const truncation = truncateHead(selected);
 	const output = formatTextOutput({
 		truncation,
-		lines,
+		totalLines: lines.length,
+		firstLine: lines[startLine],
 		startLine,
 		offset,
 		limit,
 		displayPath: context.displayPath,
 	});
 
+	const complete =
+		startLine === 0 &&
+		endLine === lines.length &&
+		!truncation.truncated &&
+		!truncation.firstLineExceedsLimit;
+	context.tracker?.markRead(context.absolutePath, { complete });
 	return { content: [{ type: "text", text: output.text }], details: output.details };
 }
 
-function splitLines(text: string): string[] {
-	const lines = text.split("\n").map((line) => (line.endsWith("\r") ? line.slice(0, -1) : line));
+async function readTextStream(
+	context: ReadContext,
+	offset: number | undefined,
+	limit: number | undefined,
+	signal?: AbortSignal,
+): Promise<ReadOutcome> {
+	const startLine = offset === undefined ? 0 : offset - 1;
+	const stream = createReadStream(context.absolutePath, { encoding: "utf-8" });
+	const lines = createInterface({ input: stream, crlfDelay: Infinity });
+	const selected: string[] = [];
+	let lineCount = 0;
+	let selectedBytes = 0;
+	const maxSelectedLines = DEFAULT_MAX_LINES + 1;
 
-	if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+	try {
+		for await (const raw of lines) {
+			assertNotAborted(signal);
 
-	return lines;
+			const line = lineCount === 0 ? stripBom(raw) : raw;
+			lineCount += 1;
+
+			if (lineCount - 1 < startLine) continue;
+
+			const bytes = Buffer.byteLength(line, "utf-8") + (selected.length > 0 ? 1 : 0);
+			selected.push(line);
+			selectedBytes += bytes;
+
+			// Early stop
+			if (limit !== undefined && selected.length >= limit) break;
+			if (selected.length >= maxSelectedLines) break;
+			if (selectedBytes > DEFAULT_MAX_BYTES) break;
+		}
+	} finally {
+		lines.close();
+		stream.destroy();
+	}
+
+	if (selected.some((line) => line.includes("\x00"))) {
+		return binaryReadOutcome(context);
+	}
+
+	if (lineCount === 0) {
+		lineCount = 1;
+		selected.push("");
+	}
+
+	if (startLine >= lineCount) {
+		throw new Error("Offset too big");
+	}
+
+	const endLine = limit === undefined ? lineCount : Math.min(startLine + limit, lineCount);
+	const truncation = {
+		...truncateHead(selected.join("\n")),
+		totalLines: Math.max(0, endLine - startLine),
+	};
+	const output = formatTextOutput({
+		truncation,
+		// Scanned lines
+		totalLines: lineCount,
+		firstLine: selected[0] ?? "",
+		startLine,
+		offset,
+		limit,
+		displayPath: context.displayPath,
+	});
+
+	const complete =
+		startLine === 0 &&
+		endLine === lineCount &&
+		!truncation.truncated &&
+		!truncation.firstLineExceedsLimit;
+	context.tracker?.markRead(context.absolutePath, { complete });
+
+	return { content: [{ type: "text", text: output.text }], details: output.details };
 }
 
 function formatTextOutput(input: {
 	truncation: TruncationResult;
-	lines: string[];
+	totalLines: number;
+	firstLine: string;
 	startLine: number;
 	offset: number | undefined;
 	limit: number | undefined;
 	displayPath: string;
 }): { text: string; details: ReadToolDetails | undefined } {
-	const { truncation, lines, startLine, limit, displayPath } = input;
+	const { truncation, totalLines, firstLine, startLine, limit, displayPath } = input;
 	const startLineDisplay = startLine + 1;
 
 	if (truncation.firstLineExceedsLimit) {
-		const firstLineSize = formatSize(Buffer.byteLength(lines[startLine], "utf-8"));
+		const firstLineSize = formatSize(Buffer.byteLength(firstLine, "utf-8"));
 
 		return {
 			text:
@@ -306,13 +423,13 @@ function formatTextOutput(input: {
 		return {
 			text:
 				`${truncation.content}\n\n[Showing lines ${startLineDisplay}-${endLineDisplay} ` +
-				`of ${lines.length}${limitNote}. Use offset=${nextOffset} to continue.]`,
+				`of ${totalLines}${limitNote}. Use offset=${nextOffset} to continue.]`,
 			details: { truncation },
 		};
 	}
 
-	if (limit !== undefined && startLine + limit < lines.length) {
-		const remaining = lines.length - (startLine + limit);
+	if (limit !== undefined && startLine + limit < totalLines) {
+		const remaining = totalLines - (startLine + limit);
 		const nextOffset = startLine + limit + 1;
 
 		return {
@@ -324,23 +441,4 @@ function formatTextOutput(input: {
 	}
 
 	return { text: truncation.content, details: undefined };
-}
-
-function describeReadError(path: string, error: unknown): Error {
-	const code = error instanceof Error && "code" in error ? error.code : undefined;
-
-	if (code === "ENOENT") return new Error(`Could not read ${path}, the file does not exist`);
-	if (code === "EACCES" || code === "EPERM")
-		return new Error(`Could not read ${path}, permission denied`);
-	if (code === "EISDIR") return new Error(`Could not read ${path}, it is a directory, use ls`);
-
-	const reason = error instanceof Error ? error.message : String(error);
-
-	return new Error(`Could not read ${path}, ${reason}`);
-}
-
-function getNonVisionImageNote(model: Model<Api> | undefined): string | undefined {
-	if (!model || model.input.includes("image")) return undefined;
-
-	return "[Current model does not support images. The image will be omitted from this request.]";
 }
