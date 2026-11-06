@@ -2,13 +2,14 @@ import { basename, dirname, isAbsolute, relative, resolve as resolvePath, sep } 
 import type { ImageContent, TextContent } from "@huranth/gama-ai";
 import { Text } from "@huranth/gama-tui";
 import { getReadmePath } from "../../../config.ts";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../../modes/tui/theme/theme.ts";
-import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
+import { getLanguageFromPath, highlightCode, type Theme } from "../../../term/theme/theme.ts";
+import { formatPathRelativeToCwdOrAbsolute, toPosixPath } from "../../../utils/paths.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../ext/types.ts";
 import { resolveToCwd } from "../path-utils.ts";
 import type { ReadToolDetails } from "../read.ts";
-import { getTextOutput, renderToolPath, replaceTabs, str, toolMoreLines } from "../render-utils.ts";
+import { getTextOutput, renderToolPath, replaceTabs, str } from "../render-utils.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "../truncate.ts";
+import { previewBody, trimTrailingEmptyLines } from "./format.ts";
 
 interface CompactReadClassification {
 	kind: "docs" | "resource" | "skill";
@@ -17,13 +18,16 @@ interface CompactReadClassification {
 
 type ReadRenderArgs = { path?: string; file_path?: string; offset?: number; limit?: number };
 
-const COMPACT_RESOURCE_FILE_NAMES = new Set([
-	"AGENTS.override.md",
-	"AGENTS.md",
-	"AGENTS.MD",
-	"CLAUDE.md",
-	"CLAUDE.MD",
-]);
+const RESOURCE_FILE_NAMES = new Set(["agents.override.md", "agents.md", "claude.md"]);
+
+const READ_PREVIEW_MAX_LINES = 10;
+
+function isInsideRoot(relativePath: string): boolean {
+	if (relativePath === "" || relativePath === "..") return false;
+	if (relativePath.startsWith(`..${sep}`)) return false;
+
+	return !isAbsolute(relativePath);
+}
 
 function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): string {
 	const offset = args?.offset;
@@ -37,22 +41,17 @@ function formatReadLineRange(args: ReadRenderArgs | undefined, theme: Theme): st
 	return theme.fg("muted", range);
 }
 
+function styleLine(line: string, lang: string | undefined, theme: Theme, isError: boolean): string {
+	if (lang) return line;
+
+	return theme.fg(isError ? "error" : "toolOutput", replaceTabs(line));
+}
+
 function formatReadCall(args: ReadRenderArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
 	const range = formatReadLineRange(args, theme);
 
 	return `${theme.fg("toolTitle", "read")} ${pathDisplay}${range}`;
-}
-
-function trimTrailingEmptyLines(lines: string[]): string[] {
-	let end = lines.length;
-	while (end > 0 && lines[end - 1] === "") end--;
-
-	return lines.slice(0, end);
-}
-
-function toPosixPath(filePath: string): string {
-	return filePath.split(sep).join("/");
 }
 
 function getGamaDocsClassification(absolutePath: string): CompactReadClassification | undefined {
@@ -66,13 +65,6 @@ function getGamaDocsClassification(absolutePath: string): CompactReadClassificat
 	}
 
 	return undefined;
-}
-
-function isInsideRoot(relativePath: string): boolean {
-	if (relativePath === "" || relativePath === "..") return false;
-	if (relativePath.startsWith(`..${sep}`)) return false;
-
-	return !isAbsolute(relativePath);
 }
 
 function getCompactReadClassification(
@@ -91,7 +83,7 @@ function getCompactReadClassification(
 	const docsClassification = getGamaDocsClassification(absolutePath);
 	if (docsClassification) return docsClassification;
 
-	if (COMPACT_RESOURCE_FILE_NAMES.has(fileName)) {
+	if (RESOURCE_FILE_NAMES.has(fileName.toLowerCase())) {
 		return { kind: "resource", label: formatPathRelativeToCwdOrAbsolute(absolutePath, cwd) };
 	}
 
@@ -105,7 +97,7 @@ function formatCompactReadCall(
 ): string {
 	const range = formatReadLineRange(args, theme);
 	if (classification.kind === "skill") {
-		const tag = theme.fg("muted", `\x1b[1m[skill]\x1b[22m `);
+		const tag = `${theme.fg("muted", theme.bold("[skill]"))} `;
 
 		return tag + theme.fg("customMessageText", classification.label) + range;
 	}
@@ -125,20 +117,9 @@ function formatReadBody(
 ): string {
 	const rendered = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
 	const lines = trimTrailingEmptyLines(rendered);
-	const maxLines = options.expanded ? lines.length : 10;
-	const shown = lines.slice(0, maxLines);
-	const remaining = lines.length - maxLines;
-	const body = shown.map((line) => styleLine(line, lang, theme, isError)).join("\n");
+	const styled = lines.map((line) => styleLine(line, lang, theme, isError));
 
-	if (remaining <= 0) return body;
-
-	return `${body}\n${toolMoreLines(theme, remaining, lines.length)}`;
-}
-
-function styleLine(line: string, lang: string | undefined, theme: Theme, isError: boolean): string {
-	if (lang) return line;
-
-	return theme.fg(isError ? "error" : "toolOutput", replaceTabs(line));
+	return previewBody(styled, options, theme, READ_PREVIEW_MAX_LINES);
 }
 
 function formatReadTruncation(
@@ -177,12 +158,13 @@ function formatReadResult(
 	const rawPath = str(args?.file_path ?? args?.path);
 	const output = getTextOutput(result, showImages);
 	const lang = !isError && rawPath ? getLanguageFromPath(rawPath) : undefined;
-	let text = `\n\n${formatReadBody(output, lang, options, theme, isError)}`;
-
+	const body = formatReadBody(output, lang, options, theme, isError);
 	const truncation = formatReadTruncation(result.details?.truncation, theme);
-	if (truncation) text += `\n${truncation}`;
+	const parts = [`\n\n${body}`];
 
-	return text;
+	if (truncation) parts.push(`\n${truncation}`);
+
+	return parts.join("");
 }
 
 export const readRenderers: Pick<

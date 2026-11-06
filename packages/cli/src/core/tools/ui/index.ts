@@ -4,8 +4,10 @@ import { createShellRenderers } from "./bash.ts";
 import { editRenderers } from "./edit.ts";
 import { findRenderers } from "./find.ts";
 import { grepRenderers } from "./grep.ts";
+import { outlineRenderers } from "./outline.ts";
 import { lsRenderers } from "./ls.ts";
 import { readRenderers } from "./read.ts";
+import { webfetchRenderers } from "./web.ts";
 import { writeRenderers } from "./write.ts";
 
 export type { ToolRenderers };
@@ -15,8 +17,10 @@ export {
 	editRenderers,
 	findRenderers,
 	grepRenderers,
+	outlineRenderers,
 	lsRenderers,
 	readRenderers,
+	webfetchRenderers,
 	writeRenderers,
 };
 
@@ -30,6 +34,8 @@ export function createAllToolRenderers(): Record<ToolName, ToolRenderers> {
 		grep: grepRenderers,
 		find: findRenderers,
 		ls: lsRenderers,
+		outline: outlineRenderers,
+		fetch: webfetchRenderers,
 	};
 }
 

@@ -19,22 +19,20 @@ export function wrapToolDefinition<TDetails = unknown>(
 		constrainedSampling: definition.constrainedSampling,
 		prepareArguments: definition.prepareArguments,
 		executionMode: definition.executionMode,
-		execute: (toolCallId, params, signal, onUpdate, ctx?: ExtensionToolContext) =>
-			definition.execute(
+
+		execute: (toolCallId, params, signal, onUpdate, ctx?: ExtensionToolContext) => {
+			// Optional ctx
+			const resolved: ExtensionToolContext | undefined = ctx ?? ctxFactory?.(toolCallId, signal);
+
+			return definition.execute(
 				toolCallId,
 				params,
 				signal,
 				onUpdate,
-				ctx ?? (ctxFactory?.(toolCallId, signal) as ExtensionToolContext),
-			),
+				resolved as ExtensionToolContext,
+			);
+		},
 	};
-}
-
-export function wrapToolDefinitions(
-	definitions: ToolDefinition<any, any>[],
-	ctxFactory?: ToolContextFactory,
-): AgentTool<any>[] {
-	return definitions.map((definition) => wrapToolDefinition(definition, ctxFactory));
 }
 
 export function createToolDefinitionFromAgentTool(
@@ -49,6 +47,7 @@ export function createToolDefinitionFromAgentTool(
 		constrainedSampling: tool.constrainedSampling,
 		prepareArguments: tool.prepareArguments,
 		executionMode: tool.executionMode,
+
 		execute: async (toolCallId, params, signal, onUpdate) =>
 			tool.execute(toolCallId, params, signal, onUpdate),
 	};

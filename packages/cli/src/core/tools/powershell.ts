@@ -7,11 +7,16 @@ import {
 	type BashToolInput,
 	type BashToolOptions,
 	type createBashTool,
+	buildShellTool,
 	createLocalShellOperations,
 	createShellToolDefinition,
 	type ShellToolConfig,
+	sessionEnvGuideline,
 } from "./bash.ts";
-import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
+
+// UTF-8
+const UTF8_OUTPUT_PREFIX =
+	"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
 
 export type PowerShellOperations = BashOperations;
 
@@ -28,22 +33,9 @@ export type PowerShellToolOptions = Pick<
 	"operations" | "exposeSessionEnvironment" | "spawnHook"
 >;
 
-const UTF8_OUTPUT_PREFIX =
-	"try { [Console]::OutputEncoding=[System.Text.Encoding]::UTF8 } catch {}\n";
-
-export function createLocalPowerShellOperations(): PowerShellOperations {
-	const operations = createLocalShellOperations("PowerShell", getPowerShellConfig);
-	return {
-		exec: (command, cwd, options) =>
-			operations.exec(`${UTF8_OUTPUT_PREFIX}${command}`, cwd, options),
-	};
-}
-
 export const powershellToolSystemPromptContribution = {
 	snippet: "Execute PowerShell commands",
-	guidelines: [
-		"You can inspect GAMA_* environment variables for current model and session details.",
-	],
+	guidelines: [sessionEnvGuideline],
 } as const;
 
 const powershellToolConfig: ShellToolConfig = {
@@ -55,6 +47,15 @@ const powershellToolConfig: ShellToolConfig = {
 	promptGuidelines: powershellToolSystemPromptContribution.guidelines,
 	tempFilePrefix: "gama-powershell",
 };
+
+export function createLocalPowerShellOperations(): PowerShellOperations {
+	const operations = createLocalShellOperations(getPowerShellConfig);
+
+	return {
+		exec: (command, cwd, options) =>
+			operations.exec(`${UTF8_OUTPUT_PREFIX}${command}`, cwd, options),
+	};
+}
 
 export function createPowerShellToolDefinition(
 	cwd: string,
@@ -70,11 +71,5 @@ export function createPowerShellTool(
 	cwd: string,
 	options?: PowerShellToolOptions,
 ): ReturnType<typeof createBashTool> {
-	const definition = createPowerShellToolDefinition(cwd, options);
-	const tool = wrapToolDefinition(definition);
-	Object.assign(tool, {
-		promptSnippet: definition.promptSnippet,
-		promptGuidelines: definition.promptGuidelines,
-	});
-	return tool;
+	return buildShellTool(createPowerShellToolDefinition(cwd, options));
 }

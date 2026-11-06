@@ -1,6 +1,6 @@
 import { Box, Container, Spacer, Text } from "@huranth/gama-tui";
-import { renderDiff } from "../../../modes/tui/parts/diff.ts";
-import type { Theme } from "../../../modes/tui/theme/theme.ts";
+import { renderDiff } from "../../../term/parts/diff.ts";
+import type { Theme } from "../../../term/theme/theme.ts";
 import type { ToolDefinition } from "../../ext/types.ts";
 import type { EditToolDetails } from "../edit.ts";
 import {
@@ -10,6 +10,12 @@ import {
 	type EditDiffResult,
 } from "../edit-diff.ts";
 import { renderToolPath, str } from "../render-utils.ts";
+
+const NO_PAD = 0;
+
+const TEXT_PAD_Y = 1;
+
+const BOX_PAD = 1;
 
 type EditPreview = EditDiffResult | EditDiffError;
 
@@ -37,8 +43,25 @@ type EditCallRenderComponent = Box & {
 	settledError?: boolean;
 };
 
+function isRenderableEdit(edit: Edit): boolean {
+	return typeof edit?.oldText === "string" && typeof edit?.newText === "string";
+}
+
+function getResultText(result: EditToolResultLike): string {
+	return result.content
+		.filter((block) => block.type === "text")
+		.map((block) => block.text || "")
+		.join("\n");
+}
+
+function previewArgsKey(input: { path: string; edits: Edit[] } | null): string | undefined {
+	if (!input) return undefined;
+
+	return JSON.stringify({ path: input.path, edits: input.edits });
+}
+
 function createEditCallRenderComponent(): EditCallRenderComponent {
-	const component = new Box(1, 1, (text: string) => text) as EditCallRenderComponent;
+	const component = new Box(BOX_PAD, BOX_PAD, (text: string) => text) as EditCallRenderComponent;
 	component.previewPending = false;
 	component.settledError = false;
 
@@ -56,12 +79,6 @@ function getEditCallRenderComponent(
 
 	state.callComponent ??= createEditCallRenderComponent();
 	return state.callComponent;
-}
-
-function previewArgsKey(input: { path: string; edits: Edit[] } | null): string | undefined {
-	if (!input) return undefined;
-
-	return JSON.stringify({ path: input.path, edits: input.edits });
 }
 
 function getRenderablePreviewInput(
@@ -85,21 +102,10 @@ function getRenderablePreviewInput(
 	return null;
 }
 
-function isRenderableEdit(edit: Edit): boolean {
-	return typeof edit?.oldText === "string" && typeof edit?.newText === "string";
-}
-
 function formatEditCall(args: RenderableEditArgs | undefined, theme: Theme, cwd: string): string {
 	const pathDisplay = renderToolPath(str(args?.file_path ?? args?.path), theme, cwd);
 
 	return `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
-}
-
-function getResultText(result: EditToolResultLike): string {
-	return result.content
-		.filter((block) => block.type === "text")
-		.map((block) => block.text || "")
-		.join("\n");
 }
 
 function formatEditResult(
@@ -133,56 +139,17 @@ function getEditHeaderBg(
 	settledError: boolean | undefined,
 	theme: Theme,
 ): (text: string) => string {
-	if (settledError) {
-		return (text: string) => theme.bg("toolErrorBg", text);
-	}
-
-	if (!preview) {
-		return (text: string) => theme.bg("toolPendingBg", text);
-	}
-
-	if ("error" in preview) {
-		return (text: string) => theme.bg("toolErrorBg", text);
-	}
+	if (settledError) return (text: string) => theme.bg("toolErrorBg", text);
+	if (!preview) return (text: string) => theme.bg("toolPendingBg", text);
+	if ("error" in preview) return (text: string) => theme.bg("toolErrorBg", text);
 
 	return (text: string) => theme.bg("toolSuccessBg", text);
 }
 
-function buildEditCallComponent(
-	component: EditCallRenderComponent,
-	args: RenderableEditArgs | undefined,
-	theme: Theme,
-	cwd: string,
-): EditCallRenderComponent {
-	component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
-	component.clear();
-	component.addChild(new Text(formatEditCall(args, theme, cwd), 0, 0));
-
-	if (!component.preview) {
-		return component;
-	}
-
-	const preview = component.preview;
-	const body = "error" in preview ? theme.fg("error", preview.error) : renderDiff(preview.diff);
-
-	component.addChild(new Spacer(1));
-	component.addChild(new Text(body, 0, 0));
-
-	return component;
-}
-
 function previewChanged(current: EditPreview | undefined, next: EditPreview): boolean {
-	if (current === undefined) {
-		return true;
-	}
-
-	if ("error" in current && "error" in next) {
-		return current.error !== next.error;
-	}
-
-	if ("error" in current || "error" in next) {
-		return true;
-	}
+	if (current === undefined) return true;
+	if ("error" in current && "error" in next) return current.error !== next.error;
+	if ("error" in current || "error" in next) return true;
 
 	return current.diff !== next.diff || current.firstChangedLine !== next.firstChangedLine;
 }
@@ -201,6 +168,29 @@ function setEditPreview(
 	return changed;
 }
 
+function buildEditCallComponent(
+	component: EditCallRenderComponent,
+	args: RenderableEditArgs | undefined,
+	theme: Theme,
+	cwd: string,
+): EditCallRenderComponent {
+	component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
+	component.clear();
+	component.addChild(new Text(formatEditCall(args, theme, cwd), NO_PAD, NO_PAD));
+
+	if (!component.preview) {
+		return component;
+	}
+
+	const preview = component.preview;
+	const body = "error" in preview ? theme.fg("error", preview.error) : renderDiff(preview.diff);
+
+	component.addChild(new Spacer(BOX_PAD));
+	component.addChild(new Text(body, NO_PAD, NO_PAD));
+
+	return component;
+}
+
 export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "renderResult"> = {
 	renderCall(args, theme, context) {
 		const component = getEditCallRenderComponent(context.state, context.lastComponent);
@@ -216,15 +206,18 @@ export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 
 		if (context.argsComplete && previewInput && !component.preview && !component.previewPending) {
 			component.previewPending = true;
+
 			const requestKey = argsKey;
-			void computeEditsDiff(previewInput.path, previewInput.edits, context.cwd).then(
-				(preview) => {
-					if (component.previewArgsKey === requestKey) {
-						setEditPreview(component, preview, requestKey);
-						context.invalidate();
-					}
-				},
-			);
+			void computeEditsDiff(previewInput.path, previewInput.edits, context.cwd)
+				.then((preview) => {
+					if (component.previewArgsKey !== requestKey) return;
+
+					setEditPreview(component, preview, requestKey);
+					context.invalidate();
+				})
+				.catch(() => {
+					component.previewPending = false;
+				});
 		}
 
 		return buildEditCallComponent(
@@ -246,17 +239,19 @@ export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 
 		if (callComponent) {
 			if (typeof resultDiff === "string") {
-				changed =
-					setEditPreview(
-						callComponent,
-						{ diff: resultDiff, firstChangedLine: typedResult.details?.firstChangedLine },
-						argsKey,
-					) || changed;
+				const nextPreview: EditPreview = {
+					diff: resultDiff,
+					firstChangedLine: typedResult.details?.firstChangedLine,
+				};
+
+				changed = setEditPreview(callComponent, nextPreview, argsKey) || changed;
 			}
+
 			if (callComponent.settledError !== context.isError) {
 				callComponent.settledError = context.isError;
 				changed = true;
 			}
+
 			if (changed) {
 				buildEditCallComponent(
 					callComponent,
@@ -275,12 +270,16 @@ export const editRenderers: Pick<ToolDefinition<any, any>, "renderCall" | "rende
 			context.isError,
 		);
 		const component = (context.lastComponent as Container | undefined) ?? new Container();
+
 		component.clear();
+
 		if (!output) {
 			return component;
 		}
-		component.addChild(new Spacer(1));
-		component.addChild(new Text(output, 1, 0));
+
+		component.addChild(new Spacer(BOX_PAD));
+		component.addChild(new Text(output, TEXT_PAD_Y, NO_PAD));
+
 		return component;
 	},
 };

@@ -1,10 +1,12 @@
 import { Container, Text } from "@huranth/gama-tui";
-import { keyHint } from "../../../modes/tui/parts/keybinding-hints.ts";
-import { getLanguageFromPath, highlightCode, type Theme } from "../../../modes/tui/theme/theme.ts";
+import { getLanguageFromPath, highlightCode, type Theme } from "../../../term/theme/theme.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../../ext/types.ts";
 import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "../render-utils.ts";
+import { trimTrailingEmptyLines } from "./format.ts";
 
-const WRITE_PARTIAL_FULL_HIGHLIGHT_LINES = 50;
+const FULL_HIGHLIGHT_LINES = 50;
+
+const WRITE_PREVIEW_MAX_LINES = 10;
 
 type WriteHighlightCache = {
 	rawPath: string | null;
@@ -27,17 +29,16 @@ function highlightSingleLine(line: string, lang: string): string {
 	return highlighted[0] ?? "";
 }
 
-function refreshWriteHighlightPrefix(cache: WriteHighlightCache): void {
-	const prefixCount = Math.min(WRITE_PARTIAL_FULL_HIGHLIGHT_LINES, cache.normalizedLines.length);
-	if (prefixCount === 0) return;
+function getRenderedLines(
+	fileContent: string,
+	lang: string | undefined,
+	cache: WriteHighlightCache | undefined,
+): string[] {
+	const text = normalizeDisplayText(fileContent);
+	if (!lang) return text.split("\n");
+	if (cache) return cache.highlightedLines;
 
-	const prefixSource = cache.normalizedLines.slice(0, prefixCount).join("\n");
-	const prefixHighlighted = highlightCode(prefixSource, cache.lang);
-
-	for (let i = 0; i < prefixCount; i++) {
-		const line = cache.normalizedLines[i] ?? "";
-		cache.highlightedLines[i] = prefixHighlighted[i] ?? highlightSingleLine(line, cache.lang);
-	}
+	return highlightCode(replaceTabs(text), lang);
 }
 
 function rebuildWriteHighlightCacheFull(
@@ -58,6 +59,20 @@ function rebuildWriteHighlightCacheFull(
 	};
 }
 
+// Highlight window
+function refreshWriteHighlightPrefix(cache: WriteHighlightCache): void {
+	const prefixCount = Math.min(FULL_HIGHLIGHT_LINES, cache.normalizedLines.length);
+	if (prefixCount === 0) return;
+
+	const prefixSource = cache.normalizedLines.slice(0, prefixCount).join("\n");
+	const prefixHighlighted = highlightCode(prefixSource, cache.lang);
+
+	for (let i = 0; i < prefixCount; i++) {
+		const line = cache.normalizedLines[i] ?? "";
+		cache.highlightedLines[i] = prefixHighlighted[i] ?? highlightSingleLine(line, cache.lang);
+	}
+}
+
 function updateWriteHighlightCacheIncremental(
 	cache: WriteHighlightCache | undefined,
 	rawPath: string | null,
@@ -66,8 +81,7 @@ function updateWriteHighlightCacheIncremental(
 	const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
 	if (!lang) return undefined;
 
-	if (!cache) return rebuildWriteHighlightCacheFull(rawPath, fileContent);
-	if (cache.lang !== lang || cache.rawPath !== rawPath) {
+	if (!cache || cache.lang !== lang || cache.rawPath !== rawPath) {
 		return rebuildWriteHighlightCacheFull(rawPath, fileContent);
 	}
 
@@ -104,25 +118,6 @@ function updateWriteHighlightCacheIncremental(
 	return cache;
 }
 
-function trimTrailingEmptyLines(lines: string[]): string[] {
-	let end = lines.length;
-	while (end > 0 && lines[end - 1] === "") end--;
-
-	return lines.slice(0, end);
-}
-
-function getRenderedLines(
-	fileContent: string,
-	lang: string | undefined,
-	cache: WriteHighlightCache | undefined,
-): string[] {
-	const text = normalizeDisplayText(fileContent);
-	if (!lang) return text.split("\n");
-	if (cache) return cache.highlightedLines;
-
-	return highlightCode(replaceTabs(text), lang);
-}
-
 function formatPreviewBody(
 	fileContent: string,
 	lang: string | undefined,
@@ -133,7 +128,7 @@ function formatPreviewBody(
 	const rendered = getRenderedLines(fileContent, lang, cache);
 	const lines = trimTrailingEmptyLines(rendered);
 	const totalLines = lines.length;
-	const maxLines = options.expanded ? lines.length : 10;
+	const maxLines = options.expanded ? lines.length : WRITE_PREVIEW_MAX_LINES;
 	const shown = lines.slice(0, maxLines);
 	const remaining = lines.length - maxLines;
 	const body = shown
@@ -163,12 +158,10 @@ function formatWriteCall(
 		text += `\n\n${preview.body}`;
 
 		if (preview.remaining > 0) {
-			const more = theme.fg(
+			text += theme.fg(
 				"muted",
-				`\n... (${preview.remaining} more lines, ${preview.totalLines} total,`,
+				`\n... (${preview.remaining} more lines, ${preview.totalLines} total)`,
 			);
-			const expand = keyHint("app.tools.expand", "to expand");
-			text += `${more} ${expand}${theme.fg("muted", ")")}`;
 		}
 	}
 
