@@ -8,16 +8,6 @@ export interface ReasoningLevelPreset {
 
 export const DEFAULT_THINKING_LEVEL: ThinkingLevel = "medium";
 
-export const THINKING_LEVEL_OPTIONS: readonly ThinkingLevel[] = [
-	"off",
-	"minimal",
-	"low",
-	"medium",
-	"high",
-	"xhigh",
-	"max",
-];
-
 export const REASONING_LEVELS: readonly ReasoningLevelPreset[] = [
 	{ tier: "off", name: "parked", hint: "Reasoning off, one-shot responses" },
 	{ tier: "minimal", name: "idling", hint: "Engine running, a quick thought when needed" },
@@ -27,6 +17,10 @@ export const REASONING_LEVELS: readonly ReasoningLevelPreset[] = [
 	{ tier: "xhigh", name: "overdrive", hint: "Extra gear, extended deliberation" },
 	{ tier: "max", name: "redline", hint: "Full throttle, maximum deliberation" },
 ];
+
+export const THINKING_LEVEL_OPTIONS: readonly ThinkingLevel[] = REASONING_LEVELS.map(
+	(level) => level.tier,
+);
 
 export function reasoningLevelName(tier: string): string {
 	return REASONING_LEVELS.find((level) => level.tier === tier)?.name ?? tier;
