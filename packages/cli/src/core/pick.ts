@@ -2,9 +2,9 @@ import type { ThinkingLevel } from "@huranth/gama-agent-core";
 import { type Api, type AuthOperationOptions, type Model, modelsAreEqual } from "@huranth/gama-ai";
 import chalk from "chalk";
 import { minimatch } from "minimatch";
-import { parseThinkingLevel } from "../cli/args.ts";
+import { parseThinkingLevel } from "../start/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
-import type { ModelRuntime } from "./model-runtime.ts";
+import type { ModelHub } from "./model-run.ts";
 
 export interface ScopedModel {
 	model: Model<Api>;
@@ -42,17 +42,6 @@ export interface InitialModelResult {
 	fallbackMessage: string | undefined;
 }
 
-export async function resolveModelScopeWithDiagnostics(
-	patterns: string[],
-	modelRuntime: ModelRuntime,
-	options?: AuthOperationOptions,
-): Promise<ResolveModelScopeResult> {
-	return resolveModelScopeFromModels(
-		patterns,
-		await modelRuntime.getAvailable(undefined, options),
-	);
-}
-
 function isAlias(id: string): boolean {
 	if (id.endsWith("-latest")) return true;
 
@@ -60,12 +49,50 @@ function isAlias(id: string): boolean {
 	return !datePattern.test(id);
 }
 
+function filterConfiguredAuth(
+	models: readonly Model<Api>[],
+	modelRuntime: ModelHub,
+): Model<Api>[] {
+	return models.filter((model) => modelRuntime.hasConfiguredAuth(model.provider));
+}
+
+function findModelsByIdReference(
+	models: readonly Model<Api>[],
+	reference: string,
+): Model<Api>[] {
+	const lower = reference.toLowerCase();
+
+	return models.filter(
+		(model) =>
+			model.id.toLowerCase() === lower || `${model.provider}/${model.id}`.toLowerCase() === lower,
+	);
+}
+
+function pushScopedModel(
+	scopedModels: ScopedModel[],
+	model: Model<Api>,
+	thinkingLevel: ThinkingLevel | undefined,
+): void {
+	if (scopedModels.some((scoped) => modelsAreEqual(scoped.model, model))) return;
+
+	scopedModels.push({ model, thinkingLevel });
+}
+
+function noMatchDiagnostic(pattern: string): ModelScopeDiagnostic {
+	return {
+		type: "warning",
+		code: "no-match",
+		message: `No models match pattern "${pattern}"`,
+		pattern,
+	};
+}
+
 function buildFallbackModel(
 	provider: string,
 	modelId: string,
 	availableModels: Model<Api>[],
 ): Model<Api> | undefined {
-	const providerModels = availableModels.filter((m) => m.provider === provider);
+	const providerModels = availableModels.filter((model) => model.provider === provider);
 	if (providerModels.length === 0) return undefined;
 
 	const baseModel = providerModels[0];
@@ -77,9 +104,100 @@ function buildFallbackModel(
 	};
 }
 
+export function findExactModelReferenceMatch(
+	modelReference: string,
+	availableModels: Model<Api>[],
+): Model<Api> | undefined {
+	const trimmedReference = modelReference.trim();
+	if (!trimmedReference) {
+		return undefined;
+	}
+
+	const normalizedReference = trimmedReference.toLowerCase();
+
+	const canonicalMatches = availableModels.filter(
+		(model) => `${model.provider}/${model.id}`.toLowerCase() === normalizedReference,
+	);
+	if (canonicalMatches.length === 1) {
+		return canonicalMatches[0];
+	}
+	if (canonicalMatches.length > 1) {
+		return undefined;
+	}
+
+	const slashIndex = trimmedReference.indexOf("/");
+
+	if (slashIndex === -1) {
+		const idMatches = availableModels.filter(
+			(model) => model.id.toLowerCase() === normalizedReference,
+		);
+
+		return idMatches.length === 1 ? idMatches[0] : undefined;
+	}
+
+	const provider = trimmedReference.substring(0, slashIndex).trim();
+	const modelId = trimmedReference.substring(slashIndex + 1).trim();
+	if (!provider || !modelId) return undefined;
+
+	const providerMatches = availableModels.filter(
+		(model) =>
+			model.provider.toLowerCase() === provider.toLowerCase() &&
+			model.id.toLowerCase() === modelId.toLowerCase(),
+	);
+
+	if (providerMatches.length === 1) {
+		return providerMatches[0];
+	}
+
+	return undefined;
+}
+
+function tryMatchModel(
+	modelPattern: string,
+	availableModels: Model<Api>[],
+): Model<Api> | undefined {
+	const exactMatch = findExactModelReferenceMatch(modelPattern, availableModels);
+	if (exactMatch) {
+		return exactMatch;
+	}
+
+	const lowerPattern = modelPattern.toLowerCase();
+	const matches = availableModels.filter(
+		(model) =>
+			model.id.toLowerCase().includes(lowerPattern) ||
+			model.name?.toLowerCase().includes(lowerPattern),
+	);
+
+	if (matches.length === 0) {
+		return undefined;
+	}
+
+	const aliases = matches.filter((model) => isAlias(model.id));
+	const datedVersions = matches.filter((model) => !isAlias(model.id));
+
+	if (aliases.length > 0) {
+		aliases.sort((a, b) => b.id.localeCompare(a.id));
+		return aliases[0];
+	}
+
+	datedVersions.sort((a, b) => b.id.localeCompare(a.id));
+	return datedVersions[0];
+}
+
+export async function resolveModelScopeWithDiagnostics(
+	patterns: string[],
+	modelRuntime: ModelHub,
+	options?: AuthOperationOptions,
+): Promise<ResolveModelScopeResult> {
+	return resolveModelScopeFromModels(
+		patterns,
+		await modelRuntime.getAvailable(undefined, options),
+	);
+}
+
 export async function resolveModelScope(
 	patterns: string[],
-	modelRuntime: ModelRuntime,
+	modelRuntime: ModelHub,
 	options?: AuthOperationOptions,
 ): Promise<ScopedModel[]> {
 	const { scopedModels, diagnostics } = await resolveModelScopeWithDiagnostics(
@@ -93,37 +211,6 @@ export async function resolveModelScope(
 	}
 
 	return scopedModels;
-}
-
-function tryMatchModel(
-	modelPattern: string,
-	availableModels: Model<Api>[],
-): Model<Api> | undefined {
-	const exactMatch = findExactModelReferenceMatch(modelPattern, availableModels);
-	if (exactMatch) {
-		return exactMatch;
-	}
-
-	const matches = availableModels.filter(
-		(m) =>
-			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
-	);
-
-	if (matches.length === 0) {
-		return undefined;
-	}
-
-	const aliases = matches.filter((m) => isAlias(m.id));
-	const datedVersions = matches.filter((m) => !isAlias(m.id));
-
-	if (aliases.length > 0) {
-		aliases.sort((a, b) => b.id.localeCompare(a.id));
-		return aliases[0];
-	}
-
-	datedVersions.sort((a, b) => b.id.localeCompare(a.id));
-	return datedVersions[0];
 }
 
 export function parseModelPattern(
@@ -175,116 +262,6 @@ export function parseModelPattern(
 	return result;
 }
 
-export async function restoreModelFromSession(
-	savedProvider: string,
-	savedModelId: string,
-	currentModel: Model<Api> | undefined,
-	shouldPrintMessages: boolean,
-	modelRuntime: ModelRuntime,
-): Promise<{ model: Model<Api> | undefined; fallbackMessage: string | undefined }> {
-	const restoredModel = modelRuntime.getModel(savedProvider, savedModelId);
-
-	const hasConfiguredAuth = restoredModel
-		? modelRuntime.hasConfiguredAuth(restoredModel.provider)
-		: false;
-
-	if (restoredModel && hasConfiguredAuth) {
-		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Restored model: ${savedProvider}/${savedModelId}`));
-		}
-		return { model: restoredModel, fallbackMessage: undefined };
-	}
-
-	const reason = !restoredModel ? "model no longer exists" : "no auth configured";
-
-	if (shouldPrintMessages) {
-		console.error(
-			chalk.yellow(
-				`Warning: Could not restore model ${savedProvider}/${savedModelId} (${reason}).`,
-			),
-		);
-	}
-
-	if (currentModel) {
-		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Falling back to: ${currentModel.provider}/${currentModel.id}`));
-		}
-		return {
-			model: currentModel,
-			fallbackMessage:
-				`Could not restore model ${savedProvider}/${savedModelId} (${reason}). ` +
-				`Using ${currentModel.provider}/${currentModel.id}.`,
-		};
-	}
-
-	const availableModels = [...modelRuntime.getAvailableSnapshot()];
-
-	if (availableModels.length > 0) {
-		const fallbackModel = availableModels[0];
-
-		if (shouldPrintMessages) {
-			console.log(chalk.dim(`Falling back to: ${fallbackModel.provider}/${fallbackModel.id}`));
-		}
-
-		return {
-			model: fallbackModel,
-			fallbackMessage:
-				`Could not restore model ${savedProvider}/${savedModelId} (${reason}). ` +
-				`Using ${fallbackModel.provider}/${fallbackModel.id}.`,
-		};
-	}
-
-	return { model: undefined, fallbackMessage: undefined };
-}
-
-export function findExactModelReferenceMatch(
-	modelReference: string,
-	availableModels: Model<Api>[],
-): Model<Api> | undefined {
-	const trimmedReference = modelReference.trim();
-	if (!trimmedReference) {
-		return undefined;
-	}
-
-	const normalizedReference = trimmedReference.toLowerCase();
-
-	const canonicalMatches = availableModels.filter(
-		(model) => `${model.provider}/${model.id}`.toLowerCase() === normalizedReference,
-	);
-	if (canonicalMatches.length === 1) {
-		return canonicalMatches[0];
-	}
-	if (canonicalMatches.length > 1) {
-		return undefined;
-	}
-
-	const slashIndex = trimmedReference.indexOf("/");
-
-	if (slashIndex === -1) {
-		const idMatches = availableModels.filter(
-			(model) => model.id.toLowerCase() === normalizedReference,
-		);
-
-		return idMatches.length === 1 ? idMatches[0] : undefined;
-	}
-
-	const provider = trimmedReference.substring(0, slashIndex).trim();
-	const modelId = trimmedReference.substring(slashIndex + 1).trim();
-	if (!provider || !modelId) return undefined;
-
-	const providerMatches = availableModels.filter(
-		(model) =>
-			model.provider.toLowerCase() === provider.toLowerCase() &&
-			model.id.toLowerCase() === modelId.toLowerCase(),
-	);
-
-	if (providerMatches.length === 1) {
-		return providerMatches[0];
-	}
-
-	return undefined;
-}
-
 export function resolveModelScopeFromModels(
 	patterns: string[],
 	models: readonly Model<Api>[],
@@ -295,49 +272,40 @@ export function resolveModelScopeFromModels(
 
 	for (const pattern of patterns) {
 		if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
-			const colonIdx = pattern.lastIndexOf(":");
+			const colonIndex = pattern.lastIndexOf(":");
 			let globPattern = pattern;
 			let thinkingLevel: ThinkingLevel | undefined;
 
-			if (colonIdx !== -1) {
-				const suffix = pattern.substring(colonIdx + 1);
+			if (colonIndex !== -1) {
+				const suffix = pattern.substring(colonIndex + 1);
 				const tier = parseThinkingLevel(suffix);
 				if (tier) {
 					thinkingLevel = tier;
-					globPattern = pattern.substring(0, colonIdx);
+					globPattern = pattern.substring(0, colonIndex);
 				}
 			}
 
 			const exactMatch = findExactModelReferenceMatch(globPattern, availableModels);
 			if (exactMatch) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, exactMatch))) {
-					scopedModels.push({ model: exactMatch, thinkingLevel });
-				}
+				pushScopedModel(scopedModels, exactMatch, thinkingLevel);
 				continue;
 			}
 
-			const matchingModels = availableModels.filter((m) => {
-				const fullId = `${m.provider}/${m.id}`;
+			const matchingModels = availableModels.filter((model) => {
+				const fullId = `${model.provider}/${model.id}`;
 				return (
 					minimatch(fullId, globPattern, { nocase: true }) ||
-					minimatch(m.id, globPattern, { nocase: true })
+					minimatch(model.id, globPattern, { nocase: true })
 				);
 			});
 
 			if (matchingModels.length === 0) {
-				diagnostics.push({
-					type: "warning",
-					code: "no-match",
-					message: `No models match pattern "${pattern}"`,
-					pattern,
-				});
+				diagnostics.push(noMatchDiagnostic(pattern));
 				continue;
 			}
 
 			for (const model of matchingModels) {
-				if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-					scopedModels.push({ model, thinkingLevel });
-				}
+				pushScopedModel(scopedModels, model, thinkingLevel);
 			}
 			continue;
 		}
@@ -354,18 +322,11 @@ export function resolveModelScopeFromModels(
 		}
 
 		if (!model) {
-			diagnostics.push({
-				type: "warning",
-				code: "no-match",
-				message: `No models match pattern "${pattern}"`,
-				pattern,
-			});
+			diagnostics.push(noMatchDiagnostic(pattern));
 			continue;
 		}
 
-		if (!scopedModels.find((sm) => modelsAreEqual(sm.model, model))) {
-			scopedModels.push({ model, thinkingLevel });
-		}
+		pushScopedModel(scopedModels, model, thinkingLevel);
 	}
 
 	return { scopedModels, diagnostics };
@@ -380,7 +341,7 @@ export async function findInitialModel(options: {
 	defaultModelId?: string;
 	defaultThinkingLevel?: ThinkingLevel;
 	modelThinkingLevels?: Record<string, ThinkingLevel>;
-	modelRuntime: ModelRuntime;
+	modelRuntime: ModelHub;
 }): Promise<InitialModelResult> {
 	const {
 		cliProvider,
@@ -479,7 +440,7 @@ export function resolveCliModel(options: {
 	cliProvider?: string;
 	cliModel?: string;
 	cliThinking?: ThinkingLevel;
-	modelRuntime: ModelRuntime;
+	modelRuntime: ModelHub;
 }): ResolveCliModelResult {
 	const { cliProvider, cliModel, cliThinking, modelRuntime } = options;
 
@@ -492,13 +453,13 @@ export function resolveCliModel(options: {
 		return {
 			model: undefined,
 			warning: undefined,
-			error: "No models available. Check your installation or add models to models.json.",
+			error: "No models",
 		};
 	}
 
 	const providerMap = new Map<string, string>();
-	for (const m of availableModels) {
-		providerMap.set(m.provider.toLowerCase(), m.provider);
+	for (const model of availableModels) {
+		providerMap.set(model.provider.toLowerCase(), model.provider);
 	}
 
 	let provider = cliProvider ? providerMap.get(cliProvider.toLowerCase()) : undefined;
@@ -529,10 +490,7 @@ export function resolveCliModel(options: {
 	}
 
 	if (!provider) {
-		const lower = cliModel.toLowerCase();
-		const exactMatches = availableModels.filter(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
+		const exactMatches = findModelsByIdReference(availableModels, cliModel);
 		if (exactMatches.length === 1) {
 			return {
 				model: exactMatches[0],
@@ -542,9 +500,7 @@ export function resolveCliModel(options: {
 			};
 		}
 		if (exactMatches.length > 1) {
-			const authenticatedExactMatches = exactMatches.filter((m) =>
-				modelRuntime.hasConfiguredAuth(m.provider),
-			);
+			const authenticatedExactMatches = filterConfiguredAuth(exactMatches, modelRuntime);
 			if (authenticatedExactMatches.length === 1) {
 				return {
 					model: authenticatedExactMatches[0],
@@ -555,7 +511,7 @@ export function resolveCliModel(options: {
 			}
 
 			const matches = exactMatches
-				.map((m) => `${m.provider}/${m.id}`)
+				.map((model) => `${model.provider}/${model.id}`)
 				.sort((a, b) => a.localeCompare(b))
 				.join(", ");
 			const authHint =
@@ -581,7 +537,7 @@ export function resolveCliModel(options: {
 	}
 
 	const candidates = provider
-		? availableModels.filter((m) => m.provider === provider)
+		? availableModels.filter((model) => model.provider === provider)
 		: availableModels;
 	const { model, thinkingLevel, warning } = parseModelPattern(pattern, candidates, {
 		allowInvalidThinkingLevelFallback: false,
@@ -590,12 +546,12 @@ export function resolveCliModel(options: {
 	if (model) {
 		if (inferredProvider) {
 			const rawExactMatches = availableModels.filter(
-				(m) => m.id.toLowerCase() === cliModel.toLowerCase() && !modelsAreEqual(m, model),
+				(candidate) =>
+					candidate.id.toLowerCase() === cliModel.toLowerCase() &&
+					!modelsAreEqual(candidate, model),
 			);
 			if (rawExactMatches.length > 0 && !modelRuntime.hasConfiguredAuth(model.provider)) {
-				const authenticatedRawMatches = rawExactMatches.filter((m) =>
-					modelRuntime.hasConfiguredAuth(m.provider),
-				);
+				const authenticatedRawMatches = filterConfiguredAuth(rawExactMatches, modelRuntime);
 				if (authenticatedRawMatches.length === 1) {
 					return {
 						model: authenticatedRawMatches[0],
@@ -610,10 +566,7 @@ export function resolveCliModel(options: {
 	}
 
 	if (inferredProvider) {
-		const lower = cliModel.toLowerCase();
-		const exact = availableModels.find(
-			(m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
-		);
+		const exact = findModelsByIdReference(availableModels, cliModel)[0];
 		if (exact) {
 			return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
 		}

@@ -4,7 +4,7 @@ import { getAgentDir } from "../config.ts";
 import { raceWithAbortSignal } from "../utils/abort.ts";
 import { getFileRevision, normalizePath } from "../utils/paths.ts";
 import { stripBom } from "../utils/text.ts";
-import { type AuthStorageBackend, FileAuthStorageBackend } from "./auth-storage.ts";
+import { type AuthStorageBackend, FileAuthStorageBackend } from "./vault.ts";
 
 type StoredModels = Record<string, ModelsStoreEntry>;
 
@@ -20,7 +20,7 @@ type ModelsFileReadState = {
 	reload?: ModelsFileReload;
 };
 
-let sharedModelsFileReadState: { path: string; readState: ModelsFileReadState } | undefined;
+const sharedModelsFileReadStates = new Map<string, ModelsFileReadState>();
 
 export class InMemoryCodingAgentModelsStore implements ModelsStore {
 	private readonly entries = new Map<string, ModelsStoreEntry>();
@@ -57,17 +57,24 @@ export class FileModelsStore implements ModelsStore {
 	constructor(path: string = join(getAgentDir(), "models-store.json")) {
 		this.path = normalizePath(path);
 		this.storage = new FileAuthStorageBackend(this.path);
-		this.readState =
-			sharedModelsFileReadState?.path === this.path
-				? sharedModelsFileReadState.readState
-				: { data: {} };
-		if (!sharedModelsFileReadState) {
-			sharedModelsFileReadState = { path: this.path, readState: this.readState };
-		}
+
+		const sharedReadState = sharedModelsFileReadStates.get(this.path);
+		this.readState = sharedReadState ?? { data: {} };
+		if (!sharedReadState) sharedModelsFileReadStates.set(this.path, this.readState);
 	}
 
 	private parse(content: string | undefined): StoredModels {
-		return content ? (JSON.parse(stripBom(content)) as StoredModels) : {};
+		if (!content) return {};
+		let parsed: unknown;
+		try {
+			parsed = JSON.parse(stripBom(content));
+		} catch {
+			throw new Error("Invalid models file");
+		}
+		if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+			throw new Error("Invalid models file");
+		}
+		return parsed as StoredModels;
 	}
 
 	private updateReadState(
@@ -105,14 +112,10 @@ export class FileModelsStore implements ModelsStore {
 				readers: 0,
 			};
 			readState.reload = reload;
-			void reload.promise.then(
-				() => {
-					if (readState.reload === reload) readState.reload = undefined;
-				},
-				() => {
-					if (readState.reload === reload) readState.reload = undefined;
-				},
-			);
+			const clearReload = (): void => {
+				if (readState.reload === reload) readState.reload = undefined;
+			};
+			void reload.promise.then(clearReload, clearReload);
 		}
 
 		const reload = readState.reload;
@@ -126,6 +129,22 @@ export class FileModelsStore implements ModelsStore {
 				reload.controller.abort();
 			}
 		}
+	}
+
+	private async mutate(
+		change: (current: StoredModels) => void,
+		options?: ModelsStoreOperationOptions,
+	): Promise<void> {
+		let latest: StoredModels | undefined;
+
+		await this.storage.withLockAsync(async (content) => {
+			const current = this.parse(content);
+			change(current);
+			latest = current;
+			return { result: undefined, next: JSON.stringify(current, null, 2) };
+		}, options);
+
+		if (latest) this.updateReadState(this.readState, latest);
 	}
 
 	async read(
@@ -142,24 +161,14 @@ export class FileModelsStore implements ModelsStore {
 		entry: ModelsStoreEntry,
 		options?: ModelsStoreOperationOptions,
 	): Promise<void> {
-		let latest: StoredModels | undefined;
-		await this.storage.withLockAsync(async (content) => {
-			const current = this.parse(content);
+		return this.mutate((current) => {
 			current[providerId] = structuredClone(entry);
-			latest = current;
-			return { result: undefined, next: JSON.stringify(current, null, 2) };
 		}, options);
-		if (latest) this.updateReadState(this.readState, latest);
 	}
 
 	async delete(providerId: string, options?: ModelsStoreOperationOptions): Promise<void> {
-		let latest: StoredModels | undefined;
-		await this.storage.withLockAsync(async (content) => {
-			const current = this.parse(content);
+		return this.mutate((current) => {
 			delete current[providerId];
-			latest = current;
-			return { result: undefined, next: JSON.stringify(current, null, 2) };
 		}, options);
-		if (latest) this.updateReadState(this.readState, latest);
 	}
 }

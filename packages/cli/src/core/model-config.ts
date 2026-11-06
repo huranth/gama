@@ -281,18 +281,22 @@ const ModelsConfigSchema = Type.Object({
 
 const validateModelsConfig = Compile(ModelsConfigSchema);
 
+function readFieldPath(error: TLocalizedValidationError): string {
+	return error.instancePath.replace(/^\//, "").replace(/\//g, ".");
+}
+
 function formatValidationPath(error: TLocalizedValidationError): string {
 	if (error.keyword === "required") {
 		const requiredProperties = (error.params as { requiredProperties?: string[] })
 			.requiredProperties;
 		const requiredProperty = requiredProperties?.[0];
 		if (requiredProperty) {
-			const basePath = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
+			const basePath = readFieldPath(error);
 			return basePath ? `${basePath}.${requiredProperty}` : requiredProperty;
 		}
 	}
-	const path = error.instancePath.replace(/^\//, "").replace(/\//g, ".");
-	return path || "root";
+
+	return readFieldPath(error) || "root";
 }
 
 function deepFreeze<T>(value: T): T {
@@ -314,6 +318,18 @@ export class ModelConfig {
 	private constructor(providers: ReadonlyMap<string, ModelsJsonProvider>, error?: string) {
 		this.providers = providers;
 		this.error = error;
+	}
+
+	getProvider(providerId: string): ModelsJsonProvider | undefined {
+		return this.providers.get(providerId);
+	}
+
+	getProviderIds(): readonly string[] {
+		return [...this.providers.keys()];
+	}
+
+	getError(): string | undefined {
+		return this.error;
 	}
 
 	static async load(modelsJsonPath: string | undefined): Promise<ModelConfig> {
@@ -365,17 +381,5 @@ export class ModelConfig {
 		}
 
 		return new ModelConfig(providers);
-	}
-
-	getProvider(providerId: string): ModelsJsonProvider | undefined {
-		return this.providers.get(providerId);
-	}
-
-	getProviderIds(): readonly string[] {
-		return [...this.providers.keys()];
-	}
-
-	getError(): string | undefined {
-		return this.error;
 	}
 }

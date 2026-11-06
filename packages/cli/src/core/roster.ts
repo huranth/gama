@@ -2,7 +2,7 @@ import type {
 	Api,
 	AssistantImages,
 	AssistantMessage,
-	AssistantMessageEventStream,
+	ReplyStream,
 	AuthOperationOptions,
 	AuthResult,
 	ClassifierApi,
@@ -25,9 +25,9 @@ import type {
 	Provider,
 	ProviderHeaders,
 } from "@huranth/gama-ai";
-import type { ModelRuntime } from "./model-runtime.ts";
+import type { ModelHub } from "./model-run.ts";
 import type { AuthStatus, ProviderConfigInput } from "./provider-composer.ts";
-import type { VirtualModelDefinition } from "./virtual-models.ts";
+import type { VirtualModelDefinition } from "./fake-models.ts";
 
 export type { ProviderConfigInput } from "./provider-composer.ts";
 
@@ -44,9 +44,9 @@ export type ResolvedRequestAuth =
 export { clearApiKeyCache } from "./provider-composer.ts";
 
 export class ModelRegistry {
-	private readonly runtime: ModelRuntime;
+	private readonly runtime: ModelHub;
 
-	constructor(runtime: ModelRuntime) {
+	constructor(runtime: ModelHub) {
 		this.runtime = runtime;
 	}
 
@@ -75,43 +75,11 @@ export class ModelRegistry {
 		provider: string,
 		modelId: string,
 	): ModelTypeMap[TType] | undefined {
-		return this.runtime.getModelOfType(type, provider, modelId);
+		return this.getModelOfType(type, provider, modelId);
 	}
 
 	hasConfiguredAuth(model: Model<Api>): boolean {
 		return this.runtime.hasConfiguredAuth(model.provider);
-	}
-
-	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
-		try {
-			const resolution = await this.runtime.getAuth(model);
-
-			if (!resolution) {
-				const compatibility = this.runtime.getCompatibilityRequestConfig(model);
-
-				if (compatibility.authHeader) {
-					return { ok: false, error: `No API key found for "${model.provider}"` };
-				}
-
-				return { ok: true, headers: compatibility.headers };
-			}
-
-			return {
-				ok: true,
-				apiKey: resolution.auth.apiKey,
-				headers: resolution.auth.headers,
-				...(resolution.auth.baseUrl ? { baseUrl: resolution.auth.baseUrl } : {}),
-				env: resolution.env,
-			};
-		} catch (error) {
-			const message = readErrorMessage(error);
-			const missingKey = message === "authHeader requires a resolved API key";
-
-			return {
-				ok: false,
-				error: missingKey ? `No API key found for "${model.provider}"` : message,
-			};
-		}
 	}
 
 	getProviderAuthStatus(provider: string): AuthStatus {
@@ -126,7 +94,7 @@ export class ModelRegistry {
 		model: Model<TApi>,
 		context: Context,
 		options?: ModelsApiStreamOptions<TApi>,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		return this.runtime.stream(model, context, options);
 	}
 
@@ -134,7 +102,7 @@ export class ModelRegistry {
 		model: Model<Api>,
 		context: Context,
 		options?: ModelsSimpleStreamOptions,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		return this.runtime.streamSimple(model, context, options);
 	}
 
@@ -206,7 +174,7 @@ export class ModelRegistry {
 	registerProvider(providerOrName: Provider | string, config?: ProviderConfigInput): void {
 		if (typeof providerOrName === "string") {
 			if (!config) {
-				throw new Error("Provider config is required when registering by name");
+				throw new Error("Provider config required");
 			}
 
 			this.runtime.registerProvider(providerOrName, config);
@@ -238,6 +206,38 @@ export class ModelRegistry {
 
 	getRegisteredProviderIds(): readonly string[] {
 		return this.runtime.getRegisteredProviderIds();
+	}
+
+	async getApiKeyAndHeaders(model: Model<Api>): Promise<ResolvedRequestAuth> {
+		try {
+			const resolution = await this.runtime.getAuth(model);
+
+			if (!resolution) {
+				const compatibility = this.runtime.getCompatibilityRequestConfig(model);
+
+				if (compatibility.authHeader) {
+					return { ok: false, error: `No API key found for "${model.provider}"` };
+				}
+
+				return { ok: true, headers: compatibility.headers };
+			}
+
+			return {
+				ok: true,
+				apiKey: resolution.auth.apiKey,
+				headers: resolution.auth.headers,
+				...(resolution.auth.baseUrl ? { baseUrl: resolution.auth.baseUrl } : {}),
+				env: resolution.env,
+			};
+		} catch (error) {
+			const message = readErrorMessage(error);
+			const missingKey = message === "authHeader requires a resolved API key";
+
+			return {
+				ok: false,
+				error: missingKey ? `No API key found for "${model.provider}"` : message,
+			};
+		}
 	}
 }
 

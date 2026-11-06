@@ -5,7 +5,7 @@ import {
 	type ApiStreamOptions,
 	type AssistantImages,
 	type AssistantMessage,
-	type AssistantMessageEventStream,
+	type ReplyStream,
 	type AuthCheck,
 	type AuthOperationOptions,
 	type AuthResult,
@@ -53,7 +53,7 @@ import {
 	type SimpleStreamOptions,
 	type StreamOptions,
 } from "@huranth/gama-ai";
-import * as builtinProviderCatalog from "@huranth/gama-ai/providers/all";
+import * as builtinProviderCatalog from "@huranth/gama-ai/catalog/all";
 import {
 	assertChatModel,
 	assertClassifierModel,
@@ -63,7 +63,7 @@ import {
 } from "@huranth/gama-ai/utils/model-operations";
 import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
-import { AuthStorage as DefaultAuthStorage } from "./auth-storage.ts";
+import { AuthStorage as DefaultAuthStorage } from "./vault.ts";
 import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
@@ -85,7 +85,7 @@ import {
 	type ModelRouteReason,
 	type VirtualModelDefinition,
 	withVirtualModels,
-} from "./virtual-models.ts";
+} from "./fake-models.ts";
 
 interface RegisteredVirtualModel {
 	model: Model<Api>;
@@ -120,45 +120,15 @@ export interface ModelRuntimeAuthOverrides extends AuthOperationOptions {
 
 export type CredentialSynchronizationOperation = "setRuntimeApiKey" | "removeRuntimeApiKey";
 
-export class CredentialSynchronizationError extends Error {
-	readonly providerId: string;
-	readonly operation: CredentialSynchronizationOperation;
-	readonly credential: Credential | undefined;
-
-	constructor(
-		providerId: string,
-		operation: CredentialSynchronizationOperation,
-		credential: Credential | undefined,
-		options: ErrorOptions,
-	) {
-		super(
-			`Credential ${operation} committed for ${providerId}, but local synchronization failed`,
-			options,
-		);
-		this.name = "CredentialSynchronizationError";
-		this.providerId = providerId;
-		this.operation = operation;
-		this.credential = credential;
-	}
+function readErrorMessage(error: unknown): string {
+	return error instanceof Error ? error.message : String(error);
 }
 
-function mergeHeaders(
-	base: ProviderHeaders | undefined,
-	override: ProviderHeaders | undefined,
-): ProviderHeaders | undefined {
-	if (!base && !override) return undefined;
-	const merged = { ...base };
-	for (const [name, value] of Object.entries(override ?? {})) {
-		const lowerName = name.toLowerCase();
-		for (const existingName of Object.keys(merged)) {
-			if (existingName.toLowerCase() === lowerName) delete merged[existingName];
-		}
-		merged[name] = value;
-	}
-	return merged;
+function modelKey(model: { provider: string; id: string }): string {
+	return `${model.provider}\0${model.id}`;
 }
 
-export class ModelRuntime implements Models {
+export class ModelHub implements Models {
 	private readonly models: MutableModels;
 	private readonly credentials: RuntimeCredentials;
 	private readonly includeBuiltinProviders: boolean;
@@ -205,15 +175,7 @@ export class ModelRuntime implements Models {
 		this.rebuildProviders();
 	}
 
-	private activateDefaultBuiltins(): void {
-		this.builtins.clear();
-		if (!this.includeBuiltinProviders) return;
-		for (const [providerId, provider] of this.defaultBuiltins) {
-			this.builtins.set(providerId, provider);
-		}
-	}
-
-	static async create(options: CreateModelRuntimeOptions = {}): Promise<ModelRuntime> {
+	static async create(options: CreateModelRuntimeOptions = {}): Promise<ModelHub> {
 		const credentials = new RuntimeCredentials(
 			options.credentials ?? DefaultAuthStorage.create(options.authPath),
 		);
@@ -229,7 +191,7 @@ export class ModelRuntime implements Models {
 						options.modelsStorePath ?? join(dirname(modelsPath), "models-store.json"),
 					)
 				: new InMemoryCodingAgentModelsStore());
-		const runtime = new ModelRuntime(
+		const runtime = new ModelHub(
 			credentials,
 			config,
 			modelsPath,
@@ -260,199 +222,6 @@ export class ModelRuntime implements Models {
 			if (timeout) clearTimeout(timeout);
 		}
 		return runtime;
-	}
-
-	private providerIds(): Set<string> {
-		return new Set([
-			...this.builtins.keys(),
-			...this.nativeExtensionProviders.keys(),
-			...this.config.getProviderIds(),
-			...this.extensionProviders.keys(),
-			...this.virtualModels.keys(),
-		]);
-	}
-
-	private recomposeProvider(providerId: string): Provider | undefined {
-		const provider = this.composeProvider(providerId);
-		const virtualModels = [...(this.virtualModels.get(providerId)?.values() ?? [])].map(
-			(entry) => entry.model,
-		);
-
-		if (virtualModels.length > 0) {
-			this.models.setProvider(withVirtualModels(providerId, provider, virtualModels));
-		} else if (provider) {
-			this.models.setProvider(provider);
-		} else {
-			this.models.deleteProvider(providerId);
-		}
-
-		return provider;
-	}
-
-	private composeProvider(providerId: string): Provider | undefined {
-		const base =
-			this.nativeExtensionProviders.get(providerId) ??
-			this.builtins.get(providerId) ??
-			this.defaultBuiltins.get(providerId);
-		const extension = this.extensionProviders.get(providerId);
-		if (!this.config.getProvider(providerId) && !extension) {
-			this.compositionErrors.delete(providerId);
-			this.compositionWarnings.delete(providerId);
-			return base;
-		}
-		const warnings: string[] = [];
-
-		try {
-			const provider = composeModelProvider(
-				providerId,
-				base,
-				this.config,
-				extension,
-				(warning) => warnings.push(warning),
-			);
-			this.compositionErrors.delete(providerId);
-			if (warnings.length > 0) {
-				this.compositionWarnings.set(providerId, warnings.join("; "));
-			} else {
-				this.compositionWarnings.delete(providerId);
-			}
-			return provider;
-		} catch (error) {
-			this.compositionErrors.set(
-				providerId,
-				error instanceof Error ? error.message : String(error),
-			);
-			this.compositionWarnings.delete(providerId);
-			return base;
-		}
-	}
-
-	private rebuildProviders(): void {
-		this.models.clearProviders();
-		this.compositionErrors.clear();
-		this.compositionWarnings.clear();
-
-		for (const providerId of this.providerIds()) {
-			this.recomposeProvider(providerId);
-		}
-		this.updateModelSnapshot();
-	}
-
-	private updateModelSnapshot(): void {
-		const all = [...this.models.getModels()];
-		this.snapshot = {
-			...this.snapshot,
-			all,
-			available: all.filter((model) => this.snapshot.configuredProviders.has(model.provider)),
-		};
-	}
-
-	private async runAvailabilityRefresh(
-		seq: number,
-		errorSeq: number,
-		signal: AbortSignal,
-	): Promise<void> {
-		const providers = this.models.getProviders();
-		const [available, checks, credentials] = await Promise.all([
-			this.models.getAvailable(undefined, { signal }),
-			Promise.all(
-				providers.map(
-					async (provider): Promise<[string, AuthCheck | undefined]> => [
-						provider.id,
-						await this.models.checkAuth(provider.id, { signal }),
-					],
-				),
-			),
-			this.credentials.list({ signal }),
-		]);
-		if (seq !== this.availabilityRefreshSeq) return;
-
-		const auth = new Map(checks);
-		const configuredProviders = new Set(
-			checks
-				.filter((entry): entry is [string, AuthCheck] => entry[1] !== undefined)
-				.map(([providerId]) => providerId),
-		);
-		this.snapshot = {
-			all: [...this.models.getModels()],
-			available,
-			configuredProviders,
-			storedProviders: new Set(credentials.map((entry) => entry.providerId)),
-			auth,
-		};
-		if (errorSeq === this.availabilityErrorSeq) this.availabilityError = undefined;
-	}
-
-	private queueAvailabilityRefresh(signal?: AbortSignal): Promise<void> {
-		const seq = ++this.availabilityRefreshSeq;
-		for (const [providerId, providerSeq] of this.providerAvailabilitySeq) {
-			this.providerAvailabilitySeq.set(providerId, providerSeq + 1);
-		}
-		const errorSeq = ++this.availabilityErrorSeq;
-		const effectiveSignal = operationSignal(signal);
-		return this.runAvailabilityRefresh(seq, errorSeq, effectiveSignal).catch((error) => {
-			if (errorSeq === this.availabilityErrorSeq && !effectiveSignal.aborted) {
-				this.availabilityError = error instanceof Error ? error.message : String(error);
-			}
-			throw error;
-		});
-	}
-
-	private async refreshProviderAvailability(
-		providerId: string,
-		signal: AbortSignal,
-	): Promise<void> {
-		++this.availabilityRefreshSeq;
-		const providerSeq = (this.providerAvailabilitySeq.get(providerId) ?? 0) + 1;
-		this.providerAvailabilitySeq.set(providerId, providerSeq);
-		const errorSeq = ++this.availabilityErrorSeq;
-		try {
-			const [available, auth, credential] = await Promise.all([
-				this.models.getAvailable(providerId, { signal }),
-				this.models.checkAuth(providerId, { signal }),
-				this.credentials.read(providerId, { signal }),
-			]);
-			signal.throwIfAborted();
-			if (this.providerAvailabilitySeq.get(providerId) !== providerSeq) return;
-			const configuredProviders = new Set(this.snapshot.configuredProviders);
-			const storedProviders = new Set(this.snapshot.storedProviders);
-			const authByProvider = new Map(this.snapshot.auth);
-			if (auth) {
-				configuredProviders.add(providerId);
-				authByProvider.set(providerId, auth);
-			} else {
-				configuredProviders.delete(providerId);
-				authByProvider.delete(providerId);
-			}
-			if (credential) storedProviders.add(providerId);
-			else storedProviders.delete(providerId);
-			const all = [...this.models.getModels()];
-			const availableById = new Map(
-				[
-					...this.snapshot.available.filter((model) => model.provider !== providerId),
-					...available,
-				].map((model) => [`${model.provider}\0${model.id}`, model]),
-			);
-			this.snapshot = {
-				all,
-				available: all.flatMap(
-					(model) => availableById.get(`${model.provider}\0${model.id}`) ?? [],
-				),
-				configuredProviders,
-				storedProviders,
-				auth: authByProvider,
-			};
-			if (errorSeq === this.availabilityErrorSeq) this.availabilityError = undefined;
-		} catch (error) {
-			if (
-				this.providerAvailabilitySeq.get(providerId) === providerSeq &&
-				errorSeq === this.availabilityErrorSeq &&
-				!signal.aborted
-			) {
-				this.availabilityError = error instanceof Error ? error.message : String(error);
-			}
-			throw error;
-		}
 	}
 
 	getProviders(): readonly Provider[] {
@@ -488,49 +257,6 @@ export class ModelRuntime implements Models {
 
 	getAllModels(providerId?: string): readonly AnyModel[] {
 		return this.models.getAllModels(providerId);
-	}
-
-	async getAvailableOfType<TType extends ModelType>(
-		type: TType,
-		providerId?: string,
-		options?: AuthOperationOptions,
-	): Promise<readonly ModelTypeMap[TType][]> {
-		return this.models.getAvailableOfType(type, providerId, options);
-	}
-
-	async getAllAvailable(
-		providerId?: string,
-		options?: AuthOperationOptions,
-	): Promise<readonly AnyModel[]> {
-		return this.models.getAllAvailable(providerId, options);
-	}
-
-	async checkAuth(
-		providerId: string,
-		options?: AuthOperationOptions,
-	): Promise<AuthCheck | undefined> {
-		return this.models.checkAuth(providerId, options);
-	}
-
-	async getAvailable(
-		providerId?: string,
-		options?: AuthOperationOptions,
-	): Promise<readonly Model<Api>[]> {
-		if (providerId) {
-			const errorSeq = ++this.availabilityErrorSeq;
-			try {
-				const available = await this.models.getAvailable(providerId, options);
-				if (errorSeq === this.availabilityErrorSeq) this.availabilityError = undefined;
-				return available;
-			} catch (error) {
-				if (errorSeq === this.availabilityErrorSeq && !options?.signal?.aborted) {
-					this.availabilityError = error instanceof Error ? error.message : String(error);
-				}
-				throw error;
-			}
-		}
-		await this.queueAvailabilityRefresh(options?.signal);
-		return this.snapshot.available;
 	}
 
 	getAvailableSnapshot(): readonly Model<Api>[] {
@@ -577,6 +303,288 @@ export class ModelRuntime implements Models {
 		return this.snapshot.configuredProviders.has(providerId);
 	}
 
+	getPhysicalModel(providerId: string, modelId: string): Model<Api> | undefined {
+		const model = this.models.getModel(providerId, modelId);
+		return model && !isVirtualModel(model) ? model : undefined;
+	}
+
+	listCredentials(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
+		return this.credentials.list(options);
+	}
+
+	async getAvailableOfType<TType extends ModelType>(
+		type: TType,
+		providerId?: string,
+		options?: AuthOperationOptions,
+	): Promise<readonly ModelTypeMap[TType][]> {
+		return this.models.getAvailableOfType(type, providerId, options);
+	}
+
+	async getAllAvailable(
+		providerId?: string,
+		options?: AuthOperationOptions,
+	): Promise<readonly AnyModel[]> {
+		return this.models.getAllAvailable(providerId, options);
+	}
+
+	async checkAuth(
+		providerId: string,
+		options?: AuthOperationOptions,
+	): Promise<AuthCheck | undefined> {
+		return this.models.checkAuth(providerId, options);
+	}
+
+	private activateDefaultBuiltins(): void {
+		this.builtins.clear();
+		if (!this.includeBuiltinProviders) return;
+		for (const [providerId, provider] of this.defaultBuiltins) {
+			this.builtins.set(providerId, provider);
+		}
+	}
+
+	private providerIds(): Set<string> {
+		return new Set([
+			...this.builtins.keys(),
+			...this.nativeExtensionProviders.keys(),
+			...this.config.getProviderIds(),
+			...this.extensionProviders.keys(),
+			...this.virtualModels.keys(),
+		]);
+	}
+
+	private composeProvider(providerId: string): Provider | undefined {
+		const base =
+			this.nativeExtensionProviders.get(providerId) ??
+			this.builtins.get(providerId) ??
+			this.defaultBuiltins.get(providerId);
+		const extension = this.extensionProviders.get(providerId);
+		if (!this.config.getProvider(providerId) && !extension) {
+			this.compositionErrors.delete(providerId);
+			this.compositionWarnings.delete(providerId);
+			return base;
+		}
+		const warnings: string[] = [];
+
+		try {
+			const provider = composeModelProvider(
+				providerId,
+				base,
+				this.config,
+				extension,
+				(warning) => warnings.push(warning),
+			);
+			this.compositionErrors.delete(providerId);
+			if (warnings.length > 0) {
+				this.compositionWarnings.set(providerId, warnings.join("; "));
+			} else {
+				this.compositionWarnings.delete(providerId);
+			}
+			return provider;
+		} catch (error) {
+			this.compositionErrors.set(providerId, readErrorMessage(error));
+			this.compositionWarnings.delete(providerId);
+			return base;
+		}
+	}
+
+	private recomposeProvider(providerId: string): Provider | undefined {
+		const provider = this.composeProvider(providerId);
+		const virtualModels = [...(this.virtualModels.get(providerId)?.values() ?? [])].map(
+			(entry) => entry.model,
+		);
+
+		if (virtualModels.length > 0) {
+			this.models.setProvider(withVirtualModels(providerId, provider, virtualModels));
+		} else if (provider) {
+			this.models.setProvider(provider);
+		} else {
+			this.models.deleteProvider(providerId);
+		}
+
+		return provider;
+	}
+
+	private rebuildProviders(): void {
+		this.models.clearProviders();
+		this.compositionErrors.clear();
+		this.compositionWarnings.clear();
+
+		for (const providerId of this.providerIds()) {
+			this.recomposeProvider(providerId);
+		}
+		this.updateModelSnapshot();
+	}
+
+	private updateModelSnapshot(): void {
+		const all = [...this.models.getModels()];
+		this.snapshot = {
+			...this.snapshot,
+			all,
+			available: all.filter((model) => this.snapshot.configuredProviders.has(model.provider)),
+		};
+	}
+
+	registerProvider(providerId: string, config: ProviderConfigInput): void {
+		validateExtensionProvider(
+			providerId,
+			this.builtins.get(providerId) ?? this.defaultBuiltins.get(providerId),
+			this.config.getProvider(providerId),
+			config,
+		);
+		this.nativeExtensionProviders.delete(providerId);
+		const previous = this.extensionProviders.get(providerId);
+		const effective: ProviderConfigInput = { ...previous };
+
+		for (const [key, value] of Object.entries(config)) {
+			if (value === undefined) continue;
+
+			(effective as Record<string, unknown>)[key] = value;
+		}
+		this.extensionProviders.set(providerId, effective);
+		this.recomposeProvider(providerId);
+		this.updateModelSnapshot();
+		this.markProvisionallyConfigured(
+			providerId,
+			configuredRequestAuthStatus(this.config.getProvider(providerId), effective),
+		);
+		this.refreshInBackground();
+	}
+
+	registerNativeProvider(provider: Provider): void {
+		if (!provider.id.trim()) {
+			throw new Error("Empty provider id");
+		}
+
+		this.extensionProviders.delete(provider.id);
+		this.nativeExtensionProviders.set(provider.id, provider);
+		this.recomposeProvider(provider.id);
+		this.updateModelSnapshot();
+		this.markProvisionallyConfigured(
+			provider.id,
+			configuredRequestAuthStatus(this.config.getProvider(provider.id), undefined),
+		);
+		this.refreshInBackground();
+	}
+
+	unregisterProvider(providerId: string): void {
+		this.extensionProviders.delete(providerId);
+		this.nativeExtensionProviders.delete(providerId);
+		this.recomposeProvider(providerId);
+		this.updateModelSnapshot();
+		this.refreshInBackground();
+	}
+
+	private markProvisionallyConfigured(
+		providerId: string,
+		configuredStatus: AuthStatus | undefined,
+	): void {
+		// Config auth
+		if (!configuredStatus?.configured) return;
+
+		const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
+		const auth = new Map(this.snapshot.auth);
+		if (!auth.get(providerId)) {
+			auth.set(providerId, { type: "api_key", source: "configured provider" });
+		}
+		this.snapshot = { ...this.snapshot, auth, configuredProviders };
+		this.updateModelSnapshot();
+	}
+
+	registerVirtualModel(definition: VirtualModelDefinition): void {
+		const { provider: providerId, id } = definition;
+		if (!providerId.trim() || !id.trim()) {
+			throw new Error("Empty virtual model");
+		}
+
+		const existing = this.models.getModel(providerId, id);
+		if (existing && !isVirtualModel(existing)) {
+			throw new Error(`Virtual model conflict: ${providerId}/${id}`);
+		}
+
+		const models =
+			this.virtualModels.get(providerId) ?? new Map<string, RegisteredVirtualModel>();
+		models.set(id, {
+			model: createVirtualModel(definition),
+			route: (request) => definition.route(request),
+		});
+		this.virtualModels.set(providerId, models);
+		if (
+			!this.recomposeProvider(providerId) &&
+			!this.snapshot.configuredProviders.has(providerId)
+		) {
+			const auth = new Map(this.snapshot.auth).set(providerId, {
+				type: "api_key",
+				source: "virtual",
+			});
+			const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
+			this.snapshot = { ...this.snapshot, auth, configuredProviders };
+		}
+		this.updateModelSnapshot();
+		this.refreshInBackground();
+	}
+
+	unregisterVirtualModel(providerId: string, id: string): void {
+		const models = this.virtualModels.get(providerId);
+		if (!models?.delete(id)) return;
+		if (models.size === 0) this.virtualModels.delete(providerId);
+		this.recomposeProvider(providerId);
+		this.updateModelSnapshot();
+		this.refreshInBackground();
+	}
+
+	async resolveModel(
+		model: Model<Api>,
+		messages: readonly Message[],
+		options: {
+			reason: ModelRouteReason;
+			thinkingLevel: ModelThinkingLevel;
+			signal?: AbortSignal;
+			failed?: AssistantMessage;
+			state?: unknown;
+		},
+	): Promise<ModelRoute> {
+		const name = `Virtual model ${model.provider}/${model.id}`;
+		const virtual = this.virtualModels.get(model.provider)?.get(model.id);
+		if (!virtual) {
+			throw new Error(`Unknown model: ${name}`);
+		}
+
+		const { failed, ...request } = options;
+		const latest = findLatestResponse(messages);
+		const previousModel = latest && this.getPhysicalModel(latest.provider, latest.model);
+		const failedModel = failed && this.getPhysicalModel(failed.provider, failed.model);
+		const previous = previousModel
+			? { model: previousModel, thinkingLevel: latest?.thinkingLevel }
+			: undefined;
+		const failure = failedModel
+			? { model: failedModel, thinkingLevel: failed.thinkingLevel, message: failed }
+			: undefined;
+
+		const route = await virtual.route({
+			...request,
+			model,
+			previous,
+			failed: failure,
+			messages,
+		});
+
+		const target = this.getPhysicalModel(route.model.provider, route.model.id);
+		const routed = `${name} routed to ${route.model.provider}/${route.model.id}`;
+		if (!target) {
+			throw new Error(`Not physical model: ${routed}`);
+		}
+
+		if (!this.hasConfiguredAuth(target.provider)) {
+			throw new Error(`No credentials: ${routed}`);
+		}
+
+		return {
+			model: target,
+			thinkingLevel: clampThinkingLevel(target, route.thinkingLevel),
+			state: route.state,
+		};
+	}
+
 	getAuth(
 		providerId: string,
 		overrides?: ModelRuntimeAuthOverrides,
@@ -606,6 +614,27 @@ export class ModelRuntime implements Models {
 				headers: mergeHeaders(resolution.auth.headers, configuredHeaders),
 			},
 		};
+	}
+
+	getProviderAuthStatus(providerId: string): AuthStatus {
+		if (this.credentials.hasRuntimeApiKey(providerId)) {
+			return { configured: true, source: "runtime" };
+		}
+
+		if (this.snapshot.storedProviders.has(providerId)) {
+			return { configured: true, source: "stored" };
+		}
+
+		const configured = configuredRequestAuthStatus(
+			this.config.getProvider(providerId),
+			this.extensionProviders.get(providerId),
+		);
+		if (configured) return configured;
+
+		const check = this.snapshot.auth.get(providerId);
+		if (!check) return { configured: false };
+
+		return { configured: true, source: "environment", label: check.source };
 	}
 
 	private enqueueCredentialOperation<T>(
@@ -690,29 +719,192 @@ export class ModelRuntime implements Models {
 		});
 	}
 
-	listCredentials(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {
-		return this.credentials.list(options);
+	private clearAvailabilityError(errorSeq: number): void {
+		if (errorSeq === this.availabilityErrorSeq) this.availabilityError = undefined;
 	}
 
-	getProviderAuthStatus(providerId: string): AuthStatus {
-		if (this.credentials.hasRuntimeApiKey(providerId)) {
-			return { configured: true, source: "runtime" };
-		}
+	private async runAvailabilityRefresh(
+		seq: number,
+		errorSeq: number,
+		signal: AbortSignal,
+	): Promise<void> {
+		const providers = this.models.getProviders();
+		const [available, checks, credentials] = await Promise.all([
+			this.models.getAvailable(undefined, { signal }),
+			Promise.all(
+				providers.map(
+					async (provider): Promise<[string, AuthCheck | undefined]> => [
+						provider.id,
+						await this.models.checkAuth(provider.id, { signal }),
+					],
+				),
+			),
+			this.credentials.list({ signal }),
+		]);
+		if (seq !== this.availabilityRefreshSeq) return;
 
-		if (this.snapshot.storedProviders.has(providerId)) {
-			return { configured: true, source: "stored" };
-		}
-
-		const configured = configuredRequestAuthStatus(
-			this.config.getProvider(providerId),
-			this.extensionProviders.get(providerId),
+		const auth = new Map(checks);
+		const configuredProviders = new Set(
+			checks
+				.filter((entry): entry is [string, AuthCheck] => entry[1] !== undefined)
+				.map(([providerId]) => providerId),
 		);
-		if (configured) return configured;
+		this.snapshot = {
+			all: [...this.models.getModels()],
+			available,
+			configuredProviders,
+			storedProviders: new Set(credentials.map((entry) => entry.providerId)),
+			auth,
+		};
+		this.clearAvailabilityError(errorSeq);
+	}
 
-		const check = this.snapshot.auth.get(providerId);
-		if (!check) return { configured: false };
+	private queueAvailabilityRefresh(signal?: AbortSignal): Promise<void> {
+		const seq = ++this.availabilityRefreshSeq;
+		for (const [providerId, providerSeq] of this.providerAvailabilitySeq) {
+			this.providerAvailabilitySeq.set(providerId, providerSeq + 1);
+		}
+		const errorSeq = ++this.availabilityErrorSeq;
+		const effectiveSignal = operationSignal(signal);
+		return this.runAvailabilityRefresh(seq, errorSeq, effectiveSignal).catch((error) => {
+			if (errorSeq === this.availabilityErrorSeq && !effectiveSignal.aborted) {
+				this.availabilityError = readErrorMessage(error);
+			}
+			throw error;
+		});
+	}
 
-		return { configured: true, source: "environment", label: check.source };
+	private async refreshProviderAvailability(
+		providerId: string,
+		signal: AbortSignal,
+	): Promise<void> {
+		++this.availabilityRefreshSeq;
+		const providerSeq = (this.providerAvailabilitySeq.get(providerId) ?? 0) + 1;
+		this.providerAvailabilitySeq.set(providerId, providerSeq);
+		const errorSeq = ++this.availabilityErrorSeq;
+		try {
+			const [available, auth, credential] = await Promise.all([
+				this.models.getAvailable(providerId, { signal }),
+				this.models.checkAuth(providerId, { signal }),
+				this.credentials.read(providerId, { signal }),
+			]);
+			signal.throwIfAborted();
+			if (this.providerAvailabilitySeq.get(providerId) !== providerSeq) return;
+			const configuredProviders = new Set(this.snapshot.configuredProviders);
+			const storedProviders = new Set(this.snapshot.storedProviders);
+			const authByProvider = new Map(this.snapshot.auth);
+			if (auth) {
+				configuredProviders.add(providerId);
+				authByProvider.set(providerId, auth);
+			} else {
+				configuredProviders.delete(providerId);
+				authByProvider.delete(providerId);
+			}
+			if (credential) {
+				storedProviders.add(providerId);
+			} else {
+				storedProviders.delete(providerId);
+			}
+
+			const all = [...this.models.getModels()];
+			const availableById = new Map(
+				[
+					...this.snapshot.available.filter((model) => model.provider !== providerId),
+					...available,
+				].map((model) => [modelKey(model), model]),
+			);
+			this.snapshot = {
+				all,
+				available: all.flatMap((model) => availableById.get(modelKey(model)) ?? []),
+				configuredProviders,
+				storedProviders,
+				auth: authByProvider,
+			};
+			this.clearAvailabilityError(errorSeq);
+		} catch (error) {
+			if (
+				this.providerAvailabilitySeq.get(providerId) === providerSeq &&
+				errorSeq === this.availabilityErrorSeq &&
+				!signal.aborted
+			) {
+				this.availabilityError = readErrorMessage(error);
+			}
+			throw error;
+		}
+	}
+
+	async getAvailable(
+		providerId?: string,
+		options?: AuthOperationOptions,
+	): Promise<readonly Model<Api>[]> {
+		if (providerId) {
+			const errorSeq = ++this.availabilityErrorSeq;
+			try {
+				const available = await this.models.getAvailable(providerId, options);
+				this.clearAvailabilityError(errorSeq);
+				return available;
+			} catch (error) {
+				if (errorSeq === this.availabilityErrorSeq && !options?.signal?.aborted) {
+					this.availabilityError = readErrorMessage(error);
+				}
+				throw error;
+			}
+		}
+		await this.queueAvailabilityRefresh(options?.signal);
+		return this.snapshot.available;
+	}
+
+	async refresh(options: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> {
+		this.config = await ModelConfig.load(this.modelsPath);
+		if (options.providers) {
+			for (const providerId of new Set(options.providers)) {
+				this.recomposeProvider(providerId);
+			}
+			this.updateModelSnapshot();
+		} else {
+			this.rebuildProviders();
+		}
+		const refreshOptions = {
+			...options,
+			allowNetwork: options.allowNetwork ?? this.modelNetworkEnabled,
+		};
+		const refreshed = await this.models.refresh(refreshOptions);
+		const result: ModelsRefreshResult = refreshed ?? {
+			aborted: refreshOptions.signal?.aborted ?? false,
+			errors: new Map(),
+		};
+		const errors = new Map(result.errors);
+		this.updateModelSnapshot();
+		if (options.providers) {
+			await Promise.all(
+				[...new Set(options.providers)].map(async (providerId) => {
+					try {
+						await this.refreshProviderAvailability(
+							providerId,
+							operationSignal(options.signal),
+						);
+					} catch (error) {
+						if (!options.signal?.aborted) {
+							errors.set(
+								providerId,
+								error instanceof Error ? error : new Error(String(error)),
+							);
+						}
+					}
+				}),
+			);
+		} else {
+			try {
+				await this.queueAvailabilityRefresh(options.signal);
+			} catch {}
+		}
+		return { aborted: result.aborted || (options.signal?.aborted ?? false), errors };
+	}
+
+	private refreshInBackground(): void {
+		void this.refresh({ allowNetwork: false }).catch((error) => {
+			this.availabilityError = readErrorMessage(error);
+		});
 	}
 
 	private async prepareRequest<
@@ -768,7 +960,7 @@ export class ModelRuntime implements Models {
 		model: Model<TApi>,
 		context: Context,
 		options?: ModelsApiStreamOptions<TApi>,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		const transcript = normalizeContext(context);
 		return lazyStream(model, async () => {
 			assertChatModel(model);
@@ -796,7 +988,7 @@ export class ModelRuntime implements Models {
 		model: Model<Api>,
 		context: Context,
 		options?: ModelsSimpleStreamOptions,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		const transcript = normalizeContext(context);
 		if (isVirtualModel(model)) {
 			return lazyStream(model, async () => {
@@ -846,7 +1038,7 @@ export class ModelRuntime implements Models {
 		model: Model<Api>,
 		handle: DeferredHandle,
 		options?: ModelsDeferredFetchOptions,
-	): AssistantMessageEventStream {
+	): ReplyStream {
 		return lazyStream(model, async () => {
 			assertChatModel(model);
 			const prepared = await this.prepareRequest(model, options);
@@ -940,222 +1132,42 @@ export class ModelRuntime implements Models {
 		}
 	}
 
-	async refresh(options: ModelsRefreshOptions = {}): Promise<ModelsRefreshResult> {
-		this.config = await ModelConfig.load(this.modelsPath);
-		if (options.providers) {
-			for (const providerId of new Set(options.providers)) {
-				this.recomposeProvider(providerId);
-			}
-			this.updateModelSnapshot();
-		} else {
-			this.rebuildProviders();
+}
+
+function mergeHeaders(
+	base: ProviderHeaders | undefined,
+	override: ProviderHeaders | undefined,
+): ProviderHeaders | undefined {
+	if (!base && !override) return undefined;
+	const merged = { ...base };
+	for (const [name, value] of Object.entries(override ?? {})) {
+		const lowerName = name.toLowerCase();
+		for (const existingName of Object.keys(merged)) {
+			if (existingName.toLowerCase() === lowerName) delete merged[existingName];
 		}
-		const refreshOptions = {
-			...options,
-			allowNetwork: options.allowNetwork ?? this.modelNetworkEnabled,
-		};
-		const refreshed = await this.models.refresh(refreshOptions);
-		const result: ModelsRefreshResult = refreshed ?? {
-			aborted: refreshOptions.signal?.aborted ?? false,
-			errors: new Map(),
-		};
-		const errors = new Map(result.errors);
-		this.updateModelSnapshot();
-		if (options.providers) {
-			await Promise.all(
-				[...new Set(options.providers)].map(async (providerId) => {
-					try {
-						await this.refreshProviderAvailability(
-							providerId,
-							operationSignal(options.signal),
-						);
-					} catch (error) {
-						if (!options.signal?.aborted) {
-							errors.set(
-								providerId,
-								error instanceof Error ? error : new Error(String(error)),
-							);
-						}
-					}
-				}),
-			);
-		} else {
-			try {
-				await this.queueAvailabilityRefresh(options.signal);
-			} catch {}
-		}
-		return { aborted: result.aborted || (options.signal?.aborted ?? false), errors };
+		merged[name] = value;
 	}
+	return merged;
+}
 
-	private refreshInBackground(): void {
-		void this.refresh({ allowNetwork: false }).catch((error) => {
-			this.availabilityError = error instanceof Error ? error.message : String(error);
-		});
-	}
+export class CredentialSynchronizationError extends Error {
+	readonly providerId: string;
+	readonly operation: CredentialSynchronizationOperation;
+	readonly credential: Credential | undefined;
 
-	registerNativeProvider(provider: Provider): void {
-		if (!provider.id.trim()) {
-			throw new Error("Provider id must not be empty.");
-		}
-
-		this.extensionProviders.delete(provider.id);
-		this.nativeExtensionProviders.set(provider.id, provider);
-		this.recomposeProvider(provider.id);
-		this.updateModelSnapshot();
-		this.markProvisionallyConfigured(
-			provider.id,
-			configuredRequestAuthStatus(this.config.getProvider(provider.id), undefined),
-		);
-		this.refreshInBackground();
-	}
-
-	private markProvisionallyConfigured(
+	constructor(
 		providerId: string,
-		configuredStatus: AuthStatus | undefined,
-	): void {
-		// Config-only auth.
-		if (!configuredStatus?.configured) return;
-
-		const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
-		const auth = new Map(this.snapshot.auth);
-		if (!auth.get(providerId)) {
-			auth.set(providerId, { type: "api_key", source: "configured provider" });
-		}
-		this.snapshot = { ...this.snapshot, auth, configuredProviders };
-		this.updateModelSnapshot();
-	}
-
-	registerProvider(providerId: string, config: ProviderConfigInput): void {
-		validateExtensionProvider(
-			providerId,
-			this.builtins.get(providerId) ?? this.defaultBuiltins.get(providerId),
-			this.config.getProvider(providerId),
-			config,
+		operation: CredentialSynchronizationOperation,
+		credential: Credential | undefined,
+		options: ErrorOptions,
+	) {
+		super(
+			`Credential ${operation} committed for ${providerId}, but local synchronization failed`,
+			options,
 		);
-		this.nativeExtensionProviders.delete(providerId);
-		const previous = this.extensionProviders.get(providerId);
-		const effective: ProviderConfigInput = { ...previous };
-
-		for (const [key, value] of Object.entries(config)) {
-			if (value === undefined) continue;
-
-			(effective as Record<string, unknown>)[key] = value;
-		}
-		this.extensionProviders.set(providerId, effective);
-		this.recomposeProvider(providerId);
-		this.updateModelSnapshot();
-		this.markProvisionallyConfigured(
-			providerId,
-			configuredRequestAuthStatus(this.config.getProvider(providerId), effective),
-		);
-		this.refreshInBackground();
-	}
-
-	unregisterProvider(providerId: string): void {
-		this.extensionProviders.delete(providerId);
-		this.nativeExtensionProviders.delete(providerId);
-		this.recomposeProvider(providerId);
-		this.updateModelSnapshot();
-		this.refreshInBackground();
-	}
-
-	registerVirtualModel(definition: VirtualModelDefinition): void {
-		const { provider: providerId, id } = definition;
-		if (!providerId.trim() || !id.trim()) {
-			throw new Error("Virtual model provider and id must not be empty.");
-		}
-
-		const existing = this.models.getModel(providerId, id);
-		if (existing && !isVirtualModel(existing)) {
-			throw new Error(`Virtual model ${providerId}/${id} conflicts with a physical model.`);
-		}
-
-		const models =
-			this.virtualModels.get(providerId) ?? new Map<string, RegisteredVirtualModel>();
-		models.set(id, {
-			model: createVirtualModel(definition),
-			route: (request) => definition.route(request),
-		});
-		this.virtualModels.set(providerId, models);
-		if (
-			!this.recomposeProvider(providerId) &&
-			!this.snapshot.configuredProviders.has(providerId)
-		) {
-			const auth = new Map(this.snapshot.auth).set(providerId, {
-				type: "api_key",
-				source: "virtual",
-			});
-			const configuredProviders = new Set(this.snapshot.configuredProviders).add(providerId);
-			this.snapshot = { ...this.snapshot, auth, configuredProviders };
-		}
-		this.updateModelSnapshot();
-		this.refreshInBackground();
-	}
-
-	unregisterVirtualModel(providerId: string, id: string): void {
-		const models = this.virtualModels.get(providerId);
-		if (!models?.delete(id)) return;
-		if (models.size === 0) this.virtualModels.delete(providerId);
-		this.recomposeProvider(providerId);
-		this.updateModelSnapshot();
-		this.refreshInBackground();
-	}
-
-	async resolveModel(
-		model: Model<Api>,
-		messages: readonly Message[],
-		options: {
-			reason: ModelRouteReason;
-			thinkingLevel: ModelThinkingLevel;
-			signal?: AbortSignal;
-			failed?: AssistantMessage;
-			state?: unknown;
-		},
-	): Promise<ModelRoute> {
-		const name = `Virtual model ${model.provider}/${model.id}`;
-		const virtual = this.virtualModels.get(model.provider)?.get(model.id);
-		if (!virtual) {
-			throw new Error(`${name} is not registered.`);
-		}
-
-		const { failed, ...request } = options;
-		const latest = findLatestResponse(messages);
-		const previousModel = latest && this.getPhysicalModel(latest.provider, latest.model);
-		const failedModel = failed && this.getPhysicalModel(failed.provider, failed.model);
-		const previous = previousModel
-			? { model: previousModel, thinkingLevel: latest?.thinkingLevel }
-			: undefined;
-		const failure = failedModel
-			? { model: failedModel, thinkingLevel: failed.thinkingLevel, message: failed }
-			: undefined;
-
-		const route = await virtual.route({
-			...request,
-			model,
-			previous,
-			failed: failure,
-			messages,
-		});
-
-		const target = this.getPhysicalModel(route.model.provider, route.model.id);
-		const routed = `${name} routed to ${route.model.provider}/${route.model.id}`;
-		if (!target) {
-			throw new Error(`${routed}, which is not a physical model.`);
-		}
-
-		if (!this.hasConfiguredAuth(target.provider)) {
-			throw new Error(`${routed}, which has no credentials.`);
-		}
-
-		return {
-			model: target,
-			thinkingLevel: clampThinkingLevel(target, route.thinkingLevel),
-			state: route.state,
-		};
-	}
-
-	getPhysicalModel(providerId: string, modelId: string): Model<Api> | undefined {
-		const model = this.models.getModel(providerId, modelId);
-		return model && !isVirtualModel(model) ? model : undefined;
+		this.name = "CredentialSynchronizationError";
+		this.providerId = providerId;
+		this.operation = operation;
+		this.credential = credential;
 	}
 }
