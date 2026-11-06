@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@huranth/gama-agent-core";
 import type { ImageContent, Message, TextContent } from "@huranth/gama-ai";
-import { commandExitStatus } from "./exit-code.ts";
 import { frameSteeringContent, frameSteeringText } from "./steering.ts";
+import { formatCommandFailure } from "./tools/command-failure.ts";
 
 export interface BashExecutionMessage {
 	role: "bashExecution";
@@ -39,8 +39,8 @@ export interface CompactionSummaryMessage {
 }
 
 export const COMPACTION_SUMMARY_PREFIX =
-	"The conversation history before this point was compacted into the following " +
-	`summary:
+	`The conversation history before this point was compacted into ` +
+	`the following summary:
 
 <summary>
 `;
@@ -49,8 +49,8 @@ export const COMPACTION_SUMMARY_SUFFIX = `
 </summary>`;
 
 export const BRANCH_SUMMARY_PREFIX =
-	"The following is a summary of a branch that this conversation came back " +
-	`from:
+	`The following is a summary of a branch that this conversation ` +
+	`came back from:
 
 <summary>
 `;
@@ -101,7 +101,7 @@ export function createCustomMessage(
 	customType: string,
 	content: string | (TextContent | ImageContent)[],
 	display: boolean,
-	details: unknown | undefined,
+	details: unknown,
 	timestamp: string,
 ): CustomMessage {
 	return {
@@ -120,8 +120,8 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 
 	if (msg.cancelled) {
 		text += "\n\nCommand cancelled";
-	} else if (msg.exitCode !== null && msg.exitCode !== undefined && msg.exitCode !== 0) {
-		text += `\n\n${commandExitStatus(msg.exitCode)}`;
+	} else if (msg.exitCode !== undefined && msg.exitCode !== 0) {
+		text += `\n\n${formatCommandFailure(msg.output, msg.exitCode, msg.command)}`;
 	}
 
 	if (msg.truncated && msg.fullOutputPath) {
@@ -131,18 +131,26 @@ export function bashExecutionToText(msg: BashExecutionMessage): string {
 	return text;
 }
 
+function toTextContent(
+	content: string | (TextContent | ImageContent)[],
+): (TextContent | ImageContent)[] {
+	if (typeof content === "string") return [{ type: "text", text: content }];
+
+	return content;
+}
+
 export function convertToLlm(messages: AgentMessage[]): Message[] {
 	const converted: Message[] = [];
 
 	for (const message of messages) {
-		const result = convertMessage(message);
+		const result = toLlmMessage(message);
 		if (result) converted.push(result);
 	}
 
 	return converted;
 }
 
-function convertMessage(message: AgentMessage): Message | undefined {
+function toLlmMessage(message: AgentMessage): Message | undefined {
 	switch (message.role) {
 		case "bashExecution":
 			if (message.excludeFromContext) return undefined;
@@ -194,17 +202,7 @@ function convertMessage(message: AgentMessage): Message | undefined {
 		case "assistant":
 		case "toolResult":
 			return message;
-		default: {
-			const unreachable: never = message;
-			return unreachable;
-		}
+		default:
+			return undefined;
 	}
-}
-
-function toTextContent(
-	content: string | (TextContent | ImageContent)[],
-): (TextContent | ImageContent)[] {
-	if (typeof content === "string") return [{ type: "text", text: content }];
-
-	return content;
 }

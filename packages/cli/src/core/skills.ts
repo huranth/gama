@@ -1,11 +1,12 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from "fs";
+import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import ignore from "ignore";
-import { basename, dirname, join, relative, resolve, sep } from "path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "path";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
-import { canonicalizePath, resolvePath } from "../utils/paths.ts";
+import { canonicalizePath, resolvePath, toPosixPath } from "../utils/paths.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
-import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
+import { addIgnoreRules, markDirectoryVisited } from "./resource-scan.ts";
+import { createSyntheticSourceInfo, type SourceInfo } from "./origin.ts";
 
 type IgnoreMatcher = ReturnType<typeof ignore>;
 
@@ -46,56 +47,9 @@ const MAX_NAME_LENGTH = 64;
 
 const MAX_DESCRIPTION_LENGTH = 1024;
 
-const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
+const MIB_BYTES = 1024 * 1024;
 
-function toPosixPath(p: string): string {
-	return p.split(sep).join("/");
-}
-
-function prefixIgnorePattern(line: string, prefix: string): string | null {
-	const trimmed = line.trim();
-	if (!trimmed) return null;
-	if (trimmed.startsWith("#") && !trimmed.startsWith("\\#")) return null;
-
-	let pattern = line;
-	let negated = false;
-
-	if (pattern.startsWith("!")) {
-		negated = true;
-		pattern = pattern.slice(1);
-	} else if (pattern.startsWith("\\!")) {
-		pattern = pattern.slice(1);
-	}
-
-	if (pattern.startsWith("/")) {
-		pattern = pattern.slice(1);
-	}
-
-	const prefixed = prefix ? `${prefix}${pattern}` : pattern;
-	return negated ? `!${prefixed}` : prefixed;
-}
-
-function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string): void {
-	const relativeDir = relative(rootDir, dir);
-	const prefix = relativeDir ? `${toPosixPath(relativeDir)}/` : "";
-
-	for (const filename of IGNORE_FILE_NAMES) {
-		const ignorePath = join(dir, filename);
-		if (!existsSync(ignorePath)) continue;
-		try {
-			const content = readFileSync(ignorePath, "utf-8");
-			const patterns = content
-				.split(/\r?\n/)
-				.map((line) => prefixIgnorePattern(line, prefix))
-				.filter((line): line is string => Boolean(line));
-			if (patterns.length > 0) {
-				ig.add(patterns);
-			}
-		} catch {
-			// Skip unreadable.
-		}
-	}
-}
+const MAX_SKILL_FILE_BYTES = 2 * MIB_BYTES;
 
 function pushWarnings(diagnostics: ResourceDiagnostic[], messages: string[], path: string): void {
 	for (const message of messages) {
@@ -103,40 +57,43 @@ function pushWarnings(diagnostics: ResourceDiagnostic[], messages: string[], pat
 	}
 }
 
-function validateName(name: string): string[] {
-	const errors: string[] = [];
+function nameWarnings(name: string): string[] {
+	const warnings: string[] = [];
 
 	if (name.length > MAX_NAME_LENGTH) {
-		errors.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
+		warnings.push(`name exceeds ${MAX_NAME_LENGTH} characters (${name.length})`);
 	}
 
 	if (!/^[a-z0-9-]+$/.test(name)) {
-		errors.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
+		warnings.push(`name contains invalid characters (must be lowercase a-z, 0-9, hyphens only)`);
 	}
 
 	if (name.startsWith("-") || name.endsWith("-")) {
-		errors.push(`name must not start or end with a hyphen`);
+		warnings.push(`name must not start or end with a hyphen`);
 	}
 
 	if (name.includes("--")) {
-		errors.push(`name must not contain consecutive hyphens`);
+		warnings.push(`name must not contain consecutive hyphens`);
 	}
 
-	return errors;
+	return warnings;
 }
 
-function validateDescription(description: unknown): string[] {
-	const errors: string[] = [];
+function descriptionWarnings(description: unknown): string[] {
+	const warnings: string[] = [];
 
 	if (typeof description !== "string" || description.trim() === "") {
-		errors.push("description is required");
-	} else if (description.length > MAX_DESCRIPTION_LENGTH) {
-		errors.push(
+		warnings.push("description is required");
+		return warnings;
+	}
+
+	if (description.length > MAX_DESCRIPTION_LENGTH) {
+		warnings.push(
 			`description exceeds ${MAX_DESCRIPTION_LENGTH} characters (${description.length})`,
 		);
 	}
 
-	return errors;
+	return warnings;
 }
 
 function createSkillSourceInfo(filePath: string, baseDir: string, source: string): SourceInfo {
@@ -168,17 +125,39 @@ export function loadSkillsFromDir(options: LoadSkillsFromDirOptions): LoadSkills
 	return loadSkillsFromDirInternal(dir, source, true);
 }
 
-// Loop guard
-function markDirectoryVisited(path: string, visited: Set<string>): boolean {
+function entryIsFile(
+	fullPath: string,
+	entry: { isFile(): boolean; isSymbolicLink(): boolean },
+): boolean {
+	if (!entry.isSymbolicLink()) return entry.isFile();
+
 	try {
-		const real = realpathSync(path);
-		if (visited.has(real)) return false;
-		visited.add(real);
+		return statSync(fullPath).isFile();
 	} catch {
-		// Scan it
+		// Broken link
+		return false;
+	}
+}
+
+function findRootSkill(
+	dir: string,
+	entries: Array<{ name: string; isFile(): boolean; isSymbolicLink(): boolean }>,
+	ig: IgnoreMatcher,
+	root: string,
+): string | undefined {
+	for (const entry of entries) {
+		if (entry.name !== "SKILL.md") continue;
+
+		const fullPath = join(dir, entry.name);
+		if (!entryIsFile(fullPath, entry)) continue;
+
+		const relPath = toPosixPath(relative(root, fullPath));
+		if (ig.ignores(relPath)) continue;
+
+		return fullPath;
 	}
 
-	return true;
+	return undefined;
 }
 
 function loadSkillsFromDirInternal(
@@ -203,24 +182,9 @@ function loadSkillsFromDirInternal(
 	try {
 		const entries = readdirSync(dir, { withFileTypes: true });
 
-		for (const entry of entries) {
-			if (entry.name !== "SKILL.md") continue;
-
-			const fullPath = join(dir, entry.name);
-			let isFile = entry.isFile();
-
-			if (entry.isSymbolicLink()) {
-				try {
-					isFile = statSync(fullPath).isFile();
-				} catch {
-					continue;
-				}
-			}
-
-			const relPath = toPosixPath(relative(root, fullPath));
-			if (!isFile || ig.ignores(relPath)) continue;
-
-			const result = loadSkillFromFile(fullPath, source);
+		const rootSkillPath = findRootSkill(dir, entries, ig, root);
+		if (rootSkillPath) {
+			const result = loadSkillFromFile(rootSkillPath, source);
 			if (result.skill) skills.push(result.skill);
 
 			diagnostics.push(...result.diagnostics);
@@ -242,6 +206,7 @@ function loadSkillsFromDirInternal(
 				} catch {
 					continue;
 				}
+
 				if (isDirectory && !markDirectoryVisited(fullPath, visited)) continue;
 			}
 
@@ -266,7 +231,7 @@ function loadSkillsFromDirInternal(
 			diagnostics.push(...result.diagnostics);
 		}
 	} catch {
-		// Skip unreadable.
+		// Skip unreadable
 	}
 
 	return { skills, diagnostics };
@@ -281,6 +246,14 @@ function loadSkillFromFile(
 
 	let rawContent: string;
 	try {
+		if (statSync(filePath).size > MAX_SKILL_FILE_BYTES) {
+			diagnostics.push({
+				type: "warning",
+				message: "skill file exceeds the 2 MiB limit",
+				path: filePath,
+			});
+			return { skill: null, diagnostics };
+		}
 		rawContent = readFileSync(filePath, "utf-8");
 	} catch (error) {
 		const message = error instanceof Error ? error.message : "failed to read skill file";
@@ -308,12 +281,12 @@ function loadSkillFromFile(
 	const skillDir = dirname(filePath);
 	const parentDirName = basename(skillDir);
 
-	pushWarnings(diagnostics, validateDescription(description), filePath);
+	pushWarnings(diagnostics, descriptionWarnings(description), filePath);
 
 	const frontmatterName = typeof frontmatter.name === "string" ? frontmatter.name : undefined;
 	const name = frontmatterName || parentDirName;
 
-	pushWarnings(diagnostics, validateName(name), filePath);
+	pushWarnings(diagnostics, nameWarnings(name), filePath);
 
 	if (!hasDescription) {
 		return { skill: null, diagnostics };
@@ -347,9 +320,11 @@ export function formatSkillsForPrompt(
 		fileReadTool === "read"
 			? "Use the read tool to load a skill's file when the task matches its description."
 			: "Use bash to load a skill's file when the task matches its description.",
-		"When a skill file references a relative path, resolve it against the skill " +
-			"directory (parent of SKILL.md / dirname of the path) and use that absolute path " +
+		[
+			"When a skill file references a relative path, resolve it against the skill",
+			"directory (parent of SKILL.md / dirname of the path) and use that absolute path",
 			"in tool commands.",
+		].join(" "),
 		"",
 		"<available_skills>",
 	];
@@ -367,13 +342,25 @@ export function formatSkillsForPrompt(
 	return lines.join("\n");
 }
 
+const XML_ESCAPES: Record<string, string> = {
+	"&": "&amp;",
+	"<": "&lt;",
+	">": "&gt;",
+	'"': "&quot;",
+	"'": "&apos;",
+};
+
 function escapeXml(str: string): string {
-	return str
-		.replace(/&/g, "&amp;")
-		.replace(/</g, "&lt;")
-		.replace(/>/g, "&gt;")
-		.replace(/"/g, "&quot;")
-		.replace(/'/g, "&apos;");
+	return str.replace(/[&<>"']/g, (char) => XML_ESCAPES[char] ?? char);
+}
+
+function isUnderPath(target: string, root: string): boolean {
+	const relativePath = relative(resolve(root), resolve(target));
+
+	if (relativePath === "") return true;
+	if (relativePath === ".." || isAbsolute(relativePath)) return false;
+
+	return !relativePath.startsWith(`..${sep}`);
 }
 
 export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
@@ -424,20 +411,10 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
 		addSkills(loadSkillsFromDirInternal(projectSkillsDir, "project", true));
 	}
 
-	const isUnderPath = (target: string, root: string): boolean => {
-		const normalizedRoot = resolve(root);
-		if (target === normalizedRoot) {
-			return true;
-		}
-		const prefix = normalizedRoot.endsWith(sep) ? normalizedRoot : `${normalizedRoot}${sep}`;
-		return target.startsWith(prefix);
-	};
-
 	const getSource = (resolvedPath: string): "user" | "project" | "path" => {
-		if (!includeDefaults) {
-			if (isUnderPath(resolvedPath, userSkillsDir)) return "user";
-			if (isUnderPath(resolvedPath, projectSkillsDir)) return "project";
-		}
+		if (isUnderPath(resolvedPath, userSkillsDir) && !includeDefaults) return "user";
+		if (isUnderPath(resolvedPath, projectSkillsDir) && !includeDefaults) return "project";
+
 		return "path";
 	};
 

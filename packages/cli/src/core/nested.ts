@@ -12,7 +12,7 @@ import type {
 	TextContent,
 	Usage,
 } from "@huranth/gama-ai";
-import { combineUsage } from "./usage-totals.ts";
+import { combineUsage } from "./usage.ts";
 
 export interface NestedCallSummary {
 	calls: NestedToolCalls | undefined;
@@ -22,6 +22,18 @@ export interface NestedCallSummary {
 export interface NestedToolCallOptions {
 	signal?: AbortSignal;
 	onUpdate?: AgentToolUpdateCallback;
+}
+
+export interface NestedToolCallHost {
+	getTools(): readonly AgentTool[];
+	isSequential(): boolean;
+	runToolCall(
+		toolCall: AgentToolCall,
+		parentToolCallId: string,
+		signal: AbortSignal | undefined,
+		onUpdate: (partialResult: AgentToolResult<unknown>) => Promise<void>,
+	): Promise<AgentToolCallOutcome>;
+	emit(event: NestedToolExecutionEvent): Promise<void>;
 }
 
 export type NestedToolExecutionEvent =
@@ -49,22 +61,15 @@ export type NestedToolExecutionEvent =
 			parentToolCallId: string;
 	  };
 
-export interface NestedToolCallHost {
-	getTools(): readonly AgentTool[];
-	isSequential(): boolean;
-	runToolCall(
-		toolCall: AgentToolCall,
-		parentToolCallId: string,
-		signal: AbortSignal | undefined,
-		onUpdate: (partialResult: AgentToolResult<unknown>) => Promise<void>,
-	): Promise<AgentToolCallOutcome>;
-	emit(event: NestedToolExecutionEvent): Promise<void>;
-}
-
 interface CallScope {
 	recorder: NestedCallRecorder;
 	nextId: number;
 	holdsQueue: boolean;
+}
+
+interface Release {
+	promise: Promise<void>;
+	release: () => void;
 }
 
 export const NESTED_CALL_LIMITS = {
@@ -83,9 +88,21 @@ function textOf(result: AgentToolResult<unknown>): string {
 		.join("\n");
 }
 
+function createRelease(): Release {
+	let release = (): void => {};
+
+	const promise = new Promise<void>((resolve) => {
+		release = resolve;
+	});
+
+	return { promise, release: () => release() };
+}
+
 export class NestedCallRecorder {
 	private readonly calls: NestedToolCallRecord[] = [];
+
 	private readonly startedAt = new Map<NestedToolCallRecord, number>();
+
 	private complete = true;
 	private argumentBytes = 0;
 	private usage: Usage | undefined;
@@ -95,35 +112,28 @@ export class NestedCallRecorder {
 			this.complete = false;
 			return undefined;
 		}
+
 		const record: NestedToolCallRecord = {
 			id: toolCall.id,
 			name: toolCall.name,
 			status: "unfinished",
 		};
-		const json = JSON.stringify(toolCall.arguments ?? {});
-		const bytes = encoder.encode(json).length;
-		if (
-			bytes > NESTED_CALL_LIMITS.maxArgumentBytesPerCall ||
-			this.argumentBytes + bytes > NESTED_CALL_LIMITS.maxArgumentBytesTotal
-		) {
-			record.argumentsBytes = bytes;
-			this.complete = false;
-		} else {
-			record.arguments = JSON.parse(json) as JsonObject;
-			this.argumentBytes += bytes;
-		}
+
+		this.recordArguments(record, toolCall.arguments);
 		this.calls.push(record);
 		this.startedAt.set(record, performance.now());
+
 		return record;
 	}
 
 	finish(record: NestedToolCallRecord | undefined, isError: boolean, errorText: string): void {
 		if (!record) return;
+
 		record.status = isError ? "error" : "ok";
-		record.durationMs = Math.round(
-			performance.now() - (this.startedAt.get(record) ?? performance.now()),
-		);
+		record.durationMs = this.elapsedMs(record);
+
 		this.startedAt.delete(record);
+
 		if (isError && errorText) record.error = errorText.slice(0, NESTED_CALL_LIMITS.maxErrorChars);
 	}
 
@@ -137,17 +147,45 @@ export class NestedCallRecorder {
 
 	snapshot(): NestedToolCalls | undefined {
 		if (this.calls.length === 0 && this.complete) return undefined;
+
 		const calls = this.calls.map((call) => ({ ...call }));
+
 		return {
 			calls,
 			complete: this.complete && calls.every((call) => call.status !== "unfinished"),
 		};
+	}
+
+	private recordArguments(record: NestedToolCallRecord, args: JsonObject | undefined): void {
+		const json = JSON.stringify(args ?? {});
+		const bytes = encoder.encode(json).length;
+
+		const overLimit =
+			bytes > NESTED_CALL_LIMITS.maxArgumentBytesPerCall ||
+			this.argumentBytes + bytes > NESTED_CALL_LIMITS.maxArgumentBytesTotal;
+
+		if (overLimit) {
+			record.argumentsBytes = bytes;
+			this.complete = false;
+			return;
+		}
+
+		record.arguments = JSON.parse(json) as JsonObject;
+		this.argumentBytes += bytes;
+	}
+
+	private elapsedMs(record: NestedToolCallRecord): number {
+		const startedAt = this.startedAt.get(record);
+		if (startedAt === undefined) return 0;
+
+		return Math.round(performance.now() - startedAt);
 	}
 }
 
 export class NestedToolCallRunner {
 	private readonly host: NestedToolCallHost;
 	private readonly scopes = new Map<string, CallScope>();
+
 	private queueTail: Promise<void> = Promise.resolve();
 
 	constructor(host: NestedToolCallHost) {
@@ -167,42 +205,29 @@ export class NestedToolCallRunner {
 			name,
 			arguments: (args ?? {}) as AgentToolCall["arguments"],
 		};
+
 		const record = scope.recorder.start(toolCall);
-		await this.host.emit({
-			type: "tool_execution_start",
-			toolCallId: toolCall.id,
-			toolName: name,
-			args: toolCall.arguments,
-			parentToolCallId: callerId,
-		});
+		await this.emitStart(toolCall, callerId);
 
 		const sequential = this.isSequential(name);
-		const release = await this.acquireQueue(scope, sequential);
+		const release = await this.acquireQueue(scope, sequential, options.signal);
 
-		this.scopes.set(toolCall.id, {
-			recorder: scope.recorder,
-			nextId: 1,
-			holdsQueue: scope.holdsQueue || release !== undefined,
-		});
+		this.registerChildScope(toolCall.id, scope, release);
 
 		let outcome: AgentToolCallOutcome;
+
 		try {
-			outcome = await this.host.runToolCall(
-				toolCall,
-				callerId,
-				options.signal,
-				async (partialResult) => {
-					options.onUpdate?.(partialResult);
-					await this.host.emit({
-						type: "tool_execution_update",
-						toolCallId: toolCall.id,
-						toolName: name,
-						args: toolCall.arguments,
-						partialResult,
-						parentToolCallId: callerId,
-					});
-				},
-			);
+			outcome = await this.host.runToolCall(toolCall, callerId, options.signal, async (result) => {
+				options.onUpdate?.(result);
+				await this.host.emit({
+					type: "tool_execution_update",
+					toolCallId: toolCall.id,
+					toolName: name,
+					args: toolCall.arguments,
+					partialResult: result,
+					parentToolCallId: callerId,
+				});
+			});
 		} finally {
 			this.scopes.delete(toolCall.id);
 			release?.();
@@ -227,11 +252,35 @@ export class NestedToolCallRunner {
 		const scope = this.scopes.get(toolCallId);
 		this.scopes.delete(toolCallId);
 		if (!scope) return undefined;
+
 		return { calls: scope.recorder.snapshot(), usage: scope.recorder.totalUsage };
 	}
 
 	clear(): void {
 		this.scopes.clear();
+	}
+
+	private async emitStart(toolCall: AgentToolCall, callerId: string): Promise<void> {
+		await this.host.emit({
+			type: "tool_execution_start",
+			toolCallId: toolCall.id,
+			toolName: toolCall.name,
+			args: toolCall.arguments,
+			parentToolCallId: callerId,
+		});
+	}
+
+	// Child queue
+	private registerChildScope(
+		toolCallId: string,
+		parentScope: CallScope,
+		release: (() => void) | undefined,
+	): void {
+		this.scopes.set(toolCallId, {
+			recorder: parentScope.recorder,
+			nextId: 1,
+			holdsQueue: parentScope.holdsQueue || release !== undefined,
+		});
 	}
 
 	private getScope(callerId: string): CallScope {
@@ -243,6 +292,7 @@ export class NestedToolCallRunner {
 			nextId: 1,
 			holdsQueue: false,
 		};
+
 		this.scopes.set(callerId, scope);
 
 		return scope;
@@ -259,16 +309,45 @@ export class NestedToolCallRunner {
 	private async acquireQueue(
 		scope: CallScope,
 		sequential: boolean,
+		signal: AbortSignal | undefined,
 	): Promise<(() => void) | undefined> {
 		if (!sequential || scope.holdsQueue) return undefined;
 
 		const previous = this.queueTail;
-		let release: (() => void) | undefined;
-		this.queueTail = new Promise((resolve) => {
-			release = resolve;
-		});
-		await previous;
+		const next = createRelease();
+		this.queueTail = next.promise;
 
-		return release;
+		const aborted = await waitForQueueTurn(previous, signal);
+		if (!aborted) return next.release;
+
+		// Abort guard
+		next.release();
+		return undefined;
 	}
+}
+
+async function waitForQueueTurn(
+	previous: Promise<void>,
+	signal: AbortSignal | undefined,
+): Promise<boolean> {
+	if (!signal) {
+		await previous;
+		return false;
+	}
+
+	if (signal.aborted) return true;
+
+	return new Promise<boolean>((resolve) => {
+		const onAbort = () => {
+			signal.removeEventListener("abort", onAbort);
+			resolve(true);
+		};
+
+		signal.addEventListener("abort", onAbort, { once: true });
+
+		void previous.then(() => {
+			signal.removeEventListener("abort", onAbort);
+			resolve(false);
+		});
+	});
 }
