@@ -1,4 +1,4 @@
-import { type Static, Type } from "typebox";
+import { Type } from "typebox";
 import type {
 	ExtensionAPI,
 	ToolDefinition,
@@ -6,6 +6,7 @@ import type {
 	ToolInfo,
 	ToolNamespace,
 } from "../../core/ext/types.ts";
+import { isRecord } from "../../utils/json.ts";
 
 const STOP_WORDS: ReadonlySet<string> = new Set([
 	"a",
@@ -69,16 +70,21 @@ export const toolSearchSchema = Type.Object({
 	),
 });
 
-export type ToolSearchInput = Static<typeof toolSearchSchema>;
-
 export const TOOL_SEARCH_TOOL_NAME = "tool_search";
 
 export const TOOL_SEARCH_DESCRIPTION =
 	"# Tool discovery\n\nSearches over deferred tool metadata with BM25 and exposes " +
 	"matching tools for the next model call.\n\nSome of the tools, such as tools of " +
-	"MCP servers, may not have been provided to you upfront, and you should use this " +
+	"MCP servers, not provided upfront, may need this " +
 	`tool (\`${TOOL_SEARCH_TOOL_NAME}\`) to search for the required tools. ` +
 	`For MCP tool discovery, always use \`${TOOL_SEARCH_TOOL_NAME}\`.`;
+
+function stem(term: string): string {
+	if (term.length > 4 && term.endsWith("ies")) return `${term.slice(0, -3)}y`;
+	if (term.length > 4 && /(ches|shes|sses|xes|zes)$/.test(term)) return term.slice(0, -2);
+	if (term.length > 3 && term.endsWith("s") && !term.endsWith("ss")) return term.slice(0, -1);
+	return term;
+}
 
 export function tokenize(text: string): string[] {
 	return text
@@ -90,29 +96,14 @@ export function tokenize(text: string): string[] {
 		.map(stem);
 }
 
-export function isToolSearchTool(tool: Pick<ToolInfo, "name" | "parameters">): boolean {
-	return tool.name === TOOL_SEARCH_TOOL_NAME && tool.parameters === toolSearchSchema;
-}
-
 function isSearchable(exposure: ToolExposure): boolean {
 	return exposure === "codemode" || exposure === "deferred";
 }
 
-function isObject(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function stem(term: string): string {
-	if (term.length > 4 && term.endsWith("ies")) return `${term.slice(0, -3)}y`;
-	if (term.length > 4 && /(ches|shes|sses|xes|zes)$/.test(term)) return term.slice(0, -2);
-	if (term.length > 3 && term.endsWith("s") && !term.endsWith("ss")) return term.slice(0, -1);
-	return term;
-}
-
 function schemaText(schema: unknown, parts: string[]): void {
-	if (!isObject(schema)) return;
+	if (!isRecord(schema)) return;
 	if (typeof schema.description === "string") parts.push(schema.description);
-	if (isObject(schema.properties)) {
+	if (isRecord(schema.properties)) {
 		for (const [name, property] of Object.entries(schema.properties)) {
 			parts.push(name);
 			schemaText(property, parts);
@@ -155,16 +146,16 @@ export function createToolSearchToolDefinition(
 		parameters: toolSearchSchema,
 		exposure: "model-only",
 		async execute(_toolCallId, { query, limit }) {
-			if (query.trim() === "") throw new Error("query must not be empty");
+			if (query.trim() === "") throw new Error("Empty query");
 			const max = limit ?? DEFAULT_TOOL_SEARCH_LIMIT;
 			if (!Number.isInteger(max) || max <= 0) {
-				throw new Error("limit must be a positive integer");
+				throw new Error("Invalid limit");
 			}
 
 			const tools = options.tools ? searchAndLoad(options.tools, query, max) : [];
 			const text =
 				tools.length === 0
-					? "No matching tools found."
+					? "No matches"
 					: `Loaded ${tools.length} tool${tools.length === 1 ? "" : "s"}. ` +
 						"They are available from your next call:\n" +
 						`${tools
@@ -215,14 +206,19 @@ export class Bm25Ranker implements ToolRanker {
 		);
 
 		const matches: ToolSearchMatch[] = [];
+
 		documents.forEach((document, index) => {
+			const norm = this.k1 * (1 - this.b + (this.b * lengths[index]) / averageLength);
 			let score = 0;
+
 			for (const term of queryTerms) {
 				const count = termCounts[index].get(term);
 				if (!count) continue;
-				const norm = this.k1 * (1 - this.b + (this.b * lengths[index]) / averageLength);
-				score += (idf.get(term) ?? 0) * ((count * (this.k1 + 1)) / (count + norm));
+
+				const termScore = (idf.get(term) ?? 0) * ((count * (this.k1 + 1)) / (count + norm));
+				score += termScore;
 			}
+
 			if (score > 0) matches.push({ name: document.name, score });
 		});
 
@@ -242,8 +238,11 @@ function searchAndLoad(
 	const documents = candidates.map((tool) => createToolSearchDocument(tool, tool.namespace));
 	const matches = new Bm25Ranker().rank(query, documents, limit);
 	if (matches.length > 0) tools.setActiveTools([...active, ...matches.map((match) => match.name)]);
+
+	const byName = new Map(candidates.map((tool) => [tool.name, tool]));
+
 	return matches.map((match) => ({
 		name: match.name,
-		description: candidates.find((tool) => tool.name === match.name)?.description ?? "",
+		description: byName.get(match.name)?.description ?? "",
 	}));
 }
