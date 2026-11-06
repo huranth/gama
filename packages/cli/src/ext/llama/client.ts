@@ -2,6 +2,12 @@ import { exitCodeLabel } from "../../core/exit-code.ts";
 
 export type LlamaModelStatus = "unloaded" | "loading" | "loaded" | "downloading" | "sleeping";
 
+const BYTE_UNITS = ["KiB", "MiB", "GiB", "TiB"];
+
+function formatByteValue(value: number): string {
+	return value >= 10 ? value.toFixed(1) : value.toFixed(2);
+}
+
 export interface LlamaModelInfo {
 	id: string;
 	aliases?: string[];
@@ -23,11 +29,6 @@ export interface LlamaModelInfo {
 		size?: number;
 		ftype?: string;
 	};
-}
-
-export interface LlamaModelsResponse {
-	data: LlamaModelInfo[];
-	object?: string;
 }
 
 export interface LlamaServerProps {
@@ -74,22 +75,24 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
 			reject(signal.reason ?? new Error("Cancelled"));
 			return;
 		}
-		const abort = () => {
+		const cancel = () => {
 			clearTimeout(timeout);
 			reject(signal?.reason ?? new Error("Cancelled"));
 		};
+
 		const timeout = setTimeout(() => {
-			signal?.removeEventListener("abort", abort);
+			signal?.removeEventListener("abort", cancel);
 			resolve();
 		}, ms);
-		signal?.addEventListener("abort", abort, { once: true });
+
+		signal?.addEventListener("abort", cancel, { once: true });
 	});
 }
 
 export function normalizeLlamaServerUrl(value: string): string {
 	const url = new URL(value.trim());
 	if (url.protocol !== "http:" && url.protocol !== "https:") {
-		throw new Error("Server URL must use http or https");
+		throw new Error("Invalid server URL");
 	}
 	url.hash = "";
 	url.search = "";
@@ -99,14 +102,18 @@ export function normalizeLlamaServerUrl(value: string): string {
 
 export function formatBytes(bytes: number): string {
 	if (bytes < 1024) return `${bytes} B`;
-	const units = ["KiB", "MiB", "GiB", "TiB"];
+
 	let value = bytes / 1024;
-	let unit = units[0]!;
-	for (let index = 1; index < units.length && value >= 1024; index++) {
+	let unit = "KiB";
+
+	for (const nextUnit of BYTE_UNITS.slice(1)) {
+		if (value < 1024) break;
+
 		value /= 1024;
-		unit = units[index]!;
+		unit = nextUnit;
 	}
-	return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${unit}`;
+
+	return `${formatByteValue(value)} ${unit}`;
 }
 
 function errorMessage(payload: unknown, fallback: string): string {
@@ -193,7 +200,7 @@ export class LlamaClient {
 			payload = undefined;
 		}
 		if (!response.ok)
-			throw new Error(errorMessage(payload, `llama.cpp returned HTTP ${response.status}`));
+			throw new Error(errorMessage(payload, `HTTP error: ${response.status}`));
 		return payload;
 	}
 
@@ -206,11 +213,11 @@ export class LlamaClient {
 			payload === null ||
 			!Array.isArray((payload as { data?: unknown }).data)
 		) {
-			throw new Error("llama.cpp returned an invalid model catalog");
+			throw new Error("Invalid model catalog");
 		}
 		const data = (payload as { data: unknown[] }).data;
 		if (!data.every(isModelInfo))
-			throw new Error("Server is not running in llama.cpp router mode");
+			throw new Error("Invalid router mode");
 		return data;
 	}
 
@@ -264,32 +271,37 @@ export class LlamaClient {
 		if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
 		const response = await fetch(`${this.serverUrl}/models/sse`, { headers, signal });
 		if (!response.ok || !response.body)
-			throw new Error(`llama.cpp SSE returned HTTP ${response.status}`);
+			throw new Error(`SSE failed: ${response.status}`);
 		const reader = response.body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
-		while (true) {
-			const chunk = await reader.read();
-			if (chunk.done) break;
-			buffer += decoder.decode(chunk.value, { stream: true }).replaceAll("\r\n", "\n");
-			let boundary = buffer.indexOf("\n\n");
-			while (boundary >= 0) {
-				const frame = buffer.slice(0, boundary);
-				buffer = buffer.slice(boundary + 2);
-				const data = frame
-					.split("\n")
-					.filter((line) => line.startsWith("data:"))
-					.map((line) => line.slice(5).trimStart())
-					.join("\n");
-				if (data) {
-					try {
-						const event = JSON.parse(data) as LlamaModelEvent;
-						if (event && typeof event.model === "string" && typeof event.event === "string")
-							onEvent(event);
-					} catch {}
+		try {
+			while (true) {
+				const chunk = await reader.read();
+				if (chunk.done) break;
+				buffer += decoder.decode(chunk.value, { stream: true }).replaceAll("\r\n", "\n");
+				let boundary = buffer.indexOf("\n\n");
+				while (boundary >= 0) {
+					const frame = buffer.slice(0, boundary);
+					buffer = buffer.slice(boundary + 2);
+					const data = frame
+						.split("\n")
+						.filter((line) => line.startsWith("data:"))
+						.map((line) => line.slice(5).trimStart())
+						.join("\n");
+					if (data) {
+						try {
+							const event = JSON.parse(data) as LlamaModelEvent;
+							if (event && typeof event.model === "string" && typeof event.event === "string")
+								onEvent(event);
+						} catch {}
+					}
+					boundary = buffer.indexOf("\n\n");
 				}
-				boundary = buffer.indexOf("\n\n");
 			}
+		} finally {
+			await reader.cancel().catch(() => {});
+			reader.releaseLock();
 		}
 	}
 
@@ -307,7 +319,7 @@ export class LlamaClient {
 			if (event.event !== "model_status" && event.event !== "status_change") return;
 			const data = event.data as { status?: unknown } | undefined;
 			if (data?.status === "loaded") eventLoaded = true;
-			if (data?.status === "unloaded") eventError = "Model failed to load";
+			if (data?.status === "unloaded") eventError = "Model load failed";
 			const progress = parseLoadProgress(event.data);
 			if (progress) onProgress(progress);
 		}, watcher.signal).catch(() => {});
@@ -322,7 +334,7 @@ export class LlamaClient {
 				if (entry?.status.failed || eventError) {
 					throw new Error(
 						entry?.status.exit_code === undefined
-							? (eventError ?? "Model failed to load")
+							? (eventError ?? "Model load failed")
 							: `Model exited: ${exitCodeLabel(entry.status.exit_code)}`,
 					);
 				}

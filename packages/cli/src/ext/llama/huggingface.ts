@@ -19,9 +19,16 @@ export interface HuggingFaceModelDetails {
 }
 
 const DEFAULT_HUGGING_FACE_URL = "https://huggingface.co";
-const QUANTIZATION_PATTERN =
-	/(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$/iu;
+
+const QUANTIZATION_PATTERN = new RegExp(
+	String.raw`(?:^|[-_.])((?:UD-)?(?:IQ\d(?:_[A-Z0-9]+)+|Q\d(?:_[A-Z0-9]+)+` +
+		String.raw`|BF16|F16|F32|MXFP\d(?:_[A-Z0-9]+)*))$`,
+	"iu",
+);
+
 const SHARD_SUFFIX_PATTERN = /-\d{5}-of-\d{5}$/u;
+
+const SEARCH_LIMIT = 20;
 
 function payloadError(payload: unknown, fallback: string): string {
 	if (typeof payload !== "object" || payload === null) return fallback;
@@ -89,16 +96,12 @@ export class HuggingFaceClient {
 		}
 
 		if (!response.ok) {
-			const fallback = `Hugging Face returned HTTP ${response.status}`;
+			const fallback = `HTTP error: ${response.status}`;
 			if (response.status === 429) {
 				const delay =
 					Number(response.headers.get("retry-after")) ||
 					parseRateLimitDelay(response.headers.get("ratelimit"));
-				throw new Error(
-					delay
-						? `Hugging Face rate limit reached; retry in ${delay}s`
-						: "Hugging Face rate limit reached",
-				);
+				throw new Error(delay ? `Rate limited: ${delay}s` : "Rate limited");
 			}
 
 			throw new Error(payloadError(payload, fallback));
@@ -112,10 +115,10 @@ export class HuggingFaceClient {
 			filter: "gguf",
 			sort: "downloads",
 			direction: "-1",
-			limit: "20",
+			limit: String(SEARCH_LIMIT),
 		});
 		const payload = await this.request(`/api/models?${params}`, signal);
-		if (!Array.isArray(payload)) throw new Error("Hugging Face returned invalid search results");
+		if (!Array.isArray(payload)) throw new Error("Invalid search results");
 
 		return payload.flatMap((value) => {
 			if (
@@ -136,7 +139,7 @@ export class HuggingFaceClient {
 		const encodedId = id.split("/").map(encodeURIComponent).join("/");
 		const payload = await this.request(`/api/models/${encodedId}?blobs=true`, signal);
 		if (typeof payload !== "object" || payload === null) {
-			throw new Error("Hugging Face returned invalid model details");
+			throw new Error("Invalid model details");
 		}
 		const model = payload as { id?: unknown; gated?: unknown; siblings?: unknown };
 		const sizes = new Map<string, { total: number; complete: boolean }>();

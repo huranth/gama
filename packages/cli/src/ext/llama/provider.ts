@@ -9,7 +9,7 @@ import {
 	type ProviderStreamOptions,
 	type RefreshModelsContext,
 } from "@huranth/gama-ai";
-import { llamaCppClassifyApi } from "@huranth/gama-ai/api/llama-cpp-classify.lazy";
+import { llamaCppClassifyApi } from "@huranth/gama-ai/wire/llama-cpp-classify.lazy";
 import { stream, streamSimple } from "@huranth/gama-ai/compat";
 import {
 	LlamaClient,
@@ -18,6 +18,9 @@ import {
 	llamaInferenceUrl,
 	normalizeLlamaServerUrl,
 } from "./client.ts";
+
+// Server default
+const UNKNOWN_CONTEXT_WINDOW = 128_000;
 
 export interface LlamaProviderController {
 	provider: Provider<"openai-completions">;
@@ -141,7 +144,9 @@ function contextWindowOf(model: LlamaModelInfo, cachedContextWindow?: number): n
 	if (configuredContext) return configuredContext;
 	if (cachedContextWindow && cachedContextWindow > 0) return cachedContextWindow;
 	const trainingContextWindow = model.meta?.n_ctx_train;
-	return trainingContextWindow && trainingContextWindow > 0 ? trainingContextWindow : 128000;
+	return trainingContextWindow && trainingContextWindow > 0
+		? trainingContextWindow
+		: UNKNOWN_CONTEXT_WINDOW;
 }
 
 function configuredContextWindow(model: LlamaModelInfo): number | undefined {

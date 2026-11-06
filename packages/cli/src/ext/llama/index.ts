@@ -1,5 +1,5 @@
 import { getAuthPath } from "../../config.ts";
-import { AuthStorage } from "../../core/auth-storage.ts";
+import { AuthStorage } from "../../core/vault.ts";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/ext/types.ts";
 import {
 	formatBytes,
@@ -26,7 +26,7 @@ function isConnectionError(error: unknown): boolean {
 }
 
 function connectionErrorMessage(error: unknown): string {
-	if (isConnectionError(error)) return "Could not connect to the server.";
+	if (isConnectionError(error)) return "Connect failed";
 	return error instanceof Error ? error.message : String(error);
 }
 
@@ -67,7 +67,7 @@ async function configuredClient(ctx: ExtensionCommandContext): Promise<LlamaClie
 		const serverUrl = await promptForServerUrl(ctx);
 		if (!serverUrl) return undefined;
 		await saveServerUrl(serverUrl);
-		ctx.ui.notify(`llama.cpp server saved: ${serverUrl}`);
+		ctx.ui.notify(`Server saved: ${serverUrl}`);
 		result = await ctx.modelRegistry.getProviderAuth(LLAMA_PROVIDER_ID);
 		if (!result) {
 			ctx.ui.notify(LLAMA_NOT_CONFIGURED, "warning");
@@ -101,7 +101,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 			allowNetwork: true,
 			signal,
 		});
-		if (result.aborted) throw new Error("Model catalog refresh timed out.");
+		if (result.aborted) throw new Error("Catalog timed out");
 		const refreshError = result.errors.get(LLAMA_PROVIDER_ID);
 		if (refreshError) throw refreshError;
 		return current;
@@ -126,7 +126,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 		}
 
 		const restoreLoaded = async (): Promise<void> => {
-			ctx.ui.notify("Restoring previously loaded models");
+			ctx.ui.notify("Restoring models");
 
 			for (const model of loaded) {
 				await client.loadAndWait(model.id, () => {});
@@ -145,7 +145,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 			const result = await runWithProgress(ui, {
 				title: "Loading model",
 				model: target.id,
-				initialMessage: "Starting…",
+				initialMessage: "Starting...",
 				cancelTitle: "Stop loading?",
 				cancelMessage: target.id,
 				run: (signal, update) => client.loadAndWait(target.id, update, signal),
@@ -162,7 +162,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 			ctx.ui.notify(
 				loadedModel?.status.value === "loaded"
 					? `Loaded ${target.id}`
-					: `Load started for ${target.id}`,
+					: `Loading: ${target.id}`,
 			);
 		} catch (error) {
 			if (replace) {
@@ -196,11 +196,11 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 		const selected = await ui.searchModels((query, signal) => huggingFace.search(query, signal));
 		if (!selected) return;
 		const parsed = parseHuggingFaceModel(selected);
-		ui.showStatus("Loading model details", parsed.repository);
+		ui.showStatus("Loading details", parsed.repository);
 		const details = await huggingFace.details(parsed.repository);
 		if (details.gated) {
 			const approval =
-				details.gated === "manual" ? "Manual approval is required" : "Accept the access terms";
+				details.gated === "manual" ? "Approval required" : "Accept terms";
 			const choice = await ui.select(
 				`Hugging Face access required\n${details.id}\n\n${approval} at:\n` +
 					`https://huggingface.co/${details.id}\n\n` +
@@ -231,7 +231,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 		const result = await runWithProgress(ui, {
 			title: "Downloading model",
 			model,
-			initialMessage: "Starting…",
+			initialMessage: "Starting...",
 			cancelTitle: "Stop download?",
 			cancelMessage: model,
 			run: (signal, update) => client.downloadAndWait(model, update, signal),
@@ -246,7 +246,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 		description: "Manage llama.cpp router models",
 		handler: async (_args, ctx) => {
 			if (ctx.mode !== "tui") {
-				ctx.ui.notify("/llama is available in interactive mode", "warning");
+				ctx.ui.notify("Interactive only", "warning");
 				return;
 			}
 			const client = await configuredClient(ctx);
