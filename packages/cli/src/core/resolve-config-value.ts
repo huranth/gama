@@ -1,0 +1,304 @@
+import { execSync, spawnSync } from "node:child_process";
+import { getShellConfig } from "../utils/shell.ts";
+
+type TemplatePart = { type: "literal"; value: string } | { type: "env"; name: string };
+
+type ConfigValueReference =
+	| { type: "command"; config: string }
+	| { type: "template"; parts: TemplatePart[] };
+
+const COMMAND_TIMEOUT_MS = 10_000;
+
+const commandResultCache = new Map<string, string | undefined>();
+
+const ENV_VAR_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+const ENV_VAR_NAME_PREFIX_RE = /^[A-Za-z_][A-Za-z0-9_]*/;
+
+export function clearConfigValueCache(): void {
+	commandResultCache.clear();
+}
+
+export function isCommandConfigValue(config: string): boolean {
+	return parseConfigValueReference(config).type === "command";
+}
+
+export function isConfigValueConfigured(config: string, env?: Record<string, string>): boolean {
+	return getMissingConfigValueEnvVarNames(config, env).length === 0;
+}
+
+export function getConfigValueEnvVarNames(config: string): string[] {
+	const reference = parseConfigValueReference(config);
+
+	return reference.type === "template" ? getTemplateEnvVarNames(reference.parts) : [];
+}
+
+export function getMissingConfigValueEnvVarNames(
+	config: string,
+	env?: Record<string, string>,
+): string[] {
+	return getConfigValueEnvVarNames(config).filter(
+		(name) => resolveEnvConfigValue(name, env) === undefined,
+	);
+}
+
+export function resolveConfigValue(
+	config: string,
+	env?: Record<string, string>,
+): string | undefined {
+	return resolveConfigValueWith(config, env, executeCommand);
+}
+
+export function resolveConfigValueUncached(
+	config: string,
+	env?: Record<string, string>,
+): string | undefined {
+	return resolveConfigValueWith(config, env, executeCommandUncached);
+}
+
+export function resolveConfigValueOrThrow(
+	config: string,
+	description: string,
+	env?: Record<string, string>,
+): string {
+	const resolvedValue = resolveConfigValueUncached(config, env);
+	if (resolvedValue !== undefined) {
+		return resolvedValue;
+	}
+
+	const reference = parseConfigValueReference(config);
+	if (reference.type === "command") {
+		throw new Error(`Command failed: ${description}`);
+	}
+
+	if (reference.type === "template") {
+		const missingEnvVars = getMissingConfigValueEnvVarNames(config, env);
+		if (missingEnvVars.length === 1) {
+			throw new Error(`Missing env: ${missingEnvVars[0]}`);
+		}
+
+		if (missingEnvVars.length > 1) {
+			throw new Error(`Missing env: ${missingEnvVars.join(", ")}`);
+		}
+	}
+
+	throw new Error(`Resolve failed: ${description}`);
+}
+
+export function resolveHeadersOrThrow(
+	headers: Record<string, string> | undefined,
+	description: string,
+	env?: Record<string, string>,
+): Record<string, string> | undefined {
+	return resolveHeaderMap(headers, (value, key) =>
+		resolveConfigValueOrThrow(value, `${description} header "${key}"`, env),
+	);
+}
+
+function resolveHeaderMap(
+	headers: Record<string, string> | undefined,
+	resolveOne: (value: string, key: string) => string | undefined,
+): Record<string, string> | undefined {
+	if (!headers) return undefined;
+
+	const resolved: Record<string, string> = {};
+	for (const [key, value] of Object.entries(headers)) {
+		const resolvedValue = resolveOne(value, key);
+		if (resolvedValue) {
+			resolved[key] = resolvedValue;
+		}
+	}
+
+	return Object.keys(resolved).length > 0 ? resolved : undefined;
+}
+
+function resolveConfigValueWith(
+	config: string,
+	env: Record<string, string> | undefined,
+	runCommand: (command: string) => string | undefined,
+): string | undefined {
+	const reference = parseConfigValueReference(config);
+
+	if (reference.type === "command") return runCommand(reference.config);
+
+	return resolveTemplate(reference.parts, env);
+}
+
+function resolveEnvConfigValue(name: string, env?: Record<string, string>): string | undefined {
+	return env?.[name] || process.env[name] || undefined;
+}
+
+function appendLiteral(parts: TemplatePart[], value: string): void {
+	if (!value) return;
+
+	const previousPart = parts[parts.length - 1];
+	if (previousPart?.type === "literal") {
+		previousPart.value += value;
+		return;
+	}
+
+	parts.push({ type: "literal", value });
+}
+
+function getTemplateEnvVarNames(parts: TemplatePart[]): string[] {
+	const names: string[] = [];
+
+	for (const part of parts) {
+		if (part.type !== "env" || names.includes(part.name)) continue;
+
+		names.push(part.name);
+	}
+
+	return names;
+}
+
+function resolveTemplate(parts: TemplatePart[], env?: Record<string, string>): string | undefined {
+	let resolved = "";
+
+	for (const part of parts) {
+		if (part.type === "literal") {
+			resolved += part.value;
+			continue;
+		}
+
+		const envValue = resolveEnvConfigValue(part.name, env);
+		if (envValue === undefined) return undefined;
+
+		resolved += envValue;
+	}
+
+	return resolved;
+}
+
+function parseConfigValueReference(config: string): ConfigValueReference {
+	if (config.startsWith("!")) {
+		return { type: "command", config };
+	}
+
+	return { type: "template", parts: parseConfigValueTemplate(config) };
+}
+
+function executeCommand(commandConfig: string): string | undefined {
+	if (commandResultCache.has(commandConfig)) {
+		return commandResultCache.get(commandConfig);
+	}
+
+	const result = executeCommandUncached(commandConfig);
+	commandResultCache.set(commandConfig, result);
+
+	return result;
+}
+
+function executeCommandUncached(commandConfig: string): string | undefined {
+	const command = commandConfig.slice(1);
+	if (process.platform !== "win32") return executeWithDefaultShell(command);
+
+	const configuredResult = executeWithConfiguredShell(command);
+	if (configuredResult.executed) return configuredResult.value;
+
+	return executeWithDefaultShell(command);
+}
+
+function executeWithDefaultShell(command: string): string | undefined {
+	try {
+		const output = execSync(command, {
+			encoding: "utf-8",
+			timeout: COMMAND_TIMEOUT_MS,
+			stdio: ["ignore", "pipe", "ignore"],
+		});
+
+		return output.trim() || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function executeWithConfiguredShell(command: string): {
+	executed: boolean;
+	value: string | undefined;
+} {
+	try {
+		const { shell, args, commandTransport } = getShellConfig();
+		const commandFromStdin = commandTransport === "stdin";
+		const result = spawnSync(shell, commandFromStdin ? args : [...args, command], {
+			encoding: "utf-8",
+			input: commandFromStdin ? command : undefined,
+			timeout: COMMAND_TIMEOUT_MS,
+			stdio: [commandFromStdin ? "pipe" : "ignore", "pipe", "ignore"],
+			shell: false,
+			windowsHide: true,
+		});
+
+		if (result.error) {
+			const error = result.error as NodeJS.ErrnoException;
+			if (error.code === "ENOENT") {
+				return { executed: false, value: undefined };
+			}
+
+			return { executed: true, value: undefined };
+		}
+
+		if (result.status !== 0) {
+			return { executed: true, value: undefined };
+		}
+
+		const value = (result.stdout ?? "").trim();
+
+		return { executed: true, value: value || undefined };
+	} catch {
+		return { executed: false, value: undefined };
+	}
+}
+
+function parseConfigValueTemplate(config: string): TemplatePart[] {
+	const parts: TemplatePart[] = [];
+	let index = 0;
+
+	while (index < config.length) {
+		const dollarIndex = config.indexOf("$", index);
+		if (dollarIndex < 0) {
+			appendLiteral(parts, config.slice(index));
+			break;
+		}
+
+		appendLiteral(parts, config.slice(index, dollarIndex));
+		const nextChar = config[dollarIndex + 1];
+
+		if (nextChar === "$" || nextChar === "!") {
+			appendLiteral(parts, nextChar);
+			index = dollarIndex + 2;
+			continue;
+		}
+
+		if (nextChar === "{") {
+			const endIndex = config.indexOf("}", dollarIndex + 2);
+			if (endIndex < 0) {
+				appendLiteral(parts, "$");
+				index = dollarIndex + 1;
+				continue;
+			}
+
+			const name = config.slice(dollarIndex + 2, endIndex);
+			if (ENV_VAR_NAME_RE.test(name)) {
+				parts.push({ type: "env", name });
+			} else {
+				appendLiteral(parts, config.slice(dollarIndex, endIndex + 1));
+			}
+
+			index = endIndex + 1;
+			continue;
+		}
+
+		const match = config.slice(dollarIndex + 1).match(ENV_VAR_NAME_PREFIX_RE);
+		if (match) {
+			parts.push({ type: "env", name: match[0] });
+			index = dollarIndex + 1 + match[0].length;
+			continue;
+		}
+
+		appendLiteral(parts, "$");
+		index = dollarIndex + 1;
+	}
+
+	return parts;
+}

@@ -25,11 +25,19 @@ export class RuntimeCredentials implements CredentialStore {
 		return this.overrides.has(providerId);
 	}
 
+	modify(
+		providerId: string,
+		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
+		options?: AuthOperationOptions,
+	): Promise<Credential | undefined> {
+		return this.store.modify(providerId, fn, options);
+	}
+
 	async read(providerId: string, options?: AuthOperationOptions): Promise<Credential | undefined> {
 		options?.signal?.throwIfAborted();
 
 		const override = this.overrides.get(providerId);
-		if (override) return { type: "api_key", key: override };
+		if (override !== undefined) return { type: "api_key", key: override };
 
 		return this.store.read(providerId, options);
 	}
@@ -45,14 +53,6 @@ export class RuntimeCredentials implements CredentialStore {
 		}
 
 		return [...entries.values()];
-	}
-
-	modify(
-		providerId: string,
-		fn: (current: Credential | undefined) => Promise<Credential | undefined>,
-		options?: AuthOperationOptions,
-	): Promise<Credential | undefined> {
-		return this.store.modify(providerId, fn, options);
 	}
 
 	async delete(providerId: string, options?: AuthOperationOptions): Promise<void> {
