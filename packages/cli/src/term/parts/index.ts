@@ -36,12 +36,6 @@ export { ExtensionInputComponent } from "./extension-input.ts";
 
 export { ExtensionSelectorComponent } from "./extension-selector.ts";
 
-export {
-	FirstTimeSetupComponent,
-	type FirstTimeSetupOptions,
-	type FirstTimeSetupResult,
-} from "./first-time-setup.ts";
-
 export { FooterComponent } from "./footer.ts";
 
 export { GAMA_ASCII_ROWS, GAMA_ASCII_WIDTH, GamaAsciiLogo } from "./gama-ascii-logo.ts";

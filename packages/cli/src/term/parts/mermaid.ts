@@ -1,7 +1,7 @@
 import { Marked, type Token } from "@huranth/gama-tui";
 import { type MermaidArt, render, type Span } from "grok-mermaid";
-import type { MarkdownTransformer } from "../../../core/ext/types.ts";
-import type { MermaidRenderingMode } from "../../../core/settings-manager.ts";
+import type { MarkdownTransformer } from "../../core/ext/types.ts";
+import type { MermaidRenderingMode } from "../../core/settings.ts";
 import type { Theme } from "../theme/theme.ts";
 
 interface MermaidTransformerOptions {
@@ -75,7 +75,7 @@ export function createMermaidMarkdownTransformer(
 
 				if (!context.isStreaming && art.warnings.length > 0) {
 					const suffix = art.warnings.length > 1 ? ` (+${art.warnings.length - 1} more)` : "";
-					const warning = `Mermaid diagram not rendered: ${art.warnings[0]}${suffix}`;
+					const warning = `Mermaid failed: ${art.warnings[0]}${suffix}`;
 					const styledWarning = options.theme ? options.theme.fg("warning", warning) : warning;
 					return `${token.raw}\n${codeSpan(styledWarning)}  \n`;
 				}
