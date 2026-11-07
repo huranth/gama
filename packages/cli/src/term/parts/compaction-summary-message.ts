@@ -4,19 +4,20 @@ import {
 	Markdown,
 	type MarkdownTheme,
 	MouseRegion,
-	Spacer,
 	Text,
 } from "@huranth/gama-tui";
-import type { BranchSummaryMessage } from "../../../core/messages.ts";
+import type { CompactionSummaryMessage } from "../../core/msg.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
-import { keyText } from "./keybinding-hints.ts";
 
-export class BranchSummaryMessageComponent extends Box {
+export class CompactionSummaryMessageComponent extends Box {
 	private expanded = false;
-	private message: BranchSummaryMessage;
+	private message: CompactionSummaryMessage;
 	private markdownTheme: MarkdownTheme;
 
-	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
+	constructor(
+		message: CompactionSummaryMessage,
+		markdownTheme: MarkdownTheme = getMarkdownTheme(),
+	) {
 		super(1, 1, (t) => theme.bg("customMessageBg", t));
 		this.message = message;
 		this.markdownTheme = markdownTheme;
@@ -37,10 +38,6 @@ export class BranchSummaryMessageComponent extends Box {
 		this.clear();
 
 		const content = new Container();
-		const label = theme.fg("customMessageLabel", `\x1b[1m[branch]\x1b[22m`);
-
-		content.addChild(new Text(label, 0, 0));
-		content.addChild(new Spacer(1));
 		content.addChild(this.createBody());
 
 		this.addChild(
@@ -54,20 +51,18 @@ export class BranchSummaryMessageComponent extends Box {
 	}
 
 	private createBody(): Text | Markdown {
-		if (this.expanded) {
-			const header = "**Branch Summary**\n\n";
+		const tokensBefore =
+			typeof this.message.tokensBefore === "number" ? this.message.tokensBefore : 0;
+		const tokenCount = tokensBefore.toLocaleString();
 
-			return new Markdown(header + this.message.summary, 0, 0, this.markdownTheme, {
+		if (this.expanded) {
+			const body = `Compacted ${tokenCount} tokens\n\n${this.message.summary}`;
+
+			return new Markdown(body, 0, 0, this.markdownTheme, {
 				color: (text: string) => theme.fg("customMessageText", text),
 			});
 		}
 
-		const expandHint = theme.fg("dim", keyText("app.tools.expand"));
-		const collapsed =
-			theme.fg("customMessageText", "Branch summary (") +
-			expandHint +
-			theme.fg("customMessageText", " to expand)");
-
-		return new Text(collapsed, 0, 0);
+		return new Text(theme.fg("customMessageText", `Compacted ${tokenCount} tokens`), 0, 0);
 	}
 }

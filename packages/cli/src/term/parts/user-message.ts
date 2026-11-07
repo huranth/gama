@@ -4,20 +4,27 @@ import {
 	colorToOklch,
 	Markdown,
 	type MarkdownTheme,
+	mixColors,
+	padLine,
 	parseColor,
 	type TuiMouseEvent,
 	truncateToWidth,
 	visibleWidth,
 } from "@huranth/gama-tui";
-import type { MarkdownTransformer } from "../../../core/ext/types.ts";
+import type { MarkdownTransformer } from "../../core/ext/types.ts";
 import { getMarkdownTheme, type ThemeStyle, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
+
 const OSC133_ZONE_END = "\x1b]133;B\x07";
+
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+
 const PROMPT_PAD_ROWS = 2;
+
 const PROMPT_INK_ON_LIGHT = "#16210f";
+
 const PROMPT_INK_ON_DARK = "#e8f6e0";
 
 export const PROMPT_SUMMARY_MIN_WORDS = 100;
@@ -42,9 +49,9 @@ interface SummaryCache extends PromptCache {
 	error: string;
 }
 
-function padTo(line: string, width: number): string {
-	const clipped = truncateToWidth(line, width, "");
-	return clipped + " ".repeat(Math.max(0, width - visibleWidth(clipped)));
+// Trim spaces
+function stripTrailingSpaces(line: string): string {
+	return line.replace(/ +((?:\x1b\[[0-9;]*m)*)$/, "$1");
 }
 
 function promptInk(): Color {
@@ -137,7 +144,7 @@ export class UserMessageComponent extends Container {
 	private promptMarkdownTheme(): MarkdownTheme {
 		return {
 			heading: (text) => this.ink(text, { bold: true }),
-			link: (text) => theme.style(text, { fg: promptInk(), underline: true }),
+			link: (text) => theme.style(text, { fg: promptInk() }),
 			linkUrl: (text) => this.ink(text),
 			code: (text) => this.ink(text),
 			codeBlock: (text) => this.ink(text),
@@ -148,18 +155,22 @@ export class UserMessageComponent extends Container {
 			listBullet: (text) => this.ink(text),
 			bold: (text) => theme.bold(text),
 			italic: (text) => theme.italic(text),
-			underline: (text) => theme.underline(text),
+			underline: (text) => text,
 			strikethrough: (text) => theme.strikethrough(text),
 			highlightCode: (code) => code.split("\n").map((line) => this.ink(line)),
 		};
 	}
 
-	private band(line: string, width: number): string {
-		// Keep background.
-		return padTo(line, width)
+	private band(line: string, width: number, bg: Color = theme.colors.promptBg): string {
+		const text = padLine(truncateToWidth(stripTrailingSpaces(line), width, ""), width);
+		return text
 			.split("\x1b[0m")
-			.map((segment) => theme.bg("promptBg", segment))
+			.map((segment) => theme.style(segment, { bg }))
 			.join("\x1b[0m");
+	}
+
+	private summaryBackground(): Color {
+		return mixColors(theme.colors.promptBg, parseColor("#ffffff"), 0.35);
 	}
 
 	private renderPromptLines(width: number): string[] {
@@ -185,7 +196,7 @@ export class UserMessageComponent extends Container {
 	}
 
 	private buttonLabel(): string {
-		if (this.summaryState === "loading") return "Generating…";
+		if (this.summaryState === "loading") return "Generating...";
 		if (this.summaryState === "ready" || this.summaryState === "error") {
 			if (this.canvasOpen) return "Hide";
 			return this.summaryText ? "Show" : "Retry";
@@ -204,11 +215,11 @@ export class UserMessageComponent extends Container {
 	private buildSummaryLines(width: number): string[] {
 		const indent = " ".repeat(this.outputPad);
 		const clip = (line: string) =>
-			indent + truncateToWidth(line, Math.max(0, width - this.outputPad), "…");
+			indent + truncateToWidth(line, Math.max(0, width - this.outputPad), "...");
 
 		switch (this.summaryState) {
 			case "loading":
-				return [clip(this.ink("Writing summary…", { dim: true }))];
+				return [clip(this.ink("Writing summary...", { dim: true }))];
 
 			case "error": {
 				const detail = (this.summaryError.split("\n")[0] ?? "").trim();
@@ -270,7 +281,7 @@ export class UserMessageComponent extends Container {
 		try {
 			const text = (await this.summary!.generate(controller.signal)).trim();
 			if (run !== this.summaryRun) return;
-			if (!text) throw new Error("The model returned an empty summary");
+			if (!text) throw new Error("Empty summary");
 			this.summaryText = text;
 			this.summaryState = "ready";
 		} catch (error) {
@@ -355,12 +366,15 @@ export class UserMessageComponent extends Container {
 		}
 
 		if (this.summaryEligible && this.canvasOpen) {
-			const summaryLines = this.renderSummaryLines(width).map((line) => this.band(line, width));
+			const summaryBg = this.summaryBackground();
+			const summaryLines = this.renderSummaryLines(width).map((line) =>
+				this.band(line, width, summaryBg),
+			);
 			this.canvasTop = lines.length;
-			lines.push(" ".repeat(width));
-			lines.push(this.band("", width));
+			lines.push(this.band("", width, summaryBg));
+			lines.push(this.band("", width, summaryBg));
 			lines.push(...summaryLines);
-			lines.push(this.band("", width));
+			lines.push(this.band("", width, summaryBg));
 			this.canvasBottom = lines.length;
 		} else {
 			this.canvasTop = -1;

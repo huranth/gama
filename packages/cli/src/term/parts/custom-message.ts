@@ -1,8 +1,8 @@
 import type { TextContent } from "@huranth/gama-ai";
 import type { Component } from "@huranth/gama-tui";
 import { Box, Container, Markdown, type MarkdownTheme, Spacer, Text } from "@huranth/gama-tui";
-import type { MessageRenderer } from "../../../core/ext/types.ts";
-import type { CustomMessage } from "../../../core/messages.ts";
+import type { MessageRenderer } from "../../core/ext/types.ts";
+import type { CustomMessage } from "../../core/msg.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
 export class CustomMessageComponent extends Container {
@@ -90,7 +90,7 @@ export class CustomMessageComponent extends Container {
 		this.addChild(this.box);
 		this.box.clear();
 
-		const label = theme.fg("customMessageLabel", `\x1b[1m[${this.message.customType}]\x1b[22m`);
+		const label = theme.fg("customMessageLabel", theme.bold(`[${this.message.customType}]`));
 
 		this.box.addChild(new Text(label, 0, 0));
 		this.box.addChild(new Spacer(1));

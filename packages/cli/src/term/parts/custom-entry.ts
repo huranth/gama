@@ -1,7 +1,7 @@
 import type { Component } from "@huranth/gama-tui";
 import { Box, Container, Spacer, Text } from "@huranth/gama-tui";
-import type { EntryRenderer } from "../../../core/ext/types.ts";
-import type { CustomEntry } from "../../../core/session-manager.ts";
+import type { EntryRenderer } from "../../core/ext/types.ts";
+import type { CustomEntry } from "../../core/sessions.ts";
 import { theme } from "../theme/theme.ts";
 
 export class CustomEntryComponent extends Container {

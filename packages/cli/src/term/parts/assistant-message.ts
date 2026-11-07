@@ -7,7 +7,8 @@ import {
 	Spacer,
 	Text,
 } from "@huranth/gama-tui";
-import type { MarkdownTransformer } from "../../../core/ext/types.ts";
+import type { MarkdownTransformer } from "../../core/ext/types.ts";
+import { formatNotice } from "../../core/notices.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 import { ThinkingBlockComponent } from "./thinking-block.ts";
@@ -17,6 +18,14 @@ const OSC133_ZONE_START = "\x1b]133;A\x07";
 const OSC133_ZONE_END = "\x1b]133;B\x07";
 
 const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
+
+export function hasVisibleAssistantContent(message: AssistantMessage): boolean {
+	return message.content.some(
+		(block) =>
+			(block.type === "text" && block.text.trim().length > 0) ||
+			(block.type === "thinking" && block.thinking.trim().length > 0),
+	);
+}
 
 export class AssistantMessageComponent extends Container {
 	private contentContainer: Container;
@@ -114,7 +123,11 @@ export class AssistantMessageComponent extends Container {
 		return lines;
 	}
 
-	updateContent(message: AssistantMessage, isStreaming = this.isStreaming): void {
+	updateContent(
+		message: AssistantMessage,
+		isStreaming = this.isStreaming,
+		timings?: readonly { startedAt: number; endedAt?: number }[],
+	): void {
 		this.lastMessage = message;
 		this.isStreaming = isStreaming;
 
@@ -165,6 +178,11 @@ export class AssistantMessageComponent extends Container {
 				);
 			const thinkingLive = isStreaming && !hasFollowingContent;
 			let timing = this.thinkingTimings.get(runIndex);
+
+			if (!timing && timings?.[runIndex]) {
+				timing = { ...timings[runIndex] };
+				this.thinkingTimings.set(runIndex, timing);
+			}
 
 			if (isStreaming && !timing) {
 				timing = { startedAt: Date.now() };
@@ -252,7 +270,7 @@ export class AssistantMessageComponent extends Container {
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(
 				new Text(
-					theme.fg("error", "Response was truncated before completion"),
+					theme.fg("error", "Response truncated"),
 					this.outputPad,
 					0,
 				),
@@ -264,7 +282,9 @@ export class AssistantMessageComponent extends Container {
 
 		if (message.stopReason === "aborted") {
 			const isDefault = !message.errorMessage || message.errorMessage === "Request was aborted";
-			const abortMessage = isDefault ? "Aborted" : (message.errorMessage ?? "Aborted");
+			const abortMessage = isDefault
+				? "Aborted"
+				: formatNotice(message.errorMessage ?? "Aborted");
 
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(
@@ -275,7 +295,7 @@ export class AssistantMessageComponent extends Container {
 
 		if (message.stopReason !== "error") return;
 
-		const errorMessage = message.errorMessage || "Unknown error";
+		const errorMessage = formatNotice(message.errorMessage || "Unknown error");
 
 		this.contentContainer.addChild(new Spacer(1));
 		this.contentContainer.addChild(

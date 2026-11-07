@@ -1,40 +1,31 @@
 import { Container, Loader, Spacer, Text, type TUI } from "@huranth/gama-tui";
-import { exitCodeLabel } from "../../../core/exit-code.ts";
+import { formatCommandFailure, formatFailure } from "../../core/tools/command-failure.ts";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
 	type TruncationResult,
 	truncateTail,
-} from "../../../core/tools/truncate.ts";
-import { stripAnsi } from "../../../utils/ansi.ts";
+} from "../../core/tools/truncate.ts";
+import { stripAnsi } from "../../utils/ansi.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { truncateToVisualLines } from "./visual-truncate.ts";
 
 const PREVIEW_LINES = 20;
 
-// Matches the executor's in-memory tail cap (core/bash-executor.ts).
+// Tail cap
 const MAX_BUFFERED_CHARS = DEFAULT_MAX_BYTES * 2;
 
 export class BashExecutionComponent extends Container {
 	private command: string;
-
 	private readonly colorKey: "dim" | "bashMode";
-
 	private output = "";
-
 	private status: "running" | "complete" | "cancelled" | "error" = "running";
-
-	private exitCode: number | undefined = undefined;
-
+	private failure: string | undefined = undefined;
 	private loader: Loader;
-
 	private truncationResult?: TruncationResult;
-
 	private fullOutputPath?: string;
-
 	private expanded = false;
-
 	private contentContainer: Container;
 
 	constructor(command: string, ui: TUI, excludeFromContext = false) {
@@ -87,7 +78,10 @@ export class BashExecutionComponent extends Container {
 	}
 
 	setFailed(): void {
-		this.exitCode = undefined;
+		this.failure = formatFailure({
+			error: "Command start failed",
+			hint: "Check command",
+		});
 		this.status = "error";
 		this.loader.stop();
 		this.updateDisplay();
@@ -99,12 +93,15 @@ export class BashExecutionComponent extends Container {
 		truncationResult?: TruncationResult,
 		fullOutputPath?: string,
 	): void {
-		this.exitCode = exitCode;
 		this.status = cancelled
 			? "cancelled"
 			: exitCode !== 0 && exitCode !== undefined
 				? "error"
 				: "complete";
+		this.failure =
+			this.status === "error" && exitCode !== undefined
+				? formatCommandFailure(this.output, exitCode, this.command)
+				: undefined;
 		this.truncationResult = truncationResult;
 		this.fullOutputPath = fullOutputPath;
 
@@ -156,11 +153,11 @@ export class BashExecutionComponent extends Container {
 			}
 		}
 
-		// Settled status.
+		// Settled status
 		if (this.status !== "running") {
 			const statusParts: string[] = [];
 
-			// Expand hint.
+			// Expand hint
 			if (hiddenLineCount > 0) {
 				if (this.expanded) {
 					statusParts.push(theme.fg("muted", "collapse"));
@@ -171,15 +168,16 @@ export class BashExecutionComponent extends Container {
 
 			if (this.status === "cancelled") {
 				statusParts.push(theme.fg("warning", "Cancelled"));
-			} else if (this.status === "error") {
-				const label = this.exitCode === undefined ? "Failed" : exitCodeLabel(this.exitCode);
-				statusParts.push(theme.fg("error", `${label[0]!.toUpperCase()}${label.slice(1)}`));
+			} else if (this.status === "error" && this.failure) {
+				for (const line of this.failure.split("\n")) {
+					statusParts.push(theme.fg("error", line));
+				}
 			}
 
 			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
 			if (wasTruncated && this.fullOutputPath) {
 				statusParts.push(
-					theme.fg("warning", `Output truncated, full output at ${this.fullOutputPath}`),
+					theme.fg("warning", `Output truncated: ${this.fullOutputPath}`),
 				);
 			}
 

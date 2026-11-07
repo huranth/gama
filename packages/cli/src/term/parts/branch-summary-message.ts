@@ -4,22 +4,20 @@ import {
 	Markdown,
 	type MarkdownTheme,
 	MouseRegion,
-	Spacer,
 	Text,
 } from "@huranth/gama-tui";
-import type { ParsedSkillBlock } from "../../../core/agent-session.ts";
+import type { BranchSummaryMessage } from "../../core/msg.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 
-export class SkillInvocationMessageComponent extends Box {
+export class BranchSummaryMessageComponent extends Box {
 	private expanded = false;
-	private skillBlock: ParsedSkillBlock;
+	private message: BranchSummaryMessage;
 	private markdownTheme: MarkdownTheme;
 
-	constructor(skillBlock: ParsedSkillBlock, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
-		super(0, 0);
-		this.skillBlock = skillBlock;
+	constructor(message: BranchSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
+		super(1, 1, (t) => theme.bg("customMessageBg", t));
+		this.message = message;
 		this.markdownTheme = markdownTheme;
-
 		this.updateDisplay();
 	}
 
@@ -37,28 +35,25 @@ export class SkillInvocationMessageComponent extends Box {
 		this.clear();
 
 		const content = new Container();
-		const label = theme.fg("muted", theme.bold("[skill]"));
-		const name = theme.fg("customMessageText", this.skillBlock.name);
-		const header = `${label} ${name}`;
-
-		content.addChild(new Text(header, 0, 0));
-		if (this.expanded) {
-			content.addChild(new Spacer(1));
-			content.addChild(
-				new Markdown(this.skillBlock.content, 0, 0, this.markdownTheme, {
-					color: (text: string) => theme.fg("customMessageText", text),
-				}),
-			);
-		}
+		content.addChild(this.createBody());
 
 		this.addChild(
 			new MouseRegion(content, (event) => {
 				if (event.type !== "click" || event.button !== "left") return undefined;
 
 				this.setExpanded(!this.expanded);
-
 				return { handled: true };
 			}),
 		);
+	}
+
+	private createBody(): Text | Markdown {
+		if (this.expanded) {
+			return new Markdown(this.message.summary, 0, 0, this.markdownTheme, {
+				color: (text: string) => theme.fg("customMessageText", text),
+			});
+		}
+
+		return new Text(theme.fg("customMessageText", "Branch summary"), 0, 0);
 	}
 }
