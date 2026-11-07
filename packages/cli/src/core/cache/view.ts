@@ -2,11 +2,16 @@ import type { CacheColdReason, CacheSnapshot } from "./session.ts";
 
 export type HitTone = "success" | "warning" | "error";
 
-export type Paint = (text: string, tone: HitTone) => string;
+// Lookback warn
+const LOOKBACK_WARN = 18;
 
-const LEVELS = ["▁", "▃", "▅", "▆", "▇"];
+const MINUTE_MS = 60_000;
 
-const RAIL_WIDTH = 8;
+const MONEY_DIGITS: Array<[limit: number, digits: number]> = [
+	[0.01, 4],
+	[10, 3],
+	[1000, 2],
+];
 
 const COLD_REASON_LABELS: Record<CacheColdReason, string> = {
 	"first-request": "First request",
@@ -27,27 +32,21 @@ export function formatPercent(rate: number): string {
 
 export function formatMoney(value: number): string {
 	if (!Number.isFinite(value) || value === 0) return "$0.00";
+
 	const sign = value < 0 ? "-" : "";
 	const amount = Math.abs(value);
-	if (amount < 0.001) return `${sign}<$0.001`;
-	if (amount < 0.01) return `${sign}$${amount.toFixed(4)}`;
-	if (amount < 10) return `${sign}$${amount.toFixed(3)}`;
-	if (amount < 1000) return `${sign}$${amount.toFixed(2)}`;
-	return `${sign}$${Math.round(amount)}`;
+	if (amount < 0.001) return value < 0 ? "-$0.001" : "<$0.001";
+
+	const digits = MONEY_DIGITS.find(([limit]) => amount < limit)?.[1];
+	if (digits === undefined) return `${sign}$${Math.round(amount)}`;
+
+	return `${sign}$${amount.toFixed(digits)}`;
 }
 
 export function hitTone(rate: number): HitTone {
 	if (rate >= 0.9) return "success";
 	if (rate >= 0.5) return "warning";
 	return "error";
-}
-
-function levelOf(rate: number): number {
-	if (rate >= 0.97) return 4;
-	if (rate >= 0.9) return 3;
-	if (rate >= 0.75) return 2;
-	if (rate >= 0.5) return 1;
-	return 0;
 }
 
 function formatCountdown(ms: number): string {
@@ -73,7 +72,7 @@ function warmRows(snapshot: CacheSnapshot): Array<[string, string]> {
 function windowRows(snapshot: CacheSnapshot): Array<[string, string]> {
 	if (snapshot.windowMs === undefined) return [];
 	return [
-		["window", `${Math.round(snapshot.windowMs / 60_000)}m`],
+		["window", `${Math.round(snapshot.windowMs / MINUTE_MS)}m`],
 		["left", formatCountdown(snapshot.leftMs)],
 	];
 }
@@ -89,7 +88,8 @@ function forecastRows(snapshot: CacheSnapshot): Array<[string, string]> {
 function usageRows(snapshot: CacheSnapshot): Array<[string, string]> {
 	const { totals } = snapshot;
 	const rows: Array<[string, string]> = [
-		["hit rate", snapshot.rates.length === 0 ? "—" : formatPercent(snapshot.latest)],
+		["scope", "main agent"],
+		["hit rate", snapshot.rates.length === 0 ? "n/a" : formatPercent(snapshot.latest)],
 	];
 	if (snapshot.latestReason !== undefined && snapshot.latest < 1) {
 		rows.push(["why", coldReasonLabel(snapshot.latestReason)]);
@@ -99,12 +99,12 @@ function usageRows(snapshot: CacheSnapshot): Array<[string, string]> {
 		const warm = `${snapshot.warmTurns} warm`;
 		const cold = `${snapshot.coldTurns} cold`;
 		const ratio = formatPercent(snapshot.warmRatio);
-		rows.push(["turns", `${warm} · ${cold} · warm ${ratio}`]);
+		rows.push(["turns", `${warm} warm, ${cold} cold, ${ratio} hit`]);
 	}
 	if (snapshot.unreported > 0) {
-		rows.push(["no usage", `${snapshot.unreported} reported`]);
+		rows.push(["no usage", `${snapshot.unreported} turns`]);
 	}
-	if (snapshot.lookbackPositions !== undefined && snapshot.lookbackPositions >= 18) {
+	if (snapshot.lookbackPositions !== undefined && snapshot.lookbackPositions >= LOOKBACK_WARN) {
 		rows.push(["lookback", `${snapshot.lookbackPositions} turns since write`]);
 	}
 	rows.push(["read", `${totals.cacheRead.toLocaleString()} tokens`]);
@@ -127,12 +127,3 @@ export function cacheRows(snapshot: CacheSnapshot): Array<[string, string]> {
 	];
 }
 
-export function hitRail(rates: readonly number[], paint: Paint): string {
-	const recent = rates.slice(-RAIL_WIDTH);
-	const marks = recent.map((rate) => {
-		const level = LEVELS[levelOf(rate)] ?? "▁";
-		return paint(level, hitTone(rate));
-	});
-
-	return marks.join("");
-}

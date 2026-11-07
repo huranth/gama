@@ -15,16 +15,6 @@ interface IndexedEntry {
 
 const indexByCatalog = new WeakMap<ModelsDevCatalog, Map<string, IndexedEntry>>();
 
-function usesAnthropicSdk(npm: string | undefined): boolean {
-	return typeof npm === "string" && npm.toLowerCase().includes("anthropic");
-}
-
-function lookup(index: Map<string, IndexedEntry>, modelId: string): IndexedEntry | undefined {
-	const key = normalizeModelId(modelId);
-
-	return index.get(key) ?? prefixMatch(index, key);
-}
-
 function isPrice(value: unknown): value is number {
 	return typeof value === "number" && Number.isFinite(value) && value > 0;
 }
@@ -34,6 +24,10 @@ function below(value: number, ceiling: number | undefined): boolean {
 	if (!Number.isFinite(ceiling)) return true;
 
 	return value < ceiling;
+}
+
+function usesAnthropicSdk(npm: string | undefined): boolean {
+	return typeof npm === "string" && npm.toLowerCase().includes("anthropic");
 }
 
 function isCachePriced(entry: CatalogModel): boolean {
@@ -48,7 +42,7 @@ function isCachePriced(entry: CatalogModel): boolean {
 	return readDiscounted || writePriced;
 }
 
-// Prefix.
+// Prefix
 function prefixMatch(index: Map<string, IndexedEntry>, modelId: string): IndexedEntry | undefined {
 	let best: IndexedEntry | undefined;
 	let bestLength = 0;
@@ -65,6 +59,12 @@ function prefixMatch(index: Map<string, IndexedEntry>, modelId: string): Indexed
 	}
 
 	return best;
+}
+
+function lookup(index: Map<string, IndexedEntry>, modelId: string): IndexedEntry | undefined {
+	const key = normalizeModelId(modelId);
+
+	return index.get(key) ?? prefixMatch(index, key);
 }
 
 function catalogIndex(catalog: ModelsDevCatalog): Map<string, IndexedEntry> {

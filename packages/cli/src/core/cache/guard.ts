@@ -16,7 +16,8 @@ export interface CacheHealth {
 
 const MIN_REQUESTS = 3;
 
-const MIN_CACHEABLE_PROMPT_TOKENS = 1024;
+// Anthropic minimum
+const MIN_CACHEABLE_TOKENS = 1024;
 
 function hasCachePricing(cost: CacheHealthInput["cost"]): boolean {
 	const readDiscounted = cost.cacheRead > 0 && cost.cacheRead < cost.input;
@@ -35,8 +36,8 @@ export function assessCacheHealth(input: CacheHealthInput): CacheHealth {
 	if (requests < MIN_REQUESTS) return { status: "ok", requests };
 	if (measured.some((usage) => usage.cacheRead > 0)) return { status: "ok", requests };
 
-	const maxPrompt = Math.max(...measured.map(promptTokens));
-	if (maxPrompt < MIN_CACHEABLE_PROMPT_TOKENS) return { status: "ok", requests };
+	const maxPrompt = measured.reduce((max, usage) => Math.max(max, promptTokens(usage)), 0);
+	if (maxPrompt < MIN_CACHEABLE_TOKENS) return { status: "ok", requests };
 
 	return { status: "cold", requests, message: "No cache hits" };
 }

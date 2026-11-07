@@ -42,17 +42,24 @@ export interface NextCostInput {
 
 const TOKENS_PER_MILLION = 1_000_000;
 
+const LONG_WRITE_FACTOR = 2;
+
 export function promptTokens(usage: Usage): number {
 	return usage.input + usage.cacheRead + usage.cacheWrite;
+}
+
+export function hasReportedUsage(usage: Usage): boolean {
+	return promptTokens(usage) > 0 || usage.output > 0;
 }
 
 export function hitRate(usage: Usage): number {
 	const prompt = promptTokens(usage);
 	if (prompt === 0) return 0;
+
 	return usage.cacheRead / prompt;
 }
 
-// Tier lookup.
+// Above threshold
 function priceFor(rates: CacheRates, prompt: number): CacheRateTier | CacheRates {
 	let selected: CacheRateTier | CacheRates = rates;
 	let best = -1;
@@ -60,6 +67,7 @@ function priceFor(rates: CacheRates, prompt: number): CacheRateTier | CacheRates
 	for (const tier of rates.tiers ?? []) {
 		if (prompt <= tier.inputTokensAbove) continue;
 		if (tier.inputTokensAbove < best) continue;
+
 		selected = tier;
 		best = tier.inputTokensAbove;
 	}
@@ -67,7 +75,7 @@ function priceFor(rates: CacheRates, prompt: number): CacheRateTier | CacheRates
 	return selected;
 }
 
-// Cost billed.
+// Cost billed
 export function billedCost(usage: Usage, rates?: CacheRates): number {
 	if (!rates) {
 		return usage.cost.input + usage.cost.cacheRead + usage.cost.cacheWrite;
@@ -76,16 +84,17 @@ export function billedCost(usage: Usage, rates?: CacheRates): number {
 	const price = priceFor(rates, promptTokens(usage));
 	const longWrite = Math.min(usage.cacheWrite, usage.cacheWrite1h ?? 0);
 	const shortWrite = usage.cacheWrite - longWrite;
+
 	const tokens =
 		usage.input * price.input +
 		usage.cacheRead * price.cacheRead +
 		shortWrite * price.cacheWrite +
-		longWrite * price.input * 2;
+		longWrite * price.input * LONG_WRITE_FACTOR;
 
 	return tokens / TOKENS_PER_MILLION;
 }
 
-// Uncached cost.
+// Uncached cost
 export function uncachedCost(usage: Usage, rates?: CacheRates): number {
 	if (!rates) return billedCost(usage);
 
@@ -95,16 +104,21 @@ export function uncachedCost(usage: Usage, rates?: CacheRates): number {
 	return tokens / TOKENS_PER_MILLION;
 }
 
+function netSaved(spent: number, uncached: number): number {
+	return Math.max(0, uncached - spent);
+}
+
 export function savedCost(usage: Usage, rates?: CacheRates): number {
 	const spent = billedCost(usage, rates);
 	const uncached = uncachedCost(usage, rates);
 
-	return Math.max(0, uncached - spent);
+	return netSaved(spent, uncached);
 }
 
 export function projectCost(input: NextCostInput): number {
 	const { rates, prompt, output, outputRate, added, warm } = input;
 	const price = priceFor(rates, prompt + added);
+
 	const spoken = output * outputRate;
 	const promptRate = warm ? price.cacheRead : price.cacheWrite;
 	const freshRate = warm ? price.input : price.cacheWrite;
@@ -138,7 +152,7 @@ export function cacheTotals(turns: readonly CacheTurn[]): CacheTotals {
 
 	totals.prompt = totals.input + totals.cacheRead + totals.cacheWrite;
 	totals.hit = totals.prompt === 0 ? 0 : totals.cacheRead / totals.prompt;
-	totals.saved = Math.max(0, totals.uncached - totals.spent);
+	totals.saved = netSaved(totals.spent, totals.uncached);
 
 	return totals;
 }

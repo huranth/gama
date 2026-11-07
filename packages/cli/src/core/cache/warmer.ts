@@ -9,17 +9,47 @@ import type {
 } from "@huranth/gama-ai";
 import { calculateCost } from "@huranth/gama-ai";
 import { getProviderEnvValue } from "@huranth/gama-ai/utils/provider-env";
-import type { ModelRuntime } from "../model-runtime.ts";
-import type { SessionEntry, SessionManager, UsageEntry } from "../session-manager.ts";
-import { type CacheWarmingMode, DEFAULT_CACHE_WARM_SAVINGS_RATIO } from "../settings-manager.ts";
+import type { ModelHub } from "../model-run.ts";
+import type { SessionEntry, SessionStore, UsageEntry } from "../sessions.ts";
+import { type CacheWarmingMode, DEFAULT_CACHE_WARM_SAVINGS_RATIO } from "../settings.ts";
+import { promptTokens } from "./rate.ts";
 import { cacheWindowOf, resolveCacheWindowMs } from "./session.ts";
 
-const MAX_STREAM_AGE_MS = 60 * 60_000;
-const MAX_IDLE_AGE_MS = 30 * 60_000;
-const DEFAULT_TTL_MS = 300_000;
+const MINUTE_MS = 60_000;
+
+const SECOND_MS = 1_000;
+
+const MAX_STREAM_AGE_MS = 60 * MINUTE_MS;
+
+const MAX_IDLE_AGE_MS = 30 * MINUTE_MS;
+
+const DEFAULT_TTL_MS = 5 * MINUTE_MS;
+
+// Idle guess
 const IDLE_CONTINUATION = 0.15;
-const IDLE_LIMIT_REASON = "Idle limit";
-const STREAM_LIMIT_REASON = "Time limit";
+
+// TTL margin
+const TTL_MARGIN_MS = 10_000;
+
+const EARLY_FRACTION = 0.9;
+
+// Stop reasons
+const REASONS = {
+	inactive: "Inactive",
+	warmingOff: "Warming off",
+	unsafeReplay: "Unsafe replay",
+	cachingOff: "Caching off",
+	noLifetime: "No lifetime",
+	runSettled: "Run settled",
+	contextChanged: "Context changed",
+	cacheExpired: "Cache expired",
+	noSavings: "No savings",
+	noEconomics: "No economics",
+	warmNotHitting: "Warm not hitting",
+	idleLimit: "Idle limit",
+	timeLimit: "Time limit",
+	waiting: "Waiting",
+} as const;
 
 export interface CacheWarmerPolicy {
 	assumedTtlMs?: number;
@@ -52,6 +82,8 @@ export interface CacheWarmingStatus {
 	verification?: WarmVerification;
 }
 
+type WarmMessage = Awaited<ReturnType<CacheWarmer["warm"]>>;
+
 export interface CacheWarmRequest {
 	model: Model<Api>;
 	context: Context;
@@ -70,11 +102,57 @@ interface ActiveRun extends CacheWarmRequest {
 	timer?: ReturnType<typeof setTimeout>;
 }
 
+function retentionOf(options: SimpleStreamOptions | undefined): CacheRetention {
+	if (options?.cacheRetention) return options.cacheRetention;
+	const long = getProviderEnvValue("GAMA_CACHE_RETENTION", options?.env) === "long";
+	return long ? "long" : "short";
+}
+
 export function getPromptCacheTtlMs(
 	model: Model<Api>,
 	options: SimpleStreamOptions | undefined,
 ): number | undefined {
 	return cacheWindowOf(model, retentionOf(options));
+}
+
+export function getCacheWarmingDelayMs(ttlMs: number): number | undefined {
+	if (ttlMs <= TTL_MARGIN_MS) return undefined;
+
+	const early = Math.min(ttlMs * EARLY_FRACTION, ttlMs - TTL_MARGIN_MS);
+
+	return Math.max(Math.ceil(ttlMs / 2), Math.floor(early));
+}
+
+export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | undefined): boolean {
+	if (!options?.reasoning) return true;
+	if (model.api !== "anthropic-messages") return true;
+	return (model as Model<"anthropic-messages">).compat?.forceAdaptiveThinking === true;
+}
+
+function isFailed(message: WarmMessage): boolean {
+	return message.stopReason === "error" || message.stopReason === "aborted";
+}
+
+function lastPromptTokens(entries: readonly SessionEntry[]): number {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index];
+		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
+
+		return promptTokens(entry.message.usage);
+	}
+
+	return 0;
+}
+
+export function formatCacheWarmingStatus(status: CacheWarmingStatus, now = Date.now()): string {
+	if (!status.decision) return status.reason ?? REASONS.inactive;
+	if (status.state === "inactive") return status.reason ?? "Stopped";
+	if (status.state === "refreshing") return "Warming";
+
+	const seconds = Math.max(0, Math.ceil(((status.nextWarmAt ?? now) - now) / SECOND_MS));
+	const minutes = Math.floor(seconds / 60);
+
+	return `Next in ${minutes}m${seconds % 60}s`;
 }
 
 function price(
@@ -93,71 +171,28 @@ function price(
 	return calculateCost(model, usage).total;
 }
 
-export function getCacheWarmingDelayMs(ttlMs: number): number | undefined {
-	if (ttlMs <= 10_000) return undefined;
-
-	const early = Math.min(ttlMs * 0.9, ttlMs - 10_000);
-	return Math.max(Math.ceil(ttlMs / 2), Math.floor(early));
-}
-
-function retentionOf(options: SimpleStreamOptions | undefined): CacheRetention {
-	if (options?.cacheRetention) return options.cacheRetention;
-	const long = getProviderEnvValue("GAMA_CACHE_RETENTION", options?.env) === "long";
-	return long ? "long" : "short";
-}
-
-export function isReplayable(model: Model<Api>, options: SimpleStreamOptions | undefined): boolean {
-	if (!options?.reasoning) return true;
-	if (model.api !== "anthropic-messages") return true;
-	return (model as Model<"anthropic-messages">).compat?.forceAdaptiveThinking === true;
-}
-
-function lastPromptTokens(entries: readonly SessionEntry[]): number {
-	for (let index = entries.length - 1; index >= 0; index--) {
-		const entry = entries[index];
-		if (entry.type !== "message" || entry.message.role !== "assistant") continue;
-		const usage = entry.message.usage;
-		return usage.input + usage.cacheRead + usage.cacheWrite;
-	}
-	return 0;
-}
-
-export function formatCacheWarmingStatus(status: CacheWarmingStatus, now = Date.now()): string {
-	if (!status.decision) return status.reason ?? "Inactive";
-	if (status.state === "inactive") return status.reason ?? "Stopped";
-	if (status.state === "refreshing") return "Warming";
-
-	const seconds = Math.max(0, Math.ceil(((status.nextWarmAt ?? now) - now) / 1000));
-	return `Next in ${Math.floor(seconds / 60)}m${seconds % 60}s`;
-}
-
 export class CacheWarmer {
 	private run?: ActiveRun;
 
 	private inactive: CacheWarmingStatus = {
 		state: "inactive",
-		reason: "Waiting",
+		reason: REASONS.waiting,
 	};
 
-	private readonly models: Pick<ModelRuntime, "streamSimple">;
-
-	private readonly sessionManager: Pick<SessionManager, "appendUsage" | "getBranch">;
-
+	private readonly models: Pick<ModelHub, "streamSimple">;
+	private readonly sessionManager: Pick<SessionStore, "appendUsage" | "getBranch">;
 	private readonly getMode: () => CacheWarmingMode;
-
 	private readonly getPolicy: () => CacheWarmerPolicy;
 
 	private warmHits = 0;
-
 	private warmMisses = 0;
-
 	private warmRoute?: string;
 
 	onWarmed?: (entry: UsageEntry) => void;
 
 	constructor(
-		models: Pick<ModelRuntime, "streamSimple">,
-		sessionManager: Pick<SessionManager, "appendUsage" | "getBranch">,
+		models: Pick<ModelHub, "streamSimple">,
+		sessionManager: Pick<SessionStore, "appendUsage" | "getBranch">,
 		getMode: () => CacheWarmingMode,
 		getPolicy: () => CacheWarmerPolicy = () => ({}),
 	) {
@@ -170,17 +205,19 @@ export class CacheWarmer {
 	get status(): CacheWarmingStatus {
 		const verification = this.verification;
 		if (this.getMode() === "off") {
-			return { state: "inactive", reason: "Warming off", verification };
+			return { state: "inactive", reason: REASONS.warmingOff, verification };
 		}
+
 		const run = this.run;
 		if (!run) return { ...this.inactive, verification };
 		if (!run.isCurrent()) {
-			return { state: "inactive", reason: "Context changed", verification };
+			return { state: "inactive", reason: REASONS.contextChanged, verification };
 		}
+
 		const decision = this.evaluate(run);
 		const refreshing = run.timer === undefined;
 		if (!decision.economicsAvailable && !refreshing) {
-			return { state: "inactive", reason: "No economics", verification };
+			return { state: "inactive", reason: REASONS.noEconomics, verification };
 		}
 		return {
 			state: refreshing ? "refreshing" : "scheduled",
@@ -201,26 +238,26 @@ export class CacheWarmer {
 		}
 
 		if (this.getMode() === "off") {
-			this.stop("Warming off");
+			this.stop(REASONS.warmingOff);
 			return;
 		}
 
 		if (!isReplayable(request.model, request.options)) {
-			this.stop("Unsafe replay");
+			this.stop(REASONS.unsafeReplay);
 			return;
 		}
 
 		const retention = retentionOf(request.options);
 		const ttlMs = this.resolveTtl(request.model, retention);
 		if (ttlMs === undefined) {
-			const reason = retention === "none" ? "Caching off" : "No lifetime";
+			const reason = retention === "none" ? REASONS.cachingOff : REASONS.noLifetime;
 			this.stop(reason);
 			return;
 		}
 
 		const delayMs = getCacheWarmingDelayMs(ttlMs);
 		if (delayMs === undefined) {
-			this.stop("No lifetime");
+			this.stop(REASONS.noLifetime);
 			return;
 		}
 
@@ -243,13 +280,13 @@ export class CacheWarmer {
 		const run = this.run;
 		if (!run) return;
 		if (this.getMode() === "streaming") {
-			this.stop("Run settled");
+			this.stop(REASONS.runSettled);
 			return;
 		}
 		run.phase = "idle";
 		const deadline = run.startedAt + MAX_IDLE_AGE_MS;
 		if (run.nextWarmAt > deadline || Date.now() >= deadline) {
-			this.stop(IDLE_LIMIT_REASON);
+			this.stop(REASONS.idleLimit);
 		}
 	}
 
@@ -261,7 +298,7 @@ export class CacheWarmer {
 	}
 
 	cancel(): void {
-		this.stop("Inactive");
+		this.stop(REASONS.inactive);
 	}
 
 	private get verification(): WarmVerification | undefined {
@@ -304,7 +341,7 @@ export class CacheWarmer {
 
 		const budget = run.phase === "idle" ? MAX_IDLE_AGE_MS : MAX_STREAM_AGE_MS;
 		if (run.nextWarmAt > run.startedAt + budget || now >= run.startedAt + budget) {
-			this.stop(run.phase === "idle" ? IDLE_LIMIT_REASON : STREAM_LIMIT_REASON);
+			this.stop(run.phase === "idle" ? REASONS.idleLimit : REASONS.timeLimit);
 			return;
 		}
 
@@ -317,13 +354,13 @@ export class CacheWarmer {
 		if (!this.validateRun(run)) return;
 
 		if (Date.now() >= run.expiresAt) {
-			this.stop("Cache expired");
+			this.stop(REASONS.cacheExpired);
 			return;
 		}
 
 		const decision = this.evaluate(run);
 		if (decision.action === "stop") {
-			const reason = decision.economicsAvailable ? "No savings" : "No economics";
+			const reason = decision.economicsAvailable ? REASONS.noSavings : REASONS.noEconomics;
 			this.stop(reason, decision);
 			return;
 		}
@@ -335,13 +372,13 @@ export class CacheWarmer {
 
 			this.recordWarmOutcome(message);
 			if (this.warmHits === 0 && this.warmMisses >= 2) {
-				this.stop("Warm not hitting");
+				this.stop(REASONS.warmNotHitting);
 				return;
 			}
 
 			run.expiresAt = Date.now() + run.ttlMs;
 		} catch {
-			// Keep warming.
+			// Keep warming
 		}
 
 		if (this.run === run) this.schedule(run);
@@ -358,8 +395,9 @@ export class CacheWarmer {
 			.result();
 	}
 
-	private recordUsage(message: Awaited<ReturnType<CacheWarmer["warm"]>>): void {
-		if (message.stopReason === "error" || message.stopReason === "aborted") return;
+	private recordUsage(message: WarmMessage): void {
+		if (isFailed(message)) return;
+
 		const entry = this.sessionManager.appendUsage(
 			"cache_warm",
 			message.provider,
@@ -369,9 +407,10 @@ export class CacheWarmer {
 		this.onWarmed?.(entry);
 	}
 
-	private recordWarmOutcome(message: Awaited<ReturnType<CacheWarmer["warm"]>>): void {
-		if (message.stopReason === "error" || message.stopReason === "aborted") return;
-		const prompt = message.usage.input + message.usage.cacheRead + message.usage.cacheWrite;
+	private recordWarmOutcome(message: WarmMessage): void {
+		if (isFailed(message)) return;
+
+		const prompt = promptTokens(message.usage);
 		if (prompt > 0) {
 			if (message.usage.cacheRead > 0) this.warmHits += 1;
 			else this.warmMisses += 1;
@@ -380,7 +419,7 @@ export class CacheWarmer {
 
 	private validateRun(run: ActiveRun): boolean {
 		if (this.run !== run) return false;
-		const changed = !run.isCurrent() ? "Context changed" : undefined;
+		const changed = !run.isCurrent() ? REASONS.contextChanged : undefined;
 		const reason = this.modeStopReason(run) ?? changed;
 		if (!reason) return true;
 		this.stop(reason);
@@ -389,8 +428,8 @@ export class CacheWarmer {
 
 	private modeStopReason(run: ActiveRun): string | undefined {
 		const mode = this.getMode();
-		if (mode === "off") return "Warming off";
-		if (mode === "streaming" && run.phase === "idle") return "Run settled";
+		if (mode === "off") return REASONS.warmingOff;
+		if (mode === "streaming" && run.phase === "idle") return REASONS.runSettled;
 		return undefined;
 	}
 

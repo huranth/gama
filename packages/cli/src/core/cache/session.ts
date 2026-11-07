@@ -1,12 +1,13 @@
 import { type Api, type CacheRetention, type Model, requiresExplicitCache } from "@huranth/gama-ai";
 import type { AssistantMessage } from "@huranth/gama-ai/compat";
-import type { SessionEntry } from "../session-manager.ts";
+import type { SessionEntry } from "../sessions.ts";
 import {
 	billedCost,
 	type CacheRates,
 	type CacheTotals,
 	type CacheTurn,
 	cacheTotals,
+	hasReportedUsage,
 	hitRate,
 	projectCost,
 	promptTokens,
@@ -63,11 +64,6 @@ function messageKey(message: AssistantMessage): string {
 	return `${message.provider}/${message.responseModel ?? message.model}`;
 }
 
-// Reported.
-function hasReportedUsage(message: AssistantMessage): boolean {
-	return promptTokens(message.usage) > 0 || message.usage.output > 0;
-}
-
 function hasCompaction(entries: readonly SessionEntry[]): boolean {
 	return entries.some((entry) => entry.type === "compaction" || entry.type === "branch_summary");
 }
@@ -81,6 +77,19 @@ export function cacheRatesOf(model: Model<Api> | undefined): CacheRates | undefi
 	const { input, cacheRead, cacheWrite, tiers } = model.cost;
 	if (!(input > 0)) return undefined;
 	return { input, cacheRead, cacheWrite, ...(tiers ? { tiers } : {}) };
+}
+
+export function cacheWindowOf(
+	model: Model<Api> | undefined,
+	retention: CacheRetention = "short",
+): number | undefined {
+	if (retention === "none") return undefined;
+	const short = model?.promptCache?.short;
+	const direct = model?.promptCache?.[retention];
+	const fallback = retention === "long" ? short : undefined;
+	const seconds = direct ?? fallback;
+	if (!seconds || seconds <= 0) return undefined;
+	return seconds * 1000;
 }
 
 function warmUsage(
@@ -121,24 +130,14 @@ function forecastCosts(
 	};
 }
 
-export function cacheWindowOf(
-	model: Model<Api> | undefined,
-	retention: CacheRetention = "short",
-): number | undefined {
-	if (retention === "none") return undefined;
-	const short = model?.promptCache?.short;
-	const seconds = model?.promptCache?.[retention] ?? (retention === "long" ? short : undefined);
-	if (!seconds || seconds <= 0) return undefined;
-	return seconds * 1000;
-}
-
 function lookbackPositionsOf(
 	assistant: Array<{ message: AssistantMessage; index: number }>,
 	last: AssistantMessage,
 ): number | undefined {
 	const lastIndex = assistant.length - 1;
 	for (let index = lastIndex - 1; index >= 0; index--) {
-		const message = assistant[index]!.message;
+		const message = assistant[index]?.message;
+		if (!message) return undefined;
 		if (messageKey(message) !== messageKey(last)) return undefined;
 		if (message.usage.cacheWrite > 0) return lastIndex - index;
 	}
@@ -166,7 +165,7 @@ export function buildCacheSnapshot(input: CacheBuildInput): CacheSnapshot {
 	const now = input.now ?? Date.now();
 	const leftMs = windowMs && current ? Math.max(0, current.timestamp + windowMs - now) : 0;
 
-	// Warm.
+	// Warm
 	const { warmSpent, warmRequests } = warmUsage(input.entries, input.resolveModel);
 	const { nextWarm, nextCold } = forecastCosts(last, cacheRatesOf(model), prompts, model);
 	const warmTurns = turns.filter((turn) => turn.usage.cacheRead > 0);
@@ -190,7 +189,7 @@ export function buildCacheSnapshot(input: CacheBuildInput): CacheSnapshot {
 		warmTurns: warmTurns.length,
 		coldTurns: turns.length - warmTurns.length,
 		warmRatio: warmPrompt === 0 ? 0 : warmRead / warmPrompt,
-		unreported: unreported,
+		unreported,
 		lookbackPositions,
 		windowMs,
 		leftMs,
@@ -202,7 +201,7 @@ export function buildCacheSnapshot(input: CacheBuildInput): CacheSnapshot {
 	};
 }
 
-// Lookback.
+// Window lookup
 export function resolveCacheWindowMs(
 	model: Model<Api> | undefined,
 	options: CacheWindowOptions = {},
@@ -235,12 +234,13 @@ function collectTurns(
 	let unreported = 0;
 
 	for (const [index, entry] of entries.entries()) {
+		// Main only.
 		if (!isAssistant(entry)) continue;
 		const message = entry.message;
 		const model = resolveModel(message.provider, message.responseModel ?? message.model);
 		latest = message;
-		if (!hasReportedUsage(message)) {
-			// Replay.
+		if (!hasReportedUsage(message.usage)) {
+			// Replay
 			if (message.stopReason !== "error" && message.stopReason !== "aborted") unreported += 1;
 			continue;
 		}
@@ -261,7 +261,7 @@ export function observedCacheWindowMs(
 	let longest: number | undefined;
 
 	for (const entry of entries) {
-		if (!isAssistant(entry) || !hasReportedUsage(entry.message)) continue;
+		if (!isAssistant(entry) || !hasReportedUsage(entry.message.usage)) continue;
 		const message = entry.message;
 		const sameModel =
 			!model ||
@@ -278,7 +278,7 @@ export function observedCacheWindowMs(
 	return longest;
 }
 
-// Declared.
+// Declared
 function coldReason(
 	entries: readonly SessionEntry[],
 	assistant: Array<{ message: AssistantMessage; index: number }>,
@@ -292,7 +292,7 @@ function coldReason(
 	if (messageKey(current.message) !== messageKey(previous.message)) return "model-switched";
 	if (hasCompaction(between)) return "compacted";
 
-	// Prefix.
+	// Prefix
 	const currentPrefix = current.message.promptPrefixHash;
 	const previousFull = previous.message.promptHash;
 	if (
