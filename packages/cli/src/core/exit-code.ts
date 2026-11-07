@@ -1,4 +1,11 @@
-// Exit labels.
+// Windows codes
+const WIN_CMD_NOT_FOUND = 9009;
+
+const WIN_CTRL_C = 3221225786;
+
+const WIN_CRASH = 3221225477;
+
+// Exit labels
 const EXIT_CODE_LABELS: Record<number, string> = {
 	2: "usage error",
 	126: "not executable",
@@ -13,16 +20,12 @@ const EXIT_CODE_LABELS: Record<number, string> = {
 	141: "broken pipe",
 	143: "terminated",
 	255: "error",
-	// Windows signals.
-	9009: "command not found",
-	3221225786: "interrupted",
-	3221225477: "crash",
+
+	[WIN_CMD_NOT_FOUND]: "command not found",
+	[WIN_CTRL_C]: "interrupted",
+	[WIN_CRASH]: "crash",
 };
 
 export function exitCodeLabel(exitCode: number): string {
 	return EXIT_CODE_LABELS[exitCode] ?? "failed";
-}
-
-export function commandExitStatus(exitCode: number): string {
-	return `Command failed with exit ${exitCode}`;
 }

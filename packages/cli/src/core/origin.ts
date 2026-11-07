@@ -1,4 +1,4 @@
-import type { PathMetadata } from "./package-manager.ts";
+import type { PathMetadata } from "./pkg/types.ts";
 
 export type SourceScope = "user" | "project" | "temporary";
 
@@ -14,16 +14,21 @@ export interface SourceInfo {
 
 export const BUILTIN_PATH_PREFIX = "builtin:";
 
-export function getSyntheticPathSource(path: string): string | undefined {
-	if (path.startsWith(BUILTIN_PATH_PREFIX)) return "builtin";
-	if (path.startsWith("<") && path.endsWith(">")) {
-		return path.slice(1, -1).split(":")[0] || "temporary";
-	}
-	return undefined;
-}
-
 export function isSyntheticPath(path: string): boolean {
 	return path.startsWith(BUILTIN_PATH_PREFIX) || path.startsWith("<");
+}
+
+// Reads kind
+function syntheticSource(path: string): string | undefined {
+	if (path.startsWith(BUILTIN_PATH_PREFIX)) return "builtin";
+	if (!isSyntheticPath(path)) return undefined;
+
+	const inner = path.slice(1, -1);
+	return inner.split(":")[0] || "temporary";
+}
+
+export function getSyntheticPathSource(path: string): string | undefined {
+	return syntheticSource(path);
 }
 
 export function createSourceInfo(path: string, metadata: PathMetadata): SourceInfo {

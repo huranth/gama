@@ -3,7 +3,7 @@ import {
 	type AnyModel,
 	type Api,
 	type AssistantMessage,
-	type AssistantMessageEventStream,
+	type ReplyStream,
 	isModelType,
 	lazyStream,
 	type Message,
@@ -12,7 +12,7 @@ import {
 	type Provider,
 	type ThinkingLevelMap,
 } from "@huranth/gama-ai";
-import type { SessionEntry } from "./session-manager.ts";
+import type { SessionEntry } from "./sessions.ts";
 
 export interface VirtualModelStateData<TState = unknown> {
 	provider: string;
@@ -68,24 +68,28 @@ export function isVirtualModel(model: { api: string }): boolean {
 	return model.api === VIRTUAL_MODEL_API;
 }
 
-function unroutedStream(model: Model<Api>): AssistantMessageEventStream {
+function unroutedStream(model: Model<Api>): ReplyStream {
 	return lazyStream(model, async () => {
-		throw new Error(
-			`Virtual model ${model.provider}/${model.id} must be routed before streaming`,
-		);
+		throw new Error(`Virtual model unrouted: ${model.provider}/${model.id}`);
 	});
+}
+
+type ModelChange = { provider: string; modelId: string };
+
+function readModelChange(entry: SessionEntry): ModelChange | undefined {
+	if (entry.type !== "model_change") return undefined;
+
+	return { provider: entry.provider, modelId: entry.modelId };
 }
 
 function findLastModelChange(
 	branch: readonly SessionEntry[],
 	before: number,
-): { provider: string; modelId: string } | undefined {
+): ModelChange | undefined {
 	for (let i = before - 1; i >= 0; i--) {
-		const entry = branch[i];
+		const change = readModelChange(branch[i]);
 
-		if (entry.type === "model_change") {
-			return { provider: entry.provider, modelId: entry.modelId };
-		}
+		if (change) return change;
 	}
 
 	return undefined;
@@ -215,23 +219,21 @@ export function getVirtualModelState(
 export function getBranchSelection(
 	branch: readonly SessionEntry[],
 	getModel: (provider: string, modelId: string) => Model<Api> | undefined,
-): { provider: string; modelId: string } | undefined {
+): ModelChange | undefined {
 	for (let i = branch.length - 1; i >= 0; i--) {
 		const entry = branch[i];
-
-		if (entry.type === "model_change") {
-			return { provider: entry.provider, modelId: entry.modelId };
-		}
+		const change = readModelChange(entry);
+		if (change) return change;
 
 		if (entry.type !== "message") continue;
 		if (entry.message.role !== "assistant") continue;
 		if (isVirtualModel(entry.message)) continue;
 
 		const response = { provider: entry.message.provider, modelId: entry.message.model };
-		const change = findLastModelChange(branch, i);
-		const model = change && getModel(change.provider, change.modelId);
+		const previousChange = findLastModelChange(branch, i);
+		const model = previousChange && getModel(previousChange.provider, previousChange.modelId);
 
-		return change && model && isVirtualModel(model) ? change : response;
+		return previousChange && model && isVirtualModel(model) ? previousChange : response;
 	}
 
 	return undefined;

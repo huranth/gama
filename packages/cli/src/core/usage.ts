@@ -1,5 +1,5 @@
 import type { Usage } from "@huranth/gama-ai/compat";
-import type { SessionEntry } from "./session-manager.ts";
+import type { SessionEntry } from "./sessions.ts";
 
 export interface UsageTotals {
 	input: number;
@@ -14,6 +14,8 @@ export interface UsageCostBreakdownEntry {
 	cost: number;
 	tokens: number;
 }
+
+const SUMMARY_KEY = "Tools/summaries";
 
 export function createUsageTotals(): UsageTotals {
 	return {
@@ -62,7 +64,8 @@ export function getUsageCostBreakdown(entries: SessionEntry[]): UsageCostBreakdo
 		const read = readUsageEntry(entry);
 		if (!read) continue;
 
-		let totals = totalsByKey.get(read.key);
+			let totals = totalsByKey.get(read.key);
+
 		if (!totals) {
 			totals = createUsageTotals();
 			totalsByKey.set(read.key, totals);
@@ -74,8 +77,9 @@ export function getUsageCostBreakdown(entries: SessionEntry[]): UsageCostBreakdo
 	const breakdown = Array.from(totalsByKey, ([key, totals]) => ({
 		key,
 		cost: totals.cost,
-		tokens: totals.input + totals.output + totals.cacheRead + totals.cacheWrite,
+		tokens: countTokens(totals),
 	}));
+
 	const visible = breakdown.filter((entry) => entry.cost > 0 || entry.tokens > 0);
 
 	return visible.sort((a, b) => b.cost - a.cost);
@@ -89,7 +93,7 @@ function readUsageEntry(entry: SessionEntry): { key: string; usage: Usage } | un
 	if (entry.type === "branch_summary" || entry.type === "compaction") {
 		if (!entry.usage) return undefined;
 
-		return { key: "Tools/summaries", usage: entry.usage };
+		return { key: SUMMARY_KEY, usage: entry.usage };
 	}
 
 	if (entry.type !== "message") return undefined;
@@ -102,10 +106,14 @@ function readUsageEntry(entry: SessionEntry): { key: string; usage: Usage } | un
 	}
 
 	if (message.role === "toolResult" && message.usage) {
-		return { key: "Tools/summaries", usage: message.usage };
+		return { key: SUMMARY_KEY, usage: message.usage };
 	}
 
 	return undefined;
+}
+
+function countTokens(totals: UsageTotals): number {
+	return totals.input + totals.output + totals.cacheRead + totals.cacheWrite;
 }
 
 function sumOptional(first: number | undefined, second: number | undefined): number | undefined {
@@ -114,7 +122,7 @@ function sumOptional(first: number | undefined, second: number | undefined): num
 	return (first ?? 0) + (second ?? 0);
 }
 
-// Optional cost.
+// Optional cost
 function usageTotalCost(usage: Usage): number {
 	const total = usage.cost?.total;
 
