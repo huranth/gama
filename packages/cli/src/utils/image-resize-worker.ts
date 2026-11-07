@@ -24,14 +24,14 @@ function isResizeImageWorkerRequest(value: unknown): value is ResizeImageWorkerR
 
 const port = parentPort;
 if (!port) {
-	throw new Error("image resize worker requires parentPort");
+	throw new Error("Worker missing port");
 }
 
 port.once("message", (message: unknown) => {
 	void (async () => {
 		try {
 			if (!isResizeImageWorkerRequest(message)) {
-				throw new Error("Invalid image resize worker request");
+				throw new Error("Invalid worker request");
 			}
 
 			const result = await resizeImageInProcess(

@@ -1,6 +1,14 @@
 import { convertImageBytesToPng } from "./image-convert.ts";
 import { formatDimensionNote, type ImageResizeOptions, resizeImage } from "./image-resize.ts";
 
+const pngMime = "image/png";
+
+const jpegMime = "image/jpeg";
+
+const gifMime = "image/gif";
+
+const webpMime = "image/webp";
+
 export interface ProcessImageOptions {
 	autoResizeImages?: boolean;
 	resizeOptions?: ImageResizeOptions;
@@ -12,11 +20,11 @@ export type ProcessImageResult =
 			data: string;
 			mimeType: string;
 			hints: string[];
-	  }
+		}
 	| {
 			ok: false;
 			message: string;
-	  };
+		};
 
 interface NormalizedImage {
 	bytes: Uint8Array;
@@ -36,17 +44,21 @@ function oversizedImageMessage(): string {
 	return "[Image omitted: could not be resized below the inline image size limit.]";
 }
 
-function normalizeSupportedImageMimeType(mimeType: string): string | null {
+function supportedMime(mimeType: string): string | null {
 	switch (baseMimeType(mimeType)) {
-		case "image/png":
-			return "image/png";
-		case "image/jpeg":
+		case pngMime:
+			return pngMime;
+
+		case jpegMime:
 		case "image/jpg":
-			return "image/jpeg";
-		case "image/gif":
-			return "image/gif";
-		case "image/webp":
-			return "image/webp";
+			return jpegMime;
+
+		case gifMime:
+			return gifMime;
+
+		case webpMime:
+			return webpMime;
+
 		default:
 			return null;
 	}
@@ -56,7 +68,7 @@ async function normalizeImage(
 	bytes: Uint8Array,
 	mimeType: string,
 ): Promise<NormalizedImage | null> {
-	const normalizedMimeType = normalizeSupportedImageMimeType(mimeType);
+	const normalizedMimeType = supportedMime(mimeType);
 	if (normalizedMimeType) return { bytes, mimeType: normalizedMimeType };
 
 	const pngBytes = await convertImageBytesToPng(bytes);
@@ -64,14 +76,15 @@ async function normalizeImage(
 
 	return {
 		bytes: pngBytes,
-		mimeType: "image/png",
+		mimeType: pngMime,
 		convertedFrom: baseMimeType(mimeType),
 	};
 }
 
-function conversionHint(from: string | undefined, to: string): string | undefined {
-	if (!from || from === to) return undefined;
-	return `[Image converted from ${from} to ${to}.]`;
+function conversionHints(from: string | undefined, to: string): string[] {
+	if (!from || from === to) return [];
+
+	return [`[Image converted from ${from} to ${to}.]`];
 }
 
 export async function processImage(
@@ -87,19 +100,12 @@ export async function processImage(
 	}
 
 	if (autoResizeImages) {
-		const resized = await resizeImage(
-			normalized.bytes,
-			normalized.mimeType,
-			options?.resizeOptions,
-		);
+		const resized = await resizeImage(normalized.bytes, normalized.mimeType, options?.resizeOptions);
 		if (!resized) {
 			return { ok: false, message: oversizedImageMessage() };
 		}
 
-		const hints: string[] = [];
-
-		const convertedHint = conversionHint(normalized.convertedFrom, resized.mimeType);
-		if (convertedHint) hints.push(convertedHint);
+		const hints = conversionHints(normalized.convertedFrom, resized.mimeType);
 
 		const dimensionNote = formatDimensionNote(resized);
 		if (dimensionNote) hints.push(dimensionNote);
@@ -112,10 +118,7 @@ export async function processImage(
 		};
 	}
 
-	const hints: string[] = [];
-
-	const convertedHint = conversionHint(normalized.convertedFrom, normalized.mimeType);
-	if (convertedHint) hints.push(convertedHint);
+	const hints = conversionHints(normalized.convertedFrom, normalized.mimeType);
 
 	return {
 		ok: true,

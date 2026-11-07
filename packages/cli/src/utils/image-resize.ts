@@ -13,9 +13,15 @@ interface ResizeImageWorkerResponse {
 	error?: string;
 }
 
+// Bun path
+const bunWorkerSource = "./src/utils/image-resize-worker.ts";
+
+export const IMAGE_RESIZE_WORKER_TIMEOUT_MS = 10_000;
+
 function getWorkerUrl(): URL {
 	const isTypeScriptRuntime = import.meta.url.endsWith(".ts");
 	const workerFile = isTypeScriptRuntime ? "./image-resize-worker.ts" : "./image-resize-worker.js";
+
 	return new URL(workerFile, import.meta.url);
 }
 
@@ -23,23 +29,22 @@ function toTransferableBytes(input: Uint8Array): Uint8Array<ArrayBuffer> {
 	return new Uint8Array(input);
 }
 
-function createResizeWorker(workerSpecifier: string | URL): Worker {
-	return new Worker(workerSpecifier);
-}
-
 function isResizeImageWorkerResponse(value: unknown): value is ResizeImageWorkerResponse {
 	return value !== null && typeof value === "object";
 }
 
-async function resizeImageInWorker(
+export async function resizeImageInWorker(
 	workerSpecifier: string | URL,
 	inputBytes: Uint8Array,
 	mimeType: string,
 	options?: ImageResizeOptions,
 ): Promise<ResizedImage | null> {
-	const worker = createResizeWorker(workerSpecifier);
+	const worker = new Worker(workerSpecifier);
+	let timer: ReturnType<typeof setTimeout> | undefined;
+
 	try {
 		const inputBytesForWorker = toTransferableBytes(inputBytes);
+
 		return await new Promise<ResizedImage | null>((resolve, reject) => {
 			let settled = false;
 
@@ -49,6 +54,7 @@ async function resizeImageInWorker(
 				}
 
 				settled = true;
+				if (timer) clearTimeout(timer);
 				resolve(result);
 			};
 
@@ -58,12 +64,18 @@ async function resizeImageInWorker(
 				}
 
 				settled = true;
+				if (timer) clearTimeout(timer);
 				reject(error);
 			};
 
+			timer = setTimeout(
+				() => fail(new Error("Worker timed out")),
+				IMAGE_RESIZE_WORKER_TIMEOUT_MS,
+			);
+
 			worker.once("message", (message: unknown) => {
 				if (!isResizeImageWorkerResponse(message)) {
-					fail(new Error("Invalid image resize worker response"));
+					fail(new Error("Invalid worker response"));
 					return;
 				}
 
@@ -81,8 +93,9 @@ async function resizeImageInWorker(
 					return;
 				}
 
-				fail(new Error(`Image resize worker ${exitCodeLabel(code)}`));
+				fail(new Error(`Worker failed: ${exitCodeLabel(code)}`));
 			});
+
 			worker.postMessage(
 				{
 					inputBytes: inputBytesForWorker,
@@ -93,6 +106,7 @@ async function resizeImageInWorker(
 			);
 		});
 	} finally {
+		if (timer) clearTimeout(timer);
 		void worker.terminate().catch(() => undefined);
 	}
 }
@@ -106,18 +120,14 @@ export async function resizeImage(
 
 	if (typeof process.versions.bun === "string") {
 		try {
-			return await resizeImageInWorker(
-				"./src/utils/image-resize-worker.ts",
-				inputBytes,
-				mimeType,
-				options,
-			);
+			return await resizeImageInWorker(bunWorkerSource, inputBytes, mimeType, options);
 		} catch {}
 	}
 
 	try {
 		return await resizeImageInWorker(workerUrl, inputBytes, mimeType, options);
-	} catch {
+	} catch (error) {
+		if (error instanceof Error && error.message.includes("timed out")) throw error;
 		return resizeImageInProcess(inputBytes, mimeType, options);
 	}
 }
@@ -128,6 +138,7 @@ export function formatDimensionNote(result: ResizedImage): string | undefined {
 	}
 
 	const scale = result.originalWidth / result.width;
+
 	return (
 		`[Image: original ${result.originalWidth}x${result.originalHeight}, ` +
 		`displayed at ${result.width}x${result.height}. ` +

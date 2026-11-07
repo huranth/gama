@@ -1,12 +1,54 @@
 import { open } from "node:fs/promises";
 
-const IMAGE_TYPE_SNIFF_BYTES = 4100;
+const imageSniffBytes = 4100;
 
-const PNG_SIGNATURE = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
+const pngSignature = [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a];
 
-const BMP_BIT_DEPTHS = [1, 4, 8, 16, 24, 32];
+const jpegSignature = [0xff, 0xd8, 0xff];
 
-const PNG_MIN_BYTES = 16;
+const jpegLsMarker = 0xf7;
+
+const bmpBitDepths = [1, 4, 8, 16, 24, 32];
+
+const pngMinBytes = 16;
+
+const pngHeaderLength = 13;
+
+const pngChunkOverhead = 8;
+
+const pngChunkCrc = 4;
+
+const pngChunkTypeDelta = 4;
+
+const pngHeaderTypeOffset = 12;
+
+const bmpMinBytes = 26;
+
+const bmpCoreHeaderSize = 12;
+
+const bmpInfoHeaderMin = 40;
+
+const bmpInfoHeaderMax = 124;
+
+const bmpInfoHeaderFixed = 30;
+
+const bmpFileSizeOffset = 2;
+
+const bmpPixelOffset = 10;
+
+const bmpDibHeaderOffset = 14;
+
+const bmpCorePlanesOffset = 22;
+
+const bmpCoreDepthOffset = 24;
+
+const bmpInfoPlanesOffset = 26;
+
+const bmpInfoDepthOffset = 28;
+
+const expectedColorPlanes = 1;
+
+const highByte = 0x1000000;
 
 function readUint16LE(buffer: Uint8Array, offset: number): number {
 	return (buffer[offset] ?? 0) + ((buffer[offset + 1] ?? 0) << 8);
@@ -17,13 +59,13 @@ function readUint32LE(buffer: Uint8Array, offset: number): number {
 		(buffer[offset] ?? 0) +
 		((buffer[offset + 1] ?? 0) << 8) +
 		((buffer[offset + 2] ?? 0) << 16) +
-		(buffer[offset + 3] ?? 0) * 0x1000000
+		(buffer[offset + 3] ?? 0) * highByte
 	);
 }
 
 function readUint32BE(buffer: Uint8Array, offset: number): number {
 	return (
-		(buffer[offset] ?? 0) * 0x1000000 +
+		(buffer[offset] ?? 0) * highByte +
 		((buffer[offset + 1] ?? 0) << 16) +
 		((buffer[offset + 2] ?? 0) << 8) +
 		(buffer[offset + 3] ?? 0)
@@ -45,20 +87,20 @@ function startsWithAscii(buffer: Uint8Array, offset: number, text: string): bool
 }
 
 function isPng(buffer: Uint8Array): boolean {
-	if (buffer.length < PNG_MIN_BYTES) return false;
-	if (readUint32BE(buffer, PNG_SIGNATURE.length) !== 13) return false;
-	return startsWithAscii(buffer, 12, "IHDR");
+	if (buffer.length < pngMinBytes) return false;
+	if (readUint32BE(buffer, pngSignature.length) !== pngHeaderLength) return false;
+	return startsWithAscii(buffer, pngHeaderTypeOffset, "IHDR");
 }
 
 function isAnimatedPng(buffer: Uint8Array): boolean {
-	let offset = PNG_SIGNATURE.length;
-	while (offset + 8 <= buffer.length) {
+	let offset = pngSignature.length;
+	while (offset + pngChunkOverhead <= buffer.length) {
 		const chunkLength = readUint32BE(buffer, offset);
-		const chunkTypeOffset = offset + 4;
+		const chunkTypeOffset = offset + pngChunkTypeDelta;
 		if (startsWithAscii(buffer, chunkTypeOffset, "acTL")) return true;
 		if (startsWithAscii(buffer, chunkTypeOffset, "IDAT")) return false;
 
-		const nextOffset = offset + 8 + chunkLength + 4;
+		const nextOffset = offset + pngChunkOverhead + chunkLength + pngChunkCrc;
 		if (nextOffset <= offset || nextOffset > buffer.length) return false;
 		offset = nextOffset;
 	}
@@ -67,13 +109,14 @@ function isAnimatedPng(buffer: Uint8Array): boolean {
 }
 
 function isBmp(buffer: Uint8Array): boolean {
-	if (buffer.length < 26) return false;
+	if (buffer.length < bmpMinBytes) return false;
 
-	const declaredFileSize = readUint32LE(buffer, 2);
-	const pixelDataOffset = readUint32LE(buffer, 10);
-	const dibHeaderSize = readUint32LE(buffer, 14);
-	if (declaredFileSize !== 0 && declaredFileSize < 26) return false;
-	if (pixelDataOffset < 14 + dibHeaderSize) return false;
+	const declaredFileSize = readUint32LE(buffer, bmpFileSizeOffset);
+	const pixelDataOffset = readUint32LE(buffer, bmpPixelOffset);
+	const dibHeaderSize = readUint32LE(buffer, bmpDibHeaderOffset);
+
+	if (declaredFileSize !== 0 && declaredFileSize < bmpMinBytes) return false;
+	if (pixelDataOffset < bmpDibHeaderOffset + dibHeaderSize) return false;
 	if (declaredFileSize !== 0 && pixelDataOffset >= declaredFileSize) return false;
 
 	return hasValidBmpHeader(buffer, dibHeaderSize);
@@ -82,26 +125,26 @@ function isBmp(buffer: Uint8Array): boolean {
 function hasValidBmpHeader(buffer: Uint8Array, dibHeaderSize: number): boolean {
 	let colorPlanes: number;
 	let bitsPerPixel: number;
-	if (dibHeaderSize === 12) {
-		colorPlanes = readUint16LE(buffer, 22);
-		bitsPerPixel = readUint16LE(buffer, 24);
-	} else if (dibHeaderSize >= 40 && dibHeaderSize <= 124) {
-		if (buffer.length < 30) return false;
-		colorPlanes = readUint16LE(buffer, 26);
-		bitsPerPixel = readUint16LE(buffer, 28);
+	if (dibHeaderSize === bmpCoreHeaderSize) {
+		colorPlanes = readUint16LE(buffer, bmpCorePlanesOffset);
+		bitsPerPixel = readUint16LE(buffer, bmpCoreDepthOffset);
+	} else if (dibHeaderSize >= bmpInfoHeaderMin && dibHeaderSize <= bmpInfoHeaderMax) {
+		if (buffer.length < bmpInfoHeaderFixed) return false;
+		colorPlanes = readUint16LE(buffer, bmpInfoPlanesOffset);
+		bitsPerPixel = readUint16LE(buffer, bmpInfoDepthOffset);
 	} else {
 		return false;
 	}
 
-	return colorPlanes === 1 && BMP_BIT_DEPTHS.includes(bitsPerPixel);
+	return colorPlanes === expectedColorPlanes && bmpBitDepths.includes(bitsPerPixel);
 }
 
 export function detectSupportedImageMimeType(buffer: Uint8Array): string | null {
-	if (startsWith(buffer, [0xff, 0xd8, 0xff])) {
-		return buffer[3] === 0xf7 ? null : "image/jpeg";
+	if (startsWith(buffer, jpegSignature)) {
+		return buffer[3] === jpegLsMarker ? null : "image/jpeg";
 	}
 
-	if (startsWith(buffer, PNG_SIGNATURE)) {
+	if (startsWith(buffer, pngSignature)) {
 		return isPng(buffer) && !isAnimatedPng(buffer) ? "image/png" : null;
 	}
 
@@ -125,8 +168,8 @@ export async function detectSupportedImageMimeTypeFromFile(
 ): Promise<string | null> {
 	const fileHandle = await open(filePath, "r");
 	try {
-		const buffer = Buffer.alloc(IMAGE_TYPE_SNIFF_BYTES);
-		const { bytesRead } = await fileHandle.read(buffer, 0, IMAGE_TYPE_SNIFF_BYTES, 0);
+		const buffer = Buffer.alloc(imageSniffBytes);
+		const { bytesRead } = await fileHandle.read(buffer, 0, imageSniffBytes, 0);
 		return detectSupportedImageMimeType(buffer.subarray(0, bytesRead));
 	} finally {
 		await fileHandle.close();
