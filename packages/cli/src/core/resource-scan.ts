@@ -9,12 +9,15 @@ import {
 	statSync,
 } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { valid, validRange } from "semver";
+import { toPosixPath } from "../utils/paths.ts";
+import type { PathMetadata } from "./pkg/types.ts";
 import { readGamaManifest } from "./gama-manifest.ts";
-import type { PathMetadata } from "./package-manager.ts";
+
+export { toPosixPath };
 
 export type ResourceType = "extensions" | "skills" | "prompts" | "themes";
 
@@ -23,7 +26,9 @@ export type IgnoreMatcher = ReturnType<typeof ignore>;
 export type SkillDiscoveryMode = "gama" | "agents";
 
 export const NETWORK_TIMEOUT_MS = 10000;
+
 export const UPDATE_CHECK_CONCURRENCY = 4;
+
 export const GIT_UPDATE_CONCURRENCY = 4;
 
 export const RESOURCE_TYPES: ResourceType[] = ["extensions", "skills", "prompts", "themes"];
@@ -37,23 +42,45 @@ export const FILE_PATTERNS: Record<ResourceType, RegExp> = {
 
 export const IGNORE_FILE_NAMES = [".gitignore", ".ignore", ".fdignore"];
 
-export function toPosixPath(p: string): string {
-	return p.split(sep).join("/");
+// Entry files
+const ENTRY_FILES = ["index.ts", "index.js"];
+
+// Precedence
+const RANK_BUILTIN = 5;
+
+const RANK_PACKAGE = 4;
+
+const RANK_USER = 2;
+
+const RANK_PROJECT = 0;
+
+const RANK_LOCAL = 0;
+
+const RANK_OTHER = 1;
+
+type PatternKind = "include" | "exclude" | "forceInclude" | "forceExclude";
+
+interface Pattern {
+	kind: PatternKind;
+	target: string;
 }
 
-function getSkillParentPaths(
-	filePath: string,
-	baseDir: string,
-): { rel: string; name: string; posix: string } | undefined {
-	if (basename(filePath) !== "SKILL.md") return undefined;
+function readPattern(raw: string): Pattern {
+	if (raw.startsWith("!")) return { kind: "exclude", target: raw.slice(1) };
+	if (raw.startsWith("+")) return { kind: "forceInclude", target: raw.slice(1) };
+	if (raw.startsWith("-")) return { kind: "forceExclude", target: raw.slice(1) };
 
-	const parentDir = dirname(filePath);
+	return { kind: "include", target: raw };
+}
 
-	return {
-		rel: toPosixPath(relative(baseDir, parentDir)),
-		name: basename(parentDir),
-		posix: toPosixPath(parentDir),
-	};
+function targetsOf(patterns: Pattern[], kind: PatternKind): string[] {
+	return patterns.filter((item) => item.kind === kind).map((item) => item.target);
+}
+
+function compareText(a: string, b: string): number {
+	if (a < b) return -1;
+	if (a > b) return 1;
+	return 0;
 }
 
 export function getExtensionTempFolder(agentDir: string): string {
@@ -102,24 +129,25 @@ export function getNpmVersionRange(version: string | undefined): string | undefi
 }
 
 export function getHomeDir(): string {
-	return process.env.HOME || homedir();
+	return getEnv().HOME || homedir();
 }
 
 export function hasGlobPattern(s: string): boolean {
 	return s.includes("*") || s.includes("?");
 }
 
+function isInsideRoot(root: string, path: string): boolean {
+	const rel = relative(root, path);
+	if (isAbsolute(rel) || rel === ".." || rel.startsWith(`..${sep}`)) return false;
+
+	return rel.split(sep).every((segment) => segment !== ".." && !segment.startsWith("."));
+}
+
 export function expandPackageGlob(pattern: string, root: string): string[] {
-	const isInsideRoot = (path: string): boolean => {
-		const segments = relative(root, path).split(sep);
-
-		return segments.every((segment) => segment !== ".." && !segment.startsWith("."));
-	};
-
 	return globSync(pattern, { cwd: root })
 		.map((match) => resolve(root, match))
-		.filter(isInsideRoot)
-		.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+		.filter((path) => isInsideRoot(root, path))
+		.sort(compareText);
 }
 
 export function normalizeExactPattern(pattern: string): string {
@@ -132,22 +160,25 @@ export function isOverridePattern(s: string): boolean {
 	return s.startsWith("!") || s.startsWith("+") || s.startsWith("-");
 }
 
-function markDirectoryVisited(path: string, visited: Set<string>): boolean {
+// Loop guard
+export function markDirectoryVisited(path: string, visited: Set<string>): boolean {
 	let key = path;
+
 	try {
 		key = realpathSync(path);
 	} catch {
 		// Raw fallback
 	}
+
 	if (visited.has(key)) return false;
+
 	visited.add(key);
+
 	return true;
 }
 
 export function getOverridePatterns(entries: string[]): string[] {
-	return entries.filter(
-		(pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"),
-	);
+	return entries.filter(isOverridePattern);
 }
 
 export function isOfflineModeEnabled(): boolean {
@@ -160,11 +191,11 @@ export function isOfflineModeEnabled(): boolean {
 }
 
 export function resourcePrecedenceRank(m: PathMetadata): number {
-	if (m.source === "builtin") return 5;
-	if (m.origin === "package") return 4;
+	if (m.source === "builtin") return RANK_BUILTIN;
+	if (m.origin === "package") return RANK_PACKAGE;
 
-	const scopeBase = m.scope === "project" ? 0 : 2;
-	const sourceRank = m.source === "local" ? 0 : 1;
+	const scopeBase = m.scope === "project" ? RANK_PROJECT : RANK_USER;
+	const sourceRank = m.source === "local" ? RANK_LOCAL : RANK_OTHER;
 
 	return scopeBase + sourceRank;
 }
@@ -217,7 +248,9 @@ export function addIgnoreRules(ig: IgnoreMatcher, dir: string, rootDir: string):
 				.filter((line): line is string => Boolean(line));
 
 			if (patterns.length > 0) ig.add(patterns);
-		} catch {}
+		} catch {
+			// Unreadable ignore
+		}
 	}
 }
 
@@ -326,27 +359,21 @@ export function isEnabledByOverrides(
 	patterns: string[],
 	baseDir: string,
 ): boolean {
-	const overrides = getOverridePatterns(patterns);
-	const excludes = overrides
-		.filter((pattern) => pattern.startsWith("!"))
-		.map((pattern) => pattern.slice(1));
-	const forceIncludes = overrides
-		.filter((pattern) => pattern.startsWith("+"))
-		.map((pattern) => pattern.slice(1));
-	const forceExcludes = overrides
-		.filter((pattern) => pattern.startsWith("-"))
-		.map((pattern) => pattern.slice(1));
+	const parsed = getOverridePatterns(patterns).map(readPattern);
+	const excludes = targetsOf(parsed, "exclude");
+	const forceIncludes = targetsOf(parsed, "forceInclude");
+	const forceExcludes = targetsOf(parsed, "forceExclude");
 
 	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
-		enabled = false;
-	}
+
+	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) enabled = false;
 	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
 		enabled = true;
 	}
 	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
 		enabled = false;
 	}
+
 	return enabled;
 }
 
@@ -357,12 +384,10 @@ export function applyAutoloadDisabledPatterns(
 ): Map<string, boolean> {
 	const result = new Map<string, boolean>();
 
-	for (const pattern of patterns) {
-		const modifier =
-			pattern.startsWith("+") || pattern.startsWith("-") || pattern.startsWith("!");
-		const target = modifier ? pattern.slice(1) : pattern;
-		const enabled = !pattern.startsWith("-") && !pattern.startsWith("!");
-		const exact = pattern.startsWith("+") || pattern.startsWith("-");
+	for (const raw of patterns) {
+		const { kind, target } = readPattern(raw);
+		const enabled = kind !== "exclude" && kind !== "forceExclude";
+		const exact = kind === "forceInclude" || kind === "forceExclude";
 
 		for (const filePath of allPaths) {
 			const matches = exact
@@ -399,6 +424,15 @@ export function prefixIgnorePattern(line: string, prefix: string): string | null
 	return negated ? `!${prefixed}` : prefixed;
 }
 
+function isInsideDirectory(root: string, candidate: string): boolean {
+	try {
+		const rel = relative(realpathSync(root), realpathSync(candidate));
+		return rel === "" || (rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel));
+	} catch {
+		return false;
+	}
+}
+
 export function resolveExtensionEntries(dir: string): string[] | null {
 	const packageJsonPath = join(dir, "package.json");
 	if (existsSync(packageJsonPath)) {
@@ -407,7 +441,7 @@ export function resolveExtensionEntries(dir: string): string[] | null {
 			const entries: string[] = [];
 			for (const extPath of manifest.extensions) {
 				const resolvedExtPath = resolve(dir, extPath);
-				if (existsSync(resolvedExtPath)) {
+				if (isInsideDirectory(dir, resolvedExtPath) && existsSync(resolvedExtPath)) {
 					entries.push(resolvedExtPath);
 				}
 			}
@@ -417,13 +451,9 @@ export function resolveExtensionEntries(dir: string): string[] | null {
 		}
 	}
 
-	const indexTs = join(dir, "index.ts");
-	const indexJs = join(dir, "index.js");
-	if (existsSync(indexTs)) {
-		return [indexTs];
-	}
-	if (existsSync(indexJs)) {
-		return [indexJs];
+	for (const name of ENTRY_FILES) {
+		const entryPath = join(dir, name);
+		if (isInsideDirectory(dir, entryPath) && existsSync(entryPath)) return [entryPath];
 	}
 
 	return null;
@@ -459,7 +489,9 @@ function collectAutoEntries(dir: string, extension: string): string[] {
 
 			if (isFile && entry.name.endsWith(extension)) entries.push(fullPath);
 		}
-	} catch {}
+	} catch {
+		// Unreadable dir
+	}
 
 	return entries;
 }
@@ -477,52 +509,30 @@ export function applyPatterns(
 	patterns: string[],
 	baseDir: string,
 ): Set<string> {
-	const includes: string[] = [];
-	const excludes: string[] = [];
-	const forceIncludes: string[] = [];
-	const forceExcludes: string[] = [];
+	const parsed = patterns.map(readPattern);
+	const includes = targetsOf(parsed, "include");
+	const excludes = targetsOf(parsed, "exclude");
+	const forceIncludes = targetsOf(parsed, "forceInclude");
+	const forceExcludes = targetsOf(parsed, "forceExclude");
 
-	for (const p of patterns) {
-		if (p.startsWith("+")) {
-			forceIncludes.push(p.slice(1));
-		} else if (p.startsWith("-")) {
-			forceExcludes.push(p.slice(1));
-		} else if (p.startsWith("!")) {
-			excludes.push(p.slice(1));
-		} else {
-			includes.push(p);
-		}
+	const result =
+		includes.length === 0
+			? new Set(allPaths)
+			: new Set(allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir)));
+
+	for (const filePath of allPaths) {
+		if (matchesAnyPattern(filePath, excludes, baseDir)) result.delete(filePath);
 	}
 
-	let result: string[];
-	if (includes.length === 0) {
-		result = [...allPaths];
-	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
+	for (const filePath of allPaths) {
+		if (matchesAnyExactPattern(filePath, forceIncludes, baseDir)) result.add(filePath);
 	}
 
-	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
+	for (const filePath of allPaths) {
+		if (matchesAnyExactPattern(filePath, forceExcludes, baseDir)) result.delete(filePath);
 	}
 
-	if (forceIncludes.length > 0) {
-		for (const filePath of allPaths) {
-			if (
-				!result.includes(filePath) &&
-				matchesAnyExactPattern(filePath, forceIncludes, baseDir)
-			) {
-				result.push(filePath);
-			}
-		}
-	}
-
-	if (forceExcludes.length > 0) {
-		result = result.filter(
-			(filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir),
-		);
-	}
-
-	return new Set(result);
+	return result;
 }
 
 export function collectAutoExtensionEntries(dir: string): string[] {
@@ -548,6 +558,7 @@ export function collectAutoExtensionEntries(dir: string): string[] {
 			let isFile = entry.isFile();
 
 			if (entry.isSymbolicLink()) {
+				if (!isInsideDirectory(dir, fullPath)) continue;
 				try {
 					const stats = statSync(fullPath);
 					isDir = stats.isDirectory();
@@ -570,7 +581,9 @@ export function collectAutoExtensionEntries(dir: string): string[] {
 				}
 			}
 		}
-	} catch {}
+	} catch {
+		// Unreadable dir
+	}
 
 	return entries;
 }
@@ -601,6 +614,7 @@ function collectFilesInternal(
 			let isFile = entry.isFile();
 
 			if (entry.isSymbolicLink()) {
+				if (!isInsideDirectory(root, fullPath)) continue;
 				try {
 					const stats = statSync(fullPath);
 					isDir = stats.isDirectory();
@@ -623,7 +637,9 @@ function collectFilesInternal(
 				files.push(fullPath);
 			}
 		}
-	} catch {}
+	} catch {
+		// Unreadable dir
+	}
 
 	return files;
 }
@@ -653,6 +669,7 @@ function collectSkillEntriesInternal(
 			const fullPath = join(dir, entry.name);
 			let isFile = entry.isFile();
 			if (entry.isSymbolicLink()) {
+				if (!isInsideDirectory(root, fullPath)) continue;
 				try {
 					isFile = statSync(fullPath).isFile();
 				} catch {
@@ -676,6 +693,7 @@ function collectSkillEntriesInternal(
 			let isFile = entry.isFile();
 
 			if (entry.isSymbolicLink()) {
+				if (!isInsideDirectory(root, fullPath)) continue;
 				try {
 					const stats = statSync(fullPath);
 					isDir = stats.isDirectory();
@@ -702,7 +720,24 @@ function collectSkillEntriesInternal(
 
 			entries.push(...collectSkillEntriesInternal(fullPath, mode, ig, root, visited));
 		}
-	} catch {}
+	} catch {
+		// Unreadable dir
+	}
 
 	return entries;
+}
+
+function getSkillParentPaths(
+	filePath: string,
+	baseDir: string,
+): { rel: string; name: string; posix: string } | undefined {
+	if (basename(filePath) !== "SKILL.md") return undefined;
+
+	const parentDir = dirname(filePath);
+
+	return {
+		rel: toPosixPath(relative(baseDir, parentDir)),
+		name: basename(parentDir),
+		posix: toPosixPath(parentDir),
+	};
 }
