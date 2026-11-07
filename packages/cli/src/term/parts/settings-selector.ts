@@ -12,11 +12,11 @@ import {
 	Text,
 	type WheelScrollLines,
 } from "@huranth/gama-tui";
-import { reasoningLevelName } from "../../../core/defaults.ts";
+import { reasoningLevelName } from "../../core/defaults.ts";
 import {
 	formatHttpIdleTimeoutMs,
 	HTTP_IDLE_TIMEOUT_CHOICES,
-} from "../../../core/http-dispatcher.ts";
+} from "../../core/http-dispatcher.ts";
 import type {
 	DefaultProjectTrust,
 	FullscreenExitOutput,
@@ -24,7 +24,7 @@ import type {
 	QuietStartup,
 	TuiMode,
 	WarningSettings,
-} from "../../../core/settings-manager.ts";
+} from "../../core/settings.ts";
 import {
 	getSettingsListTheme,
 	parseAutoThemeSetting,
@@ -164,7 +164,7 @@ class WarningSettingsSubmenu extends Container {
 			{
 				id: "anthropic-extra-usage",
 				label: "Anthropic extra usage",
-				description: "Warn when Anthropic subscription auth may use paid extra usage",
+				description: "Warn on paid subscription usage",
 				currentValue: (this.state.anthropicExtraUsage ?? true) ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -433,7 +433,7 @@ class ThemeSubmenu extends Container {
 		this.mode = "single";
 		const menu = new SelectSubmenu(
 			"Theme",
-			"Select a theme, or choose automatic to follow terminal appearance",
+			"Pick a theme. Automatic follows the terminal.",
 			singleModeThemeItems(this.availableThemes),
 			this.singleTheme,
 			(value) => {
@@ -463,10 +463,10 @@ class ThemeSubmenu extends Container {
 		content.addChild(new Text(theme.bold(theme.fg("accent", "Automatic Theme")), 0, 0));
 		content.addChild(new Spacer(1));
 		content.addChild(
-			new Text(theme.fg("muted", "Choose themes for terminal light and dark appearance"), 0, 0),
+			new Text(theme.fg("muted", "Light and dark themes"), 0, 0),
 		);
 		content.addChild(
-			new Text(theme.fg("muted", "Light/dark detection requires terminal support"), 0, 0),
+			new Text(theme.fg("muted", "Needs terminal support"), 0, 0),
 		);
 		content.addChild(new Spacer(1));
 
@@ -639,32 +639,28 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "transport",
 				label: "Transport",
-				description: "Preferred transport for providers that support multiple transports",
+				description: "Transport for providers that offer several",
 				currentValue: config.transport,
 				values: ["sse", "websocket", "websocket-cached", "auto"],
 			},
 			{
 				id: "http-idle-timeout",
 				label: "HTTP idle timeout",
-				description:
-					"Maximum idle gap while waiting for HTTP headers or body chunks. " +
-					"Disable for local models that pause longer than five minutes",
+				description: "Stop waiting after this long. Off for slow local models.",
 				currentValue: formatHttpIdleTimeoutMs(config.httpIdleTimeoutMs),
 				values: HTTP_IDLE_TIMEOUT_CHOICES.map((choice) => choice.label),
 			},
 			{
 				id: "hide-thinking",
 				label: "Hide thinking",
-				description: "Hide thinking blocks in assistant responses",
+				description: "Hide thinking text",
 				currentValue: config.hideThinkingBlock ? "true" : "false",
 				values: ["true", "false"],
 			},
 			{
 				id: "prompt-summaries",
 				label: "Prompt summaries",
-				description:
-					"Offer a Generate button on prompts over 100 words " +
-					"that opens a summary canvas below (uses your model)",
+				description: "Generate a summary for long prompts, using your model",
 				currentValue: (config.promptSummaries ?? false) ? "true" : "false",
 				values: ["true", "false"],
 			},
@@ -692,8 +688,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "quiet-startup",
 				label: "Quiet startup",
-				description:
-					"Disable verbose printing at startup (header: keep only the startup header)",
+				description: "Print less at startup; header keeps only the header",
 				currentValue: String(config.quietStartup),
 				values: ["true", "header", "false"],
 			},
@@ -707,8 +702,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "default-project-trust",
 				label: "Default project trust",
-				description:
-					"Fallback behavior when no extension or saved trust decision decides project trust",
+				description: "Trust used when no other source decides",
 				currentValue: DEFAULT_PROJECT_TRUST_LABELS[config.defaultProjectTrust],
 				values: Object.values(DEFAULT_PROJECT_TRUST_LABELS),
 			},
@@ -737,9 +731,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "model-thinking",
 				label: "Default thinking level per model",
-				description:
-					`Override the default thinking level for specific models. ` +
-					`${cycleThinkingKey} cycles in-session.`,
+				description: `Per-model override. ${cycleThinkingKey} cycles.`,
 				currentValue: modelThinkingOverridesSummary(currentModelThinkingLevels),
 				submenu: (_currentValue, done) => {
 					const steps: SteppedSubmenuStep[] = [
@@ -782,8 +774,9 @@ export class SettingsSelectorComponent extends Container {
 						{
 							key: "level",
 							title: (ctx) => {
-								const m = defaultModelByValue.get(ctx.model);
-								return `Thinking Level for ${m ? modelDisplayLabel(m) : ctx.model}`;
+								const defaultModel = defaultModelByValue.get(ctx.model);
+
+								return `Thinking Level for ${defaultModel ? modelDisplayLabel(defaultModel) : ctx.model}`;
 							},
 							description: "Select default thinking level for this model",
 							options: (ctx) => {
@@ -847,8 +840,7 @@ export class SettingsSelectorComponent extends Container {
 			{
 				id: "fullscreen-exit-output",
 				label: "Fullscreen exit output",
-				description:
-					"Print the transcript or only a session resume hint when exiting fullscreen mode",
+				description: "On exit, print the transcript or just the resume hint",
 				currentValue: config.fullscreenExitOutput,
 				values: ["transcript", "resume-hint"],
 			},

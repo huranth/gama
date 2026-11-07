@@ -47,6 +47,7 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.syncFocus();
@@ -59,8 +60,10 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 		this.submitLabel = options.submitLabel ?? "Continue";
 		this.baseUrlOptional = options.baseUrlOptional === true;
 
-		this.addChild(new Text(theme.bold(options.title ?? "Connect a provider"), 0, 0));
-		this.addChild(new Spacer(1));
+		if (options.title) {
+			this.addChild(new Text(theme.bold(options.title), 0, 0));
+			this.addChild(new Spacer(1));
+		}
 
 		this.baseUrlInput = new Input();
 		if (options.initialBaseUrl) {
@@ -126,7 +129,7 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 		this.errorMessage = undefined;
 		if (field === "baseUrl") {
 			if (!this.baseUrlOptional && this.baseUrlInput.getValue().trim() === "") {
-				this.errorMessage = "Enter a base URL.";
+				this.errorMessage = "Base URL required";
 				this.refresh();
 				return;
 			}
@@ -140,7 +143,7 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 		const baseUrl = this.baseUrlInput.getValue().trim();
 		const apiKey = this.apiKeyInput.getValue().trim();
 		if (!this.baseUrlOptional && baseUrl === "") {
-			this.errorMessage = "Enter a base URL.";
+			this.errorMessage = "Base URL required";
 			this.setActiveField("baseUrl");
 			return;
 		}
@@ -151,13 +154,22 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 		this.onCancel();
 	}
 
+	private moveField(direction: -1 | 1): void {
+		const fields: Field[] = ["baseUrl", "apiKey"];
+		const index = this.activeField ? fields.indexOf(this.activeField) : -1;
+		const next = Math.max(0, Math.min(fields.length - 1, index + direction));
+		this.setActiveField(fields[next]!);
+	}
+
 	private fieldRow(field: Field, width: number): { start: number; end: number } | undefined {
 		const target = field === "baseUrl" ? this.baseUrlInput : this.apiKeyInput;
-		let y = 0;
+		let rowStart = 0;
+
 		for (const child of this.children) {
 			const height = child.render(width).length;
-			if (child === target) return { start: y, end: y + height };
-			y += height;
+			if (child === target) return { start: rowStart, end: rowStart + height };
+
+			rowStart += height;
 		}
 		return undefined;
 	}
@@ -198,12 +210,20 @@ export class ConnectProviderDialogComponent extends Container implements Focusab
 	}
 
 	handleInput(data: string): void {
-		const kb = getKeybindings();
-		if (kb.matches(data, "tui.select.cancel")) {
+		const keybindings = getKeybindings();
+		if (keybindings.matches(data, "tui.select.cancel")) {
 			this.cancel();
 			return;
 		}
-		if (kb.matches(data, "tui.input.tab") || data === "\x1b[Z") {
+		if (keybindings.matches(data, "tui.select.down")) {
+			this.moveField(1);
+			return;
+		}
+		if (keybindings.matches(data, "tui.select.up")) {
+			this.moveField(-1);
+			return;
+		}
+		if (keybindings.matches(data, "tui.input.tab") || data === "\x1b[Z") {
 			if (this.activeField === undefined) {
 				this.setActiveField("baseUrl");
 			} else {

@@ -13,21 +13,13 @@ export interface ExtensionSelectorOptions {
 
 export class ExtensionSelectorComponent extends Container {
 	private options: string[];
-
 	private selectedIndex = 0;
-
 	private listContainer: Container;
-
 	private onSelectCallback: (option: string) => void;
-
 	private onCancelCallback: () => void;
-
 	private titleText: Text;
-
 	private baseTitle: string;
-
 	private countdown: CountdownTimer | undefined;
-
 	private onToggleToolsExpanded: (() => void) | undefined;
 
 	constructor(
@@ -71,7 +63,7 @@ export class ExtensionSelectorComponent extends Container {
 		this.addChild(new Spacer(1));
 		this.addChild(
 			new Text(
-				rawKeyHint("↑↓", "navigate") +
+				rawKeyHint("Up/Down", "navigate") +
 					"  " +
 					keyHint("tui.select.confirm", "select") +
 					"  " +

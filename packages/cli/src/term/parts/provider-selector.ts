@@ -18,7 +18,7 @@ export interface ProviderSelectorOptions {
 }
 
 function deletePrompt(providerId: string): string {
-	return `Delete provider "${providerId}"? Enter to confirm, Esc to cancel`;
+	return `Delete provider "${providerId}"?`;
 }
 
 export class ProviderSelectorComponent extends Container {
@@ -92,7 +92,7 @@ export class ProviderSelectorComponent extends Container {
 		}
 
 		const selectedProvider = this.providers[this.selectedIndex];
-		if (keyData === "d" && this.onDeleteCallback && selectedProvider) {
+		if ((keyData === "d" || keyData === "D") && this.onDeleteCallback && selectedProvider) {
 			this.confirmingDeleteId = selectedProvider.id;
 			this.updateList();
 			return;
@@ -113,7 +113,7 @@ export class ProviderSelectorComponent extends Container {
 
 	private confirmDelete(providerId: string, keyData: string): void {
 		const kb = getKeybindings();
-		const confirmed = kb.matches(keyData, "tui.select.confirm") || keyData === "\n";
+		const confirmed = keyData === "d" || keyData === "D";
 
 		if (confirmed) {
 			this.confirmingDeleteId = null;

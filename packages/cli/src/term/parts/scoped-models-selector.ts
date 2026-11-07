@@ -116,6 +116,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.searchInput.focused = value;

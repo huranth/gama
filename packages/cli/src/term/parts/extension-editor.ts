@@ -8,8 +8,8 @@ import {
 	Text,
 	type TUI,
 } from "@huranth/gama-tui";
-import type { KeybindingsManager } from "../../../core/keybindings.ts";
-import { editInExternalEditor } from "../external-editor.ts";
+import type { Keymap } from "../../core/hotkeys.ts";
+import { editInExternalEditor } from "../editor.ts";
 import { getEditorTheme, theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 import { keyHint } from "./keybinding-hints.ts";
@@ -23,13 +23,14 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 	private onSubmitCallback: (value: string) => void;
 	private onCancelCallback: () => void;
 	private tui: TUI;
-	private keybindings: KeybindingsManager;
+	private keybindings: Keymap;
 	private externalEditorCommand: string;
 
 	private _focused = false;
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.editor.focused = value;
@@ -37,7 +38,7 @@ export class ExtensionEditorComponent extends Container implements Focusable {
 
 	constructor(
 		tui: TUI,
-		keybindings: KeybindingsManager,
+		keybindings: Keymap,
 		title: string,
 		prefill: string | undefined,
 		onSubmit: (value: string) => void,

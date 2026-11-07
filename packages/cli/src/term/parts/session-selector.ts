@@ -13,18 +13,22 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "@huranth/gama-tui";
-import { KeybindingsManager } from "../../../core/keybindings.ts";
-import type { SessionInfo, SessionListProgress } from "../../../core/session-manager.ts";
-import { canonicalizePath as _canonicalizePath } from "../../../utils/paths.ts";
+import { Keymap } from "../../core/hotkeys.ts";
+import type { SessionInfo, SessionListProgress } from "../../core/sessions.ts";
+import { canonicalizePath as _canonicalizePath } from "../../utils/paths.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
-import { keyHint, keyText } from "./keybinding-hints.ts";
+import { keyText } from "./keybinding-hints.ts";
 import {
 	filterAndSortSessions,
 	hasSessionName,
 	type NameFilter,
 	type SortMode,
 } from "./session-selector-search.ts";
+
+const STATUS_INFO_MS = 2000;
+
+const STATUS_ERROR_MS = 3000;
 
 type SessionScope = "current" | "all";
 
@@ -90,6 +94,10 @@ class SessionSelectorHeader implements Component {
 		this.confirmingDeletePath = path;
 	}
 
+	dispose(): void {
+		this.clearStatusTimeout();
+	}
+
 	private clearStatusTimeout(): void {
 		if (!this.statusTimeout) return;
 		clearTimeout(this.statusTimeout);
@@ -117,15 +125,12 @@ class SessionSelectorHeader implements Component {
 		const title = theme.bold("Resume session");
 
 		if (this.confirmingDeletePath !== null) {
-			const confirmHint =
-				`Delete session? ${keyHint("tui.select.confirm", "confirm")} · ` +
-				`${keyHint("tui.select.cancel", "cancel")}`;
-			return [title, theme.fg("error", truncateToWidth(confirmHint, width, "…"))];
+			return [title, theme.fg("error", truncateToWidth("Delete session?", width, "..."))];
 		}
 
 		if (this.statusMessage) {
 			const color = this.statusMessage.type === "error" ? "error" : "accent";
-			return [title, theme.fg(color, truncateToWidth(this.statusMessage.message, width, "…"))];
+			return [title, theme.fg(color, truncateToWidth(this.statusMessage.message, width, "..."))];
 		}
 
 		return [title];
@@ -216,7 +221,7 @@ class SessionList implements Component, Focusable {
 	private showCwd = false;
 	private sortMode: SortMode = "threaded";
 	private nameFilter: NameFilter = "all";
-	private keybindings: KeybindingsManager;
+	private keybindings: Keymap;
 	private showPath = false;
 	private confirmingDeletePath: string | null = null;
 	private currentSessionCanonicalPath?: string;
@@ -237,6 +242,7 @@ class SessionList implements Component, Focusable {
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.searchInput.focused = value;
@@ -247,7 +253,7 @@ class SessionList implements Component, Focusable {
 		showCwd: boolean,
 		sortMode: SortMode,
 		nameFilter: NameFilter,
-		keybindings: KeybindingsManager,
+		keybindings: Keymap,
 		currentSessionFilePath?: string,
 	) {
 		this.allSessions = sessions;
@@ -335,7 +341,7 @@ class SessionList implements Component, Focusable {
 		if (!selected) return;
 
 		if (this.isCurrentSessionPath(selected.session.path)) {
-			this.onError?.("Cannot delete the currently active session");
+			this.onError?.("Active session");
 			return;
 		}
 
@@ -360,18 +366,16 @@ class SessionList implements Component, Focusable {
 			if (this.nameFilter === "named") {
 				const toggleKey = keyText("app.session.toggleNamedFilter");
 				if (this.showCwd) {
-					emptyMessage = `  No named sessions found. Press ${toggleKey} to show all.`;
+					emptyMessage = `  No named sessions. ${toggleKey} shows all.`;
 				} else {
-					emptyMessage =
-						`  No named sessions in current folder. Press ${toggleKey} to show all, ` +
-						"or Tab to view all.";
+					emptyMessage = "  No named sessions here. Tab shows all.";
 				}
 			} else if (this.showCwd) {
-				emptyMessage = "  No sessions found";
+				emptyMessage = "  No sessions";
 			} else {
-				emptyMessage = "  No sessions in current folder. Press Tab to view all.";
+				emptyMessage = "  No sessions here. Tab shows all.";
 			}
-			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "…")));
+			lines.push(theme.fg("muted", truncateToWidth(emptyMessage, width, "...")));
 			return lines;
 		}
 
@@ -407,7 +411,7 @@ class SessionList implements Component, Focusable {
 				rightPart = `${shortenPath(session.path)} ${rightPart}`;
 			}
 
-			const cursor = isSelected ? theme.fg("accent", "› ") : "  ";
+			const cursor = isSelected ? theme.fg("accent", "> ") : "  ";
 
 			const prefixWidth = visibleWidth(prefix);
 			const rightWidth = visibleWidth(rightPart) + 2;
@@ -416,7 +420,7 @@ class SessionList implements Component, Focusable {
 			const truncatedMsg = truncateToWidth(
 				normalizedMessage,
 				Math.max(10, availableForMsg),
-				"…",
+				"...",
 			);
 
 			let messageColor: "error" | "warning" | "accent" | null = null;
@@ -531,13 +535,16 @@ class SessionList implements Component, Focusable {
 		if (kb.matches(keyData, "tui.select.up")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - 1);
 		} else if (kb.matches(keyData, "tui.select.down")) {
-			this.selectedIndex = Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1);
+			this.selectedIndex = Math.max(
+				0,
+				Math.min(this.filteredSessions.length - 1, this.selectedIndex + 1),
+			);
 		} else if (kb.matches(keyData, "tui.select.pageUp")) {
 			this.selectedIndex = Math.max(0, this.selectedIndex - this.maxVisible);
 		} else if (kb.matches(keyData, "tui.select.pageDown")) {
-			this.selectedIndex = Math.min(
-				this.filteredSessions.length - 1,
-				this.selectedIndex + this.maxVisible,
+			this.selectedIndex = Math.max(
+				0,
+				Math.min(this.filteredSessions.length - 1, this.selectedIndex + this.maxVisible),
 			);
 		} else if (kb.matches(keyData, "tui.select.confirm")) {
 			const selected = this.filteredSessions[this.selectedIndex];
@@ -571,7 +578,7 @@ async function deleteSessionFile(
 			parts.push(stderr.split("\n")[0] ?? stderr);
 		}
 		if (parts.length === 0) return null;
-		return `trash: ${parts.join(" · ").slice(0, 200)}`;
+		return `delete failed: ${parts.join(", ").slice(0, 200)}`;
 	};
 
 	if (trashResult.status === 0 || !existsSync(sessionPath)) {
@@ -592,7 +599,7 @@ async function deleteSessionFile(
 export class SessionSelectorComponent extends Container implements Focusable {
 	private sessionList: SessionList;
 	private header: SessionSelectorHeader;
-	private keybindings: KeybindingsManager;
+	private keybindings: Keymap;
 	private scope: SessionScope = "current";
 	private sortMode: SortMode = "threaded";
 	private nameFilter: NameFilter = "all";
@@ -613,6 +620,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.sessionList.focused = value;
@@ -620,6 +628,11 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		if (value && this.mode === "rename") {
 			this.renameInput.focused = true;
 		}
+	}
+
+	dispose(): void {
+		this.header.dispose();
+		this.cancelLoads();
 	}
 
 	private buildBaseLayout(content: Component, options?: { showHeader?: boolean }): void {
@@ -645,12 +658,12 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		requestRender: () => void,
 		options?: {
 			renameSession?: (sessionPath: string, currentName: string | undefined) => Promise<void>;
-			keybindings?: KeybindingsManager;
+			keybindings?: Keymap;
 		},
 		currentSessionFilePath?: string,
 	) {
 		super();
-		this.keybindings = options?.keybindings ?? KeybindingsManager.create();
+		this.keybindings = options?.keybindings ?? Keymap.create();
 		this.currentSessionsLoader = currentSessionsLoader;
 		this.allSessionsLoader = allSessionsLoader;
 		this.requestRender = requestRender;
@@ -710,7 +723,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 			this.requestRender();
 		};
 		this.sessionList.onError = (msg) => {
-			this.header.setStatusMessage({ type: "error", message: msg }, 3000);
+			this.header.setStatusMessage({ type: "error", message: msg }, STATUS_ERROR_MS);
 			this.requestRender();
 		};
 
@@ -730,14 +743,14 @@ export class SessionSelectorComponent extends Container implements Focusable {
 				const showCwd = this.scope === "all";
 				this.sessionList.setSessions(sessions, showCwd);
 
-				const msg = result.method === "trash" ? "Session moved to trash" : "Session deleted";
-				this.header.setStatusMessage({ type: "info", message: msg }, 2000);
+				const msg = result.method === "trash" ? "Session trashed" : "Session deleted";
+				this.header.setStatusMessage({ type: "info", message: msg }, STATUS_INFO_MS);
 				await this.refreshSessionsAfterMutation();
 			} else {
 				const errorMessage = result.error ?? "Unknown error";
 				this.header.setStatusMessage(
-					{ type: "error", message: `Failed to delete: ${errorMessage}` },
-					3000,
+					{ type: "error", message: `Delete failed: ${errorMessage}` },
+					STATUS_ERROR_MS,
 				);
 			}
 
@@ -778,7 +791,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		this.mode = "rename";
 		this.renameTargetPath = sessionPath;
 		this.renameInput.setValue(currentName ?? "");
-		// Start cursor.
+		// Start cursor
 		this.renameInput.handleInput("\x01");
 		this.renameInput.focused = true;
 
@@ -791,7 +804,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 			new Text(
 				theme.fg(
 					"muted",
-					`${keyText("tui.select.confirm")} to save · ${keyText("tui.select.cancel")} to cancel`,
+					`${keyText("tui.select.confirm")} save, ${keyText("tui.select.cancel")} cancel`,
 				),
 				1,
 				0,
@@ -829,6 +842,13 @@ export class SessionSelectorComponent extends Container implements Focusable {
 		try {
 			await renameSession(target, next);
 			await this.refreshSessionsAfterMutation();
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			this.header.setStatusMessage(
+				{ type: "error", message: `Rename failed: ${message}` },
+				STATUS_ERROR_MS,
+			);
+			this.requestRender();
 		} finally {
 			this.exitRenameMode();
 		}
@@ -892,7 +912,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 
 			const message = err instanceof Error ? err.message : String(err);
 			this.header.setStatusMessage(
-				{ type: "error", message: `Failed to load sessions: ${message}` },
+				{ type: "error", message: `Load failed: ${message}` },
 				4000,
 			);
 			this.sessionList.setSessions([], showCwd);

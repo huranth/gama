@@ -12,9 +12,9 @@ import {
 	type TuiMouseEvent,
 	type TuiMouseEventResult,
 } from "@huranth/gama-tui";
-import type { ModelRuntime } from "../../../core/model-runtime.ts";
-import { refreshModelCatalogs } from "../model-catalog-refresh.ts";
-import { getModelSelectorSearchText } from "../model-search.ts";
+import type { ModelHub } from "../../core/model-run.ts";
+import { refreshModelCatalogs } from "../catalog.ts";
+import { getModelSearchText } from "../model-search.ts";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 
@@ -45,6 +45,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	get focused(): boolean {
 		return this._focused;
 	}
+
 	set focused(value: boolean) {
 		this._focused = value;
 		this.searchInput.focused = value;
@@ -58,7 +59,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	private selectedIndex: number = 0;
 	private topIndex: number = 0;
 	private currentModel?: Model<any>;
-	private modelRuntime: ModelRuntime;
+	private modelRuntime: ModelHub;
 	private onSelectCallback: (model: Model<any>) => void;
 	private onSelectAsDefaultCallback?: (model: Model<any>) => void;
 	private onCancelCallback: () => void;
@@ -76,7 +77,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	constructor(
 		tui: TUI,
 		currentModel: Model<any> | undefined,
-		modelRuntime: ModelRuntime,
+		modelRuntime: ModelHub,
 		scopedModels: ReadonlyArray<ScopedModelItem>,
 		onSelect: (model: Model<any>) => void,
 		onCancel: () => void,
@@ -256,7 +257,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 			const filtered = fuzzyFilter(this.activeModels, query, (item) => {
 				const defaultText = this.isDefaultModel(item.model) ? " default" : "";
 				const target = { id: item.id, provider: item.provider, name: item.model.name };
-				return `${getModelSelectorSearchText(target)}${defaultText}`;
+				return `${getModelSearchText(target)}${defaultText}`;
 			});
 			if (this.isDefaultSearch(query)) {
 				const defaultItems = this.activeModels.filter((item) =>
@@ -307,20 +308,9 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		const startIndex = this.topIndex;
 		const endIndex = Math.min(startIndex + MAX_VISIBLE, this.filteredModels.length);
 
-		const searching = this.searchInput.getValue().trim().length > 0;
-		const multiProvider =
-			!searching &&
-			new Set(this.filteredModels.slice(startIndex, endIndex).map((item) => item.provider))
-				.size > 1;
-		let lastProvider: string | undefined;
-
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
 			if (!item) continue;
-			if (multiProvider && item.provider !== lastProvider) {
-				this.listContainer.addChild(new Text(theme.fg("muted", item.provider), 1, 0));
-				lastProvider = item.provider;
-			}
 			const line = this.rowLine(item, i === this.selectedIndex);
 			this.listContainer.addChild(
 				new MouseRegion(new Text(line, 1, 0), (event) => this.handleRowMouse(event, i)),
@@ -358,7 +348,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	}
 
 	private handleRowMouse(event: TuiMouseEvent, index: number): TuiMouseEventResult | undefined {
-		// Hover ignored.
+		// Hover ignored
 		if (event.type === "move") return { handled: true };
 		if (event.type === "wheel" && event.wheelDelta) {
 			if (this.filteredModels.length === 0) return undefined;
@@ -382,6 +372,7 @@ export class ModelSelectorComponent extends Container implements Focusable {
 	}
 
 	handleInput(keyData: string): void {
+		if (this.closed) return;
 		const kb = getKeybindings();
 		if (kb.matches(keyData, "tui.input.tab")) {
 			if (this.scopedModelItems.length > 0) {

@@ -11,7 +11,7 @@ import {
 	Spacer,
 	Text,
 } from "@huranth/gama-tui";
-import { reasoningLevelName } from "../../../core/defaults.ts";
+import { reasoningLevelName } from "../../core/defaults.ts";
 import { getSelectListTheme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 
@@ -69,7 +69,7 @@ export class ThinkingSelectorComponent extends Container implements Focusable {
 			label: reasoningLevelName(level),
 			description:
 				level === defaultThinkingLevel
-					? `${LEVEL_DESCRIPTIONS[level]} · default`
+					? `${LEVEL_DESCRIPTIONS[level]} (default)`
 					: LEVEL_DESCRIPTIONS[level],
 		}));
 

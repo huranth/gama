@@ -1,5 +1,5 @@
 import { fuzzyMatch } from "@huranth/gama-tui";
-import type { SessionInfo } from "../../../core/session-manager.ts";
+import type { SessionInfo } from "../../core/sessions.ts";
 
 export type SortMode = "threaded" | "recent" | "relevance";
 
