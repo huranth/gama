@@ -11,7 +11,26 @@ export interface LatestGamaRelease {
 	url?: string;
 }
 
-const DEFAULT_VERSION_CHECK_TIMEOUT_MS = 10000;
+const defaultTimeoutMs = 10000;
+
+const retryMaxAttempts = 2;
+
+const noRetries = 0;
+
+async function cancelBody(response: Response): Promise<void> {
+	try {
+		await response.body?.cancel();
+	} catch {
+		// Already closed
+	}
+}
+
+function trimmedString(value: unknown): string | undefined {
+	if (typeof value !== "string") return undefined;
+
+	const trimmed = value.trim();
+	return trimmed || undefined;
+}
 
 export function comparePackageVersions(
 	leftVersion: string,
@@ -22,6 +41,7 @@ export function comparePackageVersions(
 	if (!left || !right) {
 		return undefined;
 	}
+
 	return compare(left, right);
 }
 
@@ -30,39 +50,16 @@ export function isNewerPackageVersion(candidateVersion: string, currentVersion: 
 	if (comparison !== undefined) {
 		return comparison > 0;
 	}
+
 	return candidateVersion.trim() !== currentVersion.trim();
-}
-
-export function formatVersionCheckError(error: unknown): string {
-	const rootMessage = error instanceof Error && error.message ? error.message : String(error);
-	const cause = error instanceof Error ? error.cause : undefined;
-	const causes =
-		cause instanceof AggregateError ? cause.errors : cause === undefined ? [] : [cause];
-	const codes = causes
-		.map((value) =>
-			typeof value === "object" &&
-			value !== null &&
-			"code" in value &&
-			typeof value.code === "string"
-				? value.code
-				: undefined,
-		)
-		.filter((code): code is string => code !== undefined);
-
-	if (codes.length > 0) {
-		return `${rootMessage} (${[...new Set(codes)].join(", ")})`;
-	}
-	const causeMessage = causes.find(
-		(value): value is Error => value instanceof Error && Boolean(value.message),
-	)?.message;
-	return causeMessage ? `${rootMessage} (cause: ${causeMessage})` : rootMessage;
 }
 
 export async function getLatestGamaVersion(
 	currentVersion: string,
 	options: { timeoutMs?: number; retry?: boolean } = {},
 ): Promise<string | undefined> {
-	return (await getLatestGamaRelease(currentVersion, options))?.version;
+	const release = await getLatestGamaRelease(currentVersion, options);
+	return release?.version;
 }
 
 export async function getLatestGamaRelease(
@@ -80,11 +77,14 @@ export async function getLatestGamaRelease(
 			},
 		},
 		{
-			maxRetries: options.retry ? 2 : 0,
-			timeoutMs: options.timeoutMs ?? DEFAULT_VERSION_CHECK_TIMEOUT_MS,
+			maxRetries: options.retry ? retryMaxAttempts : noRetries,
+			timeoutMs: options.timeoutMs ?? defaultTimeoutMs,
 		},
 	);
-	if (!response.ok) return undefined;
+	if (!response.ok) {
+		await cancelBody(response);
+		return undefined;
+	}
 
 	const data = (await response.json()) as {
 		packageName?: unknown;
@@ -92,22 +92,20 @@ export async function getLatestGamaRelease(
 		note?: unknown;
 		url?: unknown;
 	};
-	if (typeof data.version !== "string" || !data.version.trim()) {
+
+	const version = trimmedString(data.version);
+	if (!version || !valid(version) || prerelease(version)) {
 		return undefined;
 	}
-	const version = data.version.trim();
-	if (!valid(version) || prerelease(version)) {
-		return undefined;
-	}
-	const packageName =
-		typeof data.packageName === "string" && data.packageName.trim()
-			? data.packageName.trim()
-			: undefined;
+
+	const packageName = trimmedString(data.packageName);
 	if (packageName && packageName !== PACKAGE_NAME) {
-		throw new Error(`Update service returned a different package: ${packageName}`);
+		throw new Error(`Update package mismatch: ${packageName}`);
 	}
-	const note = typeof data.note === "string" && data.note.trim() ? data.note.trim() : undefined;
-	const url = typeof data.url === "string" && data.url.trim() ? data.url.trim() : undefined;
+
+	const note = trimmedString(data.note);
+	const url = trimmedString(data.url);
+
 	return {
 		version,
 		packageName,
@@ -126,8 +124,40 @@ export async function checkForNewGamaVersion(
 		if (latestRelease && isNewerPackageVersion(latestRelease.version, currentVersion)) {
 			return latestRelease;
 		}
+
 		return undefined;
 	} catch {
 		return undefined;
 	}
+}
+
+function errorCode(value: unknown): string | undefined {
+	if (typeof value !== "object" || value === null || !("code" in value)) return undefined;
+	if (typeof value.code !== "string") return undefined;
+
+	return value.code;
+}
+
+function collectCauses(error: unknown): unknown[] {
+	const cause = error instanceof Error ? error.cause : undefined;
+	if (cause === undefined) return [];
+	if (cause instanceof AggregateError) return [...cause.errors];
+
+	return [cause];
+}
+
+export function formatVersionCheckError(error: unknown): string {
+	const rootMessage = error instanceof Error && error.message ? error.message : String(error);
+	const causes = collectCauses(error);
+
+	const codes = causes.map(errorCode).filter((code): code is string => code !== undefined);
+	if (codes.length > 0) {
+		return `${rootMessage} (${[...new Set(codes)].join(", ")})`;
+	}
+
+	const causeMessage = causes.find(
+		(value): value is Error => value instanceof Error && Boolean(value.message),
+	)?.message;
+
+	return causeMessage ? `${rootMessage} (cause: ${causeMessage})` : rootMessage;
 }

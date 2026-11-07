@@ -13,7 +13,7 @@ import {
 import type { Readable } from "node:stream";
 import crossSpawn from "cross-spawn";
 
-const EXIT_STDIO_GRACE_MS = 100;
+const exitStdioGraceMs = 100;
 
 export function spawnProcess(
 	command: string,
@@ -81,7 +81,7 @@ export function waitForChildProcess(child: ChildProcess): Promise<number | null>
 
 		const armIdleTimer = () => {
 			if (postExitTimer) clearTimeout(postExitTimer);
-			postExitTimer = setTimeout(() => finalize(exitCode), EXIT_STDIO_GRACE_MS);
+			postExitTimer = setTimeout(() => finalize(exitCode), exitStdioGraceMs);
 		};
 
 		const onData = () => {
