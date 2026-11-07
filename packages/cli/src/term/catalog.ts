@@ -1,8 +1,8 @@
 import type { ModelsRefreshResult } from "@huranth/gama-ai";
-import type { ModelRuntime } from "../../core/model-runtime.ts";
-import { raceWithAbortSignal } from "../../utils/abort.ts";
+import type { ModelHub } from "../core/model-run.ts";
+import { raceWithAbortSignal } from "../utils/abort.ts";
 
-type ModelCatalogRuntime = Pick<ModelRuntime, "refresh">;
+type ModelCatalogRuntime = Pick<ModelHub, "refresh">;
 
 interface ActiveModelCatalogRefresh {
 	controller: AbortController;
@@ -43,6 +43,7 @@ class ModelCatalogRefreshCoordinator {
 		return raceWithAbortSignal(active.promise, signal).finally(() => {
 			active.waiters--;
 			if (active.waiters === 0 && this.activeByRuntime.get(modelRuntime) === active) {
+				this.activeByRuntime.delete(modelRuntime);
 				active.controller.abort();
 			}
 		});

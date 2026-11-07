@@ -9,7 +9,3 @@ export function getModelSearchText(item: ModelSearchItem): string {
 	const name = item.name ? ` ${item.name}` : "";
 	return `${provider}/${id} ${id}${name}`;
 }
-
-export function getModelSelectorSearchText(item: ModelSearchItem): string {
-	return getModelSearchText(item);
-}

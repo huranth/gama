@@ -1,7 +1,7 @@
 import type { Terminal, WheelScrollLines } from "@huranth/gama-tui";
-import { ProcessTerminal, type TUI, TuiAltScreen, TuiMainScreen } from "@huranth/gama-tui";
-import { copyToClipboard } from "../../utils/clipboard.ts";
-import { openBrowser } from "../../utils/open-browser.ts";
+import { ProcessTerminal, type TUI, AltScreen, MainScreen } from "@huranth/gama-tui";
+import { copyToClipboard } from "../utils/clipboard.ts";
+import { openBrowser } from "../utils/open-browser.ts";
 import { theme } from "./theme/theme.ts";
 
 export interface InteractiveTuiOptions {
@@ -16,23 +16,26 @@ export interface InteractiveTuiOptions {
 
 export function createInteractiveTui(
 	options: InteractiveTuiOptions & { readonly tuiMode: "fullscreen" },
-): TuiAltScreen;
+): AltScreen;
+
 export function createInteractiveTui(
 	options: InteractiveTuiOptions & { readonly tuiMode: "regular" },
-): TuiMainScreen;
-export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScreen | TuiAltScreen;
-export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScreen | TuiAltScreen {
+): MainScreen;
+
+export function createInteractiveTui(options: InteractiveTuiOptions): MainScreen | AltScreen;
+
+export function createInteractiveTui(options: InteractiveTuiOptions): MainScreen | AltScreen {
 	const terminal = options.terminal ?? new ProcessTerminal();
 
 	if (options.tuiMode === "fullscreen") {
 		const styleSearchMatch = (text: string) =>
 			theme.bg("searchMatchBg", theme.fg("searchMatchText", text));
 
-		return new TuiAltScreen(terminal, options.showHardwareCursor, options.logDirectory, {
-			searchMatchStyle: (text) => theme.underline(styleSearchMatch(text)),
+		return new AltScreen(terminal, options.showHardwareCursor, options.logDirectory, {
+			searchMatchStyle: (text) => styleSearchMatch(text),
 			searchCurrentMatchStyle: (text) => theme.bold(theme.inverse(styleSearchMatch(text))),
-			searchNavigationButtonStyle: (text, hovered) => (hovered ? theme.underline(text) : text),
-			scrollToEndIndicator: () => theme.bg("selectedBg", theme.fg("text", " ↓ ")),
+			searchNavigationButtonStyle: (text) => text,
+			scrollToEndIndicator: () => theme.bg("selectedBg", theme.fg("text", " End ")),
 			openUrl: openBrowser,
 			onRightClickPaste: options.onRightClickPaste,
 			copyOnSelect: options.fullscreenCopyOnSelect,
@@ -48,7 +51,7 @@ export function createInteractiveTui(options: InteractiveTuiOptions): TuiMainScr
 		});
 	}
 
-	return new TuiMainScreen(terminal, options.showHardwareCursor, options.logDirectory);
+	return new MainScreen(terminal, options.showHardwareCursor, options.logDirectory);
 }
 
 export function createInteractiveTuiReference(getTui: () => TUI): TUI {
@@ -64,7 +67,7 @@ export function createInteractiveTuiReference(getTui: () => TUI): TUI {
 				if (currentTui !== methodTui) {
 					const currentMethod = Reflect.get(currentTui, property, currentTui);
 					if (typeof currentMethod !== "function") {
-						throw new TypeError(`TUI property ${String(property)} is not callable`);
+						throw new TypeError(`Not callable: ${String(property)}`);
 					}
 					methodTui = currentTui;
 					method = currentMethod;

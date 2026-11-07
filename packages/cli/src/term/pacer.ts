@@ -1,5 +1,5 @@
 import { truncateToWidth, visibleWidth } from "@huranth/gama-tui";
-import { stripAnsi } from "../../utils/ansi.ts";
+import { stripAnsi } from "../utils/ansi.ts";
 
 export interface StreamPacerOptions {
 	baseUnitsPerSecond?: number;
@@ -17,12 +17,12 @@ export const DEFAULT_PACER_OPTIONS: Required<StreamPacerOptions> = {
 	maxUnitsPerFrame: 480,
 };
 
-export const PACER_FRAME_MS = DEFAULT_PACER_OPTIONS.frameMs;
-
-// Elapsed cap.
+// Elapsed cap
 const MAX_ELAPSED_FRAMES = 4;
 
 const TRUNCATION_RESET = "\u001b[0m";
+
+const WORD_SNAP_LIMIT = 80;
 
 export function rowsVisibleWidth(rows: readonly string[]): number {
 	let total = 0;
@@ -41,10 +41,15 @@ function snapToWordEnd(plain: string, width: number): number {
 	}
 
 	if (boundary > 0) return boundary - 1;
-	// Word boundary.
+	// Word boundary
 	if (index < plain.length && /\s/.test(plain[index] ?? "")) return index;
 
-	return /\s/.test(plain) ? 0 : index;
+	const nextBoundary = plain.slice(index).search(/\s/);
+	if (index >= WORD_SNAP_LIMIT || nextBoundary < 0 || nextBoundary >= WORD_SNAP_LIMIT) {
+		return index;
+	}
+
+	return 0;
 }
 
 export function revealRows(

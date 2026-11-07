@@ -1,6 +1,6 @@
 import * as path from "node:path";
 import type { Container, EditorComponent, TUI } from "@huranth/gama-tui";
-import type { AgentSession } from "../../core/agent-session.ts";
+import type { RunSession } from "../core/session/session.ts";
 import {
 	BUG_REPORT_CUSTOM_ENTRY_TYPE,
 	type BugReportBundle,
@@ -9,22 +9,22 @@ import {
 	collectBugReportDiagnostics,
 	collectBugReportMetadata,
 	writeBugReportArchive,
-} from "../../core/bug-report.ts";
-import { clearCrashLog, readCrashLog } from "../../core/crash-log.ts";
-import type { KeybindingsManager } from "../../core/keybindings.ts";
-import { serializeSessionBranch } from "../../core/session-export.ts";
+} from "../core/bug-report.ts";
+import { clearCrashLog, readCrashLog } from "../core/crash-log.ts";
+import type { Keymap } from "../core/hotkeys.ts";
+import { serializeSessionBranch } from "../core/dump.ts";
 import { BorderedLoader } from "./parts/bordered-loader.ts";
 import { ExtensionEditorComponent } from "./parts/extension-editor.ts";
 import { ExtensionSelectorComponent } from "./parts/extension-selector.ts";
-import { createShareTrailingEntries } from "./session-share.ts";
+import { createShareTrailingEntries } from "./share.ts";
 import { theme } from "./theme/theme.ts";
 
 interface BugReportContext {
-	session: AgentSession;
+	session: RunSession;
 	ui: TUI;
 	editorContainer: Container;
 	editor: EditorComponent;
-	keybindings: KeybindingsManager;
+	keybindings: Keymap;
 	showStatus: (message: string) => void;
 	showError: (message: string) => void;
 }
@@ -37,56 +37,15 @@ interface BugReportOptions {
 
 type Overlay = Container & { dispose?: () => void };
 
-const DISCLAIMER =
+const disclaimer =
 	"This report goes to the Gama developers and is not shared publicly. It includes " +
 	"your gama version, operating system, the current model and provider configuration " +
 	"(without API keys), loaded extensions, settings, and provider error diagnostics " +
 	"from this session.";
 
-const TRANSCRIPT_NOTE =
+const transcriptNote =
 	"The transcript contains your messages, model output, tool calls and their results, " +
 	"including file contents and command output read during this session.";
-
-export async function reportBug(context: BugReportContext, initialHint?: string): Promise<void> {
-	const options = await promptForOptions(context, initialHint);
-	if (!options) {
-		context.showStatus("Bug report cancelled");
-		return;
-	}
-
-	let summary: string | undefined;
-	if (options.includeSummary) {
-		const loader = showLoader(
-			context,
-			`Writing summary with ${context.session.model?.name ?? "the current model"}...`,
-		);
-		try {
-			summary = await context.session.summarizeForBugReport({
-				hint: options.hint,
-				signal: loader.signal,
-			});
-		} catch (error: unknown) {
-			restoreEditor(context, loader);
-			if (loader.signal.aborted) context.showStatus("Bug report cancelled");
-			else context.showError(`Failed to write bug report summary: ${errorMessage(error)}`);
-			return;
-		}
-		restoreEditor(context, loader);
-		if (loader.signal.aborted) {
-			context.showStatus("Bug report cancelled");
-			return;
-		}
-	}
-
-	let bundle: BugReportBundle;
-	try {
-		bundle = buildBundle(context.session, options, summary);
-	} catch (error: unknown) {
-		context.showError(`Failed to build bug report: ${errorMessage(error)}`);
-		return;
-	}
-	await exportZip(context, bundle);
-}
 
 async function promptForOptions(
 	context: BugReportContext,
@@ -95,19 +54,22 @@ async function promptForOptions(
 	const hint = await input(
 		context,
 		"Report a bug",
-		`${DISCLAIMER}\n\nWhat went wrong? (optional)`,
+		`${disclaimer}\n\nWhat went wrong? (optional)`,
 		initialHint,
 	);
 	if (hint === null) return undefined;
+
 	const transcript = await choose(
 		context,
 		"Include the session transcript?",
 		["Yes, include the transcript", "No"],
-		TRANSCRIPT_NOTE,
+		transcriptNote,
 	);
 	if (!transcript) return undefined;
+
 	const includeSession = transcript !== "No";
 	let includeSummary = false;
+
 	if (!includeSession) {
 		const model = context.session.model;
 		const summary = await choose(
@@ -119,8 +81,10 @@ async function promptForOptions(
 				"stays on your machine.",
 		);
 		if (!summary) return undefined;
+
 		includeSummary = summary !== "No";
 	}
+
 	const description = hint.trim();
 	const summarySource = includeSummary
 		? `written by ${context.session.model?.name ?? "the current model"}`
@@ -143,7 +107,7 @@ async function promptForOptions(
 }
 
 function buildBundle(
-	session: AgentSession,
+	session: RunSession,
 	options: BugReportOptions,
 	summary: string | undefined,
 ): BugReportBundle {
@@ -179,17 +143,15 @@ async function exportZip(context: BugReportContext, bundle: BugReportBundle): Pr
 	try {
 		await writeBugReportArchive(bundle, archivePath);
 	} catch (error: unknown) {
-		context.showError(`Failed to write bug report: ${errorMessage(error)}`);
+		context.showError(`Report write failed: ${errorMessage(error)}`);
 		return;
 	}
 	recordInSession(context.session, bundle, { delivery: "zip", path: archivePath });
-	context.showStatus(
-		`Bug report exported to: ${archivePath}\n` + `Report ID: ${bundle.metadata.id}`,
-	);
+	context.showStatus(`Report exported: ${archivePath}\nID: ${bundle.metadata.id}`);
 }
 
 function recordInSession(
-	session: AgentSession,
+	session: RunSession,
 	bundle: BugReportBundle,
 	delivery: Pick<BugReportSessionEntryData, "delivery" | "path">,
 ): void {
@@ -274,4 +236,46 @@ function restoreEditor(context: BugReportContext, component: Overlay): void {
 
 function errorMessage(error: unknown): string {
 	return error instanceof Error ? error.message : "Unknown error";
+}
+
+export async function reportBug(context: BugReportContext, initialHint?: string): Promise<void> {
+	const options = await promptForOptions(context, initialHint);
+	if (!options) {
+		context.showStatus("Report cancelled");
+		return;
+	}
+
+	let summary: string | undefined;
+	if (options.includeSummary) {
+		const loader = showLoader(
+			context,
+			`Writing summary with ${context.session.model?.name ?? "the current model"}...`,
+		);
+		try {
+			summary = await context.session.summarizeForBugReport({
+				hint: options.hint,
+				signal: loader.signal,
+			});
+		} catch (error: unknown) {
+			restoreEditor(context, loader);
+			if (loader.signal.aborted) context.showStatus("Report cancelled");
+			else context.showError(`Summary write failed: ${errorMessage(error)}`);
+			return;
+		}
+		restoreEditor(context, loader);
+
+		if (loader.signal.aborted) {
+			context.showStatus("Report cancelled");
+			return;
+		}
+	}
+
+	let bundle: BugReportBundle;
+	try {
+		bundle = buildBundle(context.session, options, summary);
+	} catch (error: unknown) {
+		context.showError(`Report build failed: ${errorMessage(error)}`);
+		return;
+	}
+	await exportZip(context, bundle);
 }

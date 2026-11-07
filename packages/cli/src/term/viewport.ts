@@ -1,4 +1,10 @@
-import { type Component, ScrollView, type ScrollViewScrollbar, VStack } from "@huranth/gama-tui";
+import {
+	type Component,
+	ScrollView,
+	type ScrollViewScrollbar,
+	Spacer,
+	VStack,
+} from "@huranth/gama-tui";
 
 export interface ChatViewportOptions {
 	readonly document: Component;
@@ -38,6 +44,8 @@ export function createChatViewport(options: ChatViewportOptions): ChatViewport {
 			? []
 			: [{ component: options.widgetsAbove, shrink: 1, minSize: 0 }]),
 		{ component: options.editor, shrink: 1, minSize: 3 },
+		// Footer gap
+		{ component: new Spacer(1), basis: 1, shrink: 0 },
 		...(options.widgetsBelow === undefined
 			? []
 			: [{ component: options.widgetsBelow, shrink: 1, minSize: 0 }]),

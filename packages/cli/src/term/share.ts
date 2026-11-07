@@ -4,14 +4,14 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { type Container, type EditorComponent, hyperlink, type TUI } from "@huranth/gama-tui";
-import { getShareViewerUrl } from "../../config.ts";
-import type { AgentSession } from "../../core/agent-session.ts";
-import { exportSessionToJsonl } from "../../core/session-export.ts";
+import { getShareViewerUrl } from "../config.ts";
+import type { RunSession } from "../core/session/session.ts";
+import { exportSessionToJsonl } from "../core/dump.ts";
 import { BorderedLoader } from "./parts/bordered-loader.ts";
 import { theme } from "./theme/theme.ts";
 
 interface SessionShareContext {
-	session: AgentSession;
+	session: RunSession;
 	ui: TUI;
 	editorContainer: Container;
 	editor: EditorComponent;
@@ -25,8 +25,10 @@ interface GistResult {
 	code: number | null;
 }
 
+const GH_AUTH_TIMEOUT_MS = 10_000;
+
 export function createShareTrailingEntries(
-	session: AgentSession,
+	session: RunSession,
 	parentId: string | null,
 	timestamp: string,
 ): object[] {
@@ -49,7 +51,7 @@ export function createShareTrailingEntries(
 	];
 }
 
-export function exportSessionForShare(filePath: string, session: AgentSession): void {
+export function exportSessionForShare(filePath: string, session: RunSession): void {
 	exportSessionToJsonl(session.sessionManager, filePath, (parentId, timestamp) =>
 		createShareTrailingEntries(session, parentId, timestamp),
 	);
@@ -75,13 +77,17 @@ export async function shareSession(context: SessionShareContext): Promise<void> 
 			return;
 		}
 
-		const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+		const authResult = spawnSync("gh", ["auth", "status"], {
+			encoding: "utf-8",
+			timeout: GH_AUTH_TIMEOUT_MS,
+		});
 		if (authResult.error) {
-			context.showError("GitHub CLI missing");
+			const timedOut = (authResult.error as NodeJS.ErrnoException).code === "ETIMEDOUT";
+			context.showError(timedOut ? "GitHub CLI timed out" : "GitHub CLI missing");
 			return;
 		}
 		if (authResult.status !== 0) {
-			context.showError("GitHub CLI logged out");
+			context.showError("Logged out");
 			return;
 		}
 
@@ -101,7 +107,7 @@ export async function shareSession(context: SessionShareContext): Promise<void> 
 }
 
 async function shareViaGist(tmpFile: string, context: SessionShareContext): Promise<void> {
-	const loader = new BorderedLoader(context.ui, theme, "Creating gist...");
+	const loader = new BorderedLoader(context.ui, theme, "Creating gist");
 	context.editorContainer.clear();
 	context.editorContainer.addChild(loader);
 	context.ui.setFocus(loader);
@@ -131,7 +137,7 @@ async function shareViaGist(tmpFile: string, context: SessionShareContext): Prom
 		const gistId = gistUrl?.split("/").pop();
 
 		if (!gistId) {
-			context.showError("Failed to parse gist ID from gh output");
+			context.showError("Gist parse failed");
 			return;
 		}
 
