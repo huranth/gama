@@ -186,6 +186,14 @@
 					"$ref": "#/$defs/colorValue",
 					"description": "Custom message type label color"
 				},
+				"handBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Hand cards and hand action background (falls back to customMessageBg when omitted)"
+				},
+				"handChipBg": {
+					"$ref": "#/$defs/colorValue",
+					"description": "Small role chip inside a hand card (falls back to customMessageBg when omitted)"
+				},
 				"toolPendingBg": {
 					"$ref": "#/$defs/colorValue",
 					"description": "Tool execution box (pending state)"

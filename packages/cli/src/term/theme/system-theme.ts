@@ -54,6 +54,38 @@ interface SourceColor extends OkhslChannels {
 
 export const SYSTEM_THEME_NAME = "system";
 
+const CHANNEL_MAX = 255;
+
+const HEX_DIGITS = 2;
+
+const PALETTE_SIZE = 16;
+
+const BINARY_STEPS = 20;
+
+const SRGB_THRESHOLD = 0.04045;
+
+const SRGB_DIVISOR = 12.92;
+
+const SRGB_OFFSET = 0.055;
+
+const SRGB_SCALE = 1.055;
+
+const SRGB_GAMMA = 2.4;
+
+const LUMA_R = 0.2126;
+
+const LUMA_G = 0.7152;
+
+const LUMA_B = 0.0722;
+
+const CONTRAST_OFFSET = 0.05;
+
+const LIGHTNESS_GAP = 0.05;
+
+const BELL_CENTER = 0.5;
+
+const BELL_WIDTH = 0.25;
+
 const FAMILIES = {
 	neutral: { hue: 230, saturation: { min: 0.02, max: 0.06 }, slot: 8 },
 	copper: { hue: 212, saturation: { min: 0.12, max: 0.58 }, slot: 3 },
@@ -61,6 +93,7 @@ const FAMILIES = {
 	brick: { hue: 10, saturation: { min: 0.1, max: 0.9 }, slot: 1 },
 	gold: { hue: 70, saturation: { min: 0.4, max: 0.9 }, slot: 3 },
 	clay: { hue: 222, saturation: { min: 0.08, max: 0.4 }, slot: 3 },
+	iris: { hue: 275, saturation: { min: 0.12, max: 0.44 }, slot: 4 },
 	sand: { hue: 85, saturation: { min: 0.06, max: 0.16 }, slot: 3 },
 	thinkingSlate: { hue: 230, saturation: { min: 0.06, max: 0.16 }, slot: 3 },
 	thinkingCopper: { hue: 222, saturation: { min: 0.14, max: 0.32 }, slot: 3 },
@@ -76,6 +109,8 @@ const TOKEN_FAMILIES: Record<ThemeToken, FamilyName> = {
 	promptBg: "sand",
 	userMessageBg: "clay",
 	customMessageBg: "clay",
+	handBg: "iris",
+	handChipBg: "copper",
 	toolPendingBg: "neutral",
 	toolSuccessBg: "sage",
 	toolErrorBg: "brick",
@@ -134,7 +169,7 @@ const TOKEN_FAMILIES: Record<ThemeToken, FamilyName> = {
 	thinkingMax: "thinkingBrick",
 };
 
-// Distinct slots.
+// Slots
 const TOKEN_SLOTS: Partial<Record<ThemeToken, number>> = {
 	searchMatchBg: 3,
 	syntaxNumber: 2,
@@ -142,6 +177,7 @@ const TOKEN_SLOTS: Partial<Record<ThemeToken, number>> = {
 	syntaxFunction: 9,
 	mdLink: 11,
 	syntaxVariable: 11,
+	handBg: 4,
 };
 
 const LEVELS = {
@@ -303,7 +339,7 @@ const LEVELS = {
 	},
 } satisfies Record<string, Record<ThemeAppearance, Curve>>;
 
-const TOOL_PANELS: Surface[] = ["toolPendingBg", "toolSuccessBg", "toolErrorBg"];
+const TOOL_PANELS: Surface[] = ["toolPendingBg", "toolSuccessBg", "toolErrorBg", "handBg"];
 
 const MESSAGE_PANELS: Surface[] = ["userMessageBg", "customMessageBg"];
 
@@ -316,6 +352,7 @@ const PANELS: ThemeBg[] = [
 	"selectedBg",
 	"searchMatchBg",
 	"customMessageBg",
+	"handBg",
 ];
 
 const THINKING: ThemeColor[] = [
@@ -338,16 +375,16 @@ const THINKING_LEVELS: Level[] = [
 	"thinking6",
 ];
 
-const each = (tokens: ThemeToken[], on: Surface[], level: Level): Rule[] =>
+const rulesFor = (tokens: ThemeToken[], on: Surface[], level: Level): Rule[] =>
 	tokens.map((token) => ({ token, on, level }));
 
 const RULES: Rule[] = [
-	...each(PANELS, ["background"], "panel"),
+	...rulesFor(PANELS, ["background"], "panel"),
 	{ token: "text", on: ["background"], level: "text" },
 	{ token: "text", on: ["selectedBg"], level: "textOnPanel" },
 	{ token: "userMessageText", on: ["background", "userMessageBg", "promptBg"], level: "readable" },
 	{ token: "toolTitle", on: TOOL_PANELS, level: "textOnPanel" },
-	...each(
+	...rulesFor(
 		["accent", "success", "error", "warning"],
 		["background", "selectedBg", ...TOOL_PANELS],
 		"readable",
@@ -370,7 +407,7 @@ const RULES: Rule[] = [
 		level: "readable",
 	},
 	{ token: "toolOutput", on: ["background", ...TOOL_PANELS], level: "readable" },
-	...each(
+	...rulesFor(
 		[
 			"mdHeading",
 			"mdLink",
@@ -388,12 +425,12 @@ const RULES: Rule[] = [
 		on: ["background", ...MESSAGE_PANELS, ...TOOL_PANELS],
 		level: "readable",
 	},
-	...each(
+	...rulesFor(
 		["toolDiffAdded", "toolDiffRemoved", "toolDiffContext"],
 		["background", ...TOOL_PANELS],
 		"readable",
 	),
-	...each(
+	...rulesFor(
 		[
 			"syntaxComment",
 			"syntaxKeyword",
@@ -410,9 +447,9 @@ const RULES: Rule[] = [
 	),
 	{ token: "selectionText", on: ["background"], level: "readable" },
 	{ token: "searchMatchText", on: ["searchMatchBg"], level: "readable" },
-	...each(["bashMode", "border", "borderAccent"], ["background"], "readable"),
+	...rulesFor(["bashMode", "border", "borderAccent"], ["background"], "readable"),
 	{ token: "borderMuted", on: ["background"], level: "subtle" },
-	...each(
+	...rulesFor(
 		["mdQuoteBorder", "mdHr"],
 		["background", ...MESSAGE_PANELS, ...TOOL_PANELS],
 		"readable",
@@ -430,7 +467,7 @@ const FOREGROUND_LEVEL: Level = "emphasis";
 
 const FOREGROUND_TOKENS: ThemeColor[] = ["text", "toolTitle"];
 
-const TEXT_MINIMUM_WCAG_CONTRAST = 4.5;
+const MIN_TEXT_CONTRAST = 4.5;
 
 const SOLVE_ORDER: ThemeToken[] = (() => {
 	const order: ThemeToken[] = [];
@@ -456,30 +493,35 @@ function oklabLightness(color: RgbColor): number {
 
 export function relativeLuminance({ r, g, b }: RgbColor): number {
 	const linear = (channel: number) => {
-		const value = channel / 255;
-		return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+		const value = channel / CHANNEL_MAX;
+		if (value <= SRGB_THRESHOLD) return value / SRGB_DIVISOR;
+		return ((value + SRGB_OFFSET) / SRGB_SCALE) ** SRGB_GAMMA;
 	};
-	return 0.2126 * linear(r) + 0.7152 * linear(g) + 0.0722 * linear(b);
+	return LUMA_R * linear(r) + LUMA_G * linear(g) + LUMA_B * linear(b);
 }
 
 export function wcagContrast(first: RgbColor, second: RgbColor): number {
-	const a = relativeLuminance(first);
-	const b = relativeLuminance(second);
-	return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+	const firstLuminance = relativeLuminance(first);
+	const secondLuminance = relativeLuminance(second);
+
+	return (
+		(Math.max(firstLuminance, secondLuminance) + CONTRAST_OFFSET) /
+		(Math.min(firstLuminance, secondLuminance) + CONTRAST_OFFSET)
+	);
 }
 
 export function terminalAppearance(background: RgbColor, foreground?: RgbColor): ThemeAppearance {
-	const white = { r: 255, g: 255, b: 255 };
+	const white = { r: CHANNEL_MAX, g: CHANNEL_MAX, b: CHANNEL_MAX };
 	const black = { r: 0, g: 0, b: 0 };
 	const whiteContrast = wcagContrast(white, background);
 	const blackContrast = wcagContrast(black, background);
 	if (foreground) {
 		const foregroundL = oklabLightness(foreground);
 		const backgroundL = oklabLightness(background);
-		if (Math.abs(foregroundL - backgroundL) > 0.05) {
+		if (Math.abs(foregroundL - backgroundL) > LIGHTNESS_GAP) {
 			const appearance = foregroundL > backgroundL ? "dark" : "light";
 			const best = appearance === "dark" ? whiteContrast : blackContrast;
-			if (best >= TEXT_MINIMUM_WCAG_CONTRAST) return appearance;
+			if (best >= MIN_TEXT_CONTRAST) return appearance;
 		}
 	}
 	return whiteContrast >= blackContrast ? "dark" : "light";
@@ -488,12 +530,15 @@ export function terminalAppearance(background: RgbColor, foreground?: RgbColor):
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 
 function hexOf({ r, g, b }: RgbColor): string {
-	const hex = [r, g, b].map((channel) => Math.round(channel).toString(16).padStart(2, "0"));
+	const hex = [r, g, b].map((channel) =>
+		Math.round(channel).toString(16).padStart(HEX_DIGITS, "0"),
+	);
 	return `#${hex.join("")}`;
 }
 
 function bellWeight(lightness: number): number {
-	const gaussian = (x: number): number => Math.exp(-((x - 0.5) ** 2) / (2 * 0.25 ** 2));
+	const gaussian = (x: number): number =>
+		Math.exp(-((x - BELL_CENTER) ** 2) / (2 * BELL_WIDTH ** 2));
 	return (gaussian(lightness) - gaussian(0)) / (1 - gaussian(0));
 }
 
@@ -515,11 +560,70 @@ function levelTarget(
 	);
 }
 
+function okhslOf({ r, g, b }: RgbColor): OkhslChannels {
+	return colorToOkhsl(rgbColor(r, g, b));
+}
+
+function sourceOf(color: RgbColor): SourceColor {
+	return { ...okhslOf(color), chroma: colorToOklch(rgbColor(color.r, color.g, color.b)).c };
+}
+
+function anchored(
+	source: SourceColor,
+	family: Family,
+	lightness: number,
+	saturation: number,
+): RgbColor {
+	const anchor = saturationCurve(family, source.l);
+	const falloff = anchor > 0 ? Math.min(1, saturationCurve(family, lightness) / anchor) : 1;
+	const color = okhslColor(source.h, source.s * falloff * saturation, lightness);
+	const cap = source.chroma * falloff * saturation;
+	const { l, c } = colorToOklch(color);
+	return c <= cap ? color : colorToRgb(oklchColor(l, cap, source.h));
+}
+
+function withTextContrast(color: RgbColor, surfaces: RgbColor[], lighter: boolean): RgbColor {
+	const meets = (candidate: RgbColor) =>
+		surfaces.every((surface) => wcagContrast(candidate, surface) >= MIN_TEXT_CONTRAST);
+	if (meets(color)) return color;
+	const { h, s, l } = okhslOf(color);
+	const at = (lightness: number) => okhslColor(h, s, lightness);
+	const extreme = lighter ? 1 : 0;
+	if (!meets(at(extreme))) return at(extreme);
+	let [low, high] = [l, extreme];
+	for (let index = 0; index < BINARY_STEPS; index++) {
+		const middle = (low + high) / 2;
+		if (meets(at(middle))) high = middle;
+		else low = middle;
+	}
+	return at(high);
+}
+
+function indexedColors(
+	saturation: number,
+	appearance: ThemeAppearance | undefined,
+): SystemThemeColors {
+	const colors = {} as Record<ThemeToken, string | number>;
+	const dim: ThemeColor[] = [];
+	for (const [token, familyName] of Object.entries(TOKEN_FAMILIES) as [ThemeToken, FamilyName][]) {
+		if (PANELS.includes(token as ThemeBg)) {
+			colors[token] = "";
+			continue;
+		}
+		const neutral = familyName === "neutral";
+		colors[token] =
+			!neutral && saturation > 0 ? (TOKEN_SLOTS[token] ?? FAMILIES[familyName].slot) : "";
+		if (neutral && !FOREGROUND_TOKENS.includes(token as ThemeColor))
+			dim.push(token as ThemeColor);
+	}
+	return { colors, dim, appearance };
+}
+
 export function generateSystemThemeColors(input: SystemThemeInput): SystemThemeColors {
 	const saturation = clamp(input.saturation ?? 1, 0, 1);
 	const { background, foreground } = input;
 	if (!background) return indexedColors(saturation, input.appearanceHint);
-	const palette = input.palette?.length === 16 ? input.palette.map(sourceOf) : undefined;
+	const palette = input.palette?.length === PALETTE_SIZE ? input.palette.map(sourceOf) : undefined;
 
 	const appearance = terminalAppearance(background, foreground);
 	const lighter = appearance === "dark";
@@ -553,14 +657,15 @@ export function generateSystemThemeColors(input: SystemThemeInput): SystemThemeC
 		return surfaceL + compressed * (1 - Math.max(0, t - 1));
 	};
 
-	const extremeText = lighter ? { r: 255, g: 255, b: 255 } : { r: 0, g: 0, b: 0 };
-	const readable = (color: RgbColor) =>
-		wcagContrast(extremeText, color) >= TEXT_MINIMUM_WCAG_CONTRAST;
+	const extremeText = lighter
+		? { r: CHANNEL_MAX, g: CHANNEL_MAX, b: CHANNEL_MAX }
+		: { r: 0, g: 0, b: 0 };
+	const readable = (color: RgbColor) => wcagContrast(extremeText, color) >= MIN_TEXT_CONTRAST;
 	const limitPanel = (token: ThemeToken, l: number): RgbColor => {
 		const color = paint(token, l);
 		if (readable(color)) return color;
 		let [low, high] = [backgroundL, l];
-		for (let index = 0; index < 20; index++) {
+		for (let index = 0; index < BINARY_STEPS; index++) {
 			const middle = (low + high) / 2;
 			if (readable(paint(token, middle))) low = middle;
 			else high = middle;
@@ -584,11 +689,12 @@ export function generateSystemThemeColors(input: SystemThemeInput): SystemThemeC
 					targets.push(value);
 				}
 			}
-			const l = lighter ? Math.max(...targets) : Math.min(...targets);
-			colors.set(
-				token,
-				PANELS.includes(token as ThemeBg) ? limitPanel(token, l) : paint(token, l),
-			);
+			const level = lighter ? Math.max(...targets) : Math.min(...targets);
+			const color = PANELS.includes(token as ThemeBg)
+				? limitPanel(token, level)
+				: paint(token, level);
+
+			colors.set(token, color);
 		}
 		return colors;
 	};
@@ -598,7 +704,7 @@ export function generateSystemThemeColors(input: SystemThemeInput): SystemThemeC
 	if (!colors) {
 		let [low, high] = [0, 2];
 		colors = solve(high);
-		for (let index = 0; index < 20; index++) {
+		for (let index = 0; index < BINARY_STEPS; index++) {
 			const middle = (low + high) / 2;
 			const attempt = solve(middle);
 			if (attempt) [high, colors] = [middle, attempt];
@@ -645,63 +751,4 @@ export function generateSystemThemeColors(input: SystemThemeInput): SystemThemeC
 		if (text) result[token] = hexOf(withTextContrast(text, surfaces, lighter));
 	}
 	return { colors: result, dim: [], appearance };
-}
-
-function okhslOf({ r, g, b }: RgbColor): OkhslChannels {
-	return colorToOkhsl(rgbColor(r, g, b));
-}
-
-function sourceOf(color: RgbColor): SourceColor {
-	return { ...okhslOf(color), chroma: colorToOklch(rgbColor(color.r, color.g, color.b)).c };
-}
-
-function anchored(
-	source: SourceColor,
-	family: Family,
-	lightness: number,
-	saturation: number,
-): RgbColor {
-	const anchor = saturationCurve(family, source.l);
-	const falloff = anchor > 0 ? Math.min(1, saturationCurve(family, lightness) / anchor) : 1;
-	const color = okhslColor(source.h, source.s * falloff * saturation, lightness);
-	const cap = source.chroma * falloff * saturation;
-	const { l, c } = colorToOklch(color);
-	return c <= cap ? color : colorToRgb(oklchColor(l, cap, source.h));
-}
-
-function withTextContrast(color: RgbColor, surfaces: RgbColor[], lighter: boolean): RgbColor {
-	const meets = (candidate: RgbColor) =>
-		surfaces.every((surface) => wcagContrast(candidate, surface) >= TEXT_MINIMUM_WCAG_CONTRAST);
-	if (meets(color)) return color;
-	const { h, s, l } = okhslOf(color);
-	const at = (lightness: number) => okhslColor(h, s, lightness);
-	const extreme = lighter ? 1 : 0;
-	if (!meets(at(extreme))) return at(extreme);
-	let [low, high] = [l, extreme];
-	for (let index = 0; index < 20; index++) {
-		const middle = (low + high) / 2;
-		if (meets(at(middle))) high = middle;
-		else low = middle;
-	}
-	return at(high);
-}
-
-function indexedColors(
-	saturation: number,
-	appearance: ThemeAppearance | undefined,
-): SystemThemeColors {
-	const colors = {} as Record<ThemeToken, string | number>;
-	const dim: ThemeColor[] = [];
-	for (const [token, familyName] of Object.entries(TOKEN_FAMILIES) as [ThemeToken, FamilyName][]) {
-		if (PANELS.includes(token as ThemeBg)) {
-			colors[token] = "";
-			continue;
-		}
-		const neutral = familyName === "neutral";
-		colors[token] =
-			!neutral && saturation > 0 ? (TOKEN_SLOTS[token] ?? FAMILIES[familyName].slot) : "";
-		if (neutral && !FOREGROUND_TOKENS.includes(token as ThemeColor))
-			dim.push(token as ThemeColor);
-	}
-	return { colors, dim, appearance };
 }

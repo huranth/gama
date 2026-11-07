@@ -22,12 +22,11 @@ import {
 	type TerminalColors,
 	type TextAttributes,
 } from "@huranth/gama-tui";
-import chalk from "chalk";
-import { getCustomThemesDir, getThemesDir } from "../../../config.ts";
-import type { SourceInfo } from "../../../core/source-info.ts";
-import { closeWatcher, watchWithErrorHandler } from "../../../utils/fs-watch.ts";
-import { highlight, supportsLanguage } from "../../../utils/syntax-highlight.ts";
-import { stripBom } from "../../../utils/text.ts";
+import { getCustomThemesDir, getThemesDir } from "../../config.ts";
+import type { SourceInfo } from "../../core/origin.ts";
+import { closeWatcher, watchWithErrorHandler } from "../../utils/fs-watch.ts";
+import { highlight, supportsLanguage } from "../../utils/syntax-highlight.ts";
+import { stripBom } from "../../utils/text.ts";
 import {
 	generateSystemThemeColors,
 	SYSTEM_THEME_NAME,
@@ -39,7 +38,23 @@ import type {
 	ValidatedThemeJson as ThemeJson,
 } from "./theme-json.ts";
 
+export const ANSI_RESET = "\x1b[0m";
+
+export const ANSI_NO_BACKGROUND = "\x1b[49m";
+
+const ANSI_NO_FOREGROUND = "\x1b[39m";
+
+const ANSI_PALETTE_SIZE = 16;
+
+const MID_LIGHTNESS = 0.5;
+
+const DIM_MIX = 0.4;
+
+const THEME_RELOAD_DELAY_MS = 100;
+
 export { SYSTEM_THEME_NAME } from "./system-theme.ts";
+
+export const DEFAULT_THEME_NAME = "dark";
 
 export type { ValidatedThemeJson as ThemeJson } from "./theme-json.ts";
 
@@ -103,6 +118,8 @@ export type ThemeBg =
 	| "searchMatchBg"
 	| "userMessageBg"
 	| "customMessageBg"
+	| "handBg"
+	| "handChipBg"
 	| "toolPendingBg"
 	| "toolSuccessBg"
 	| "toolErrorBg";
@@ -121,7 +138,7 @@ type OptionalThemeColor =
 	| "selectionText"
 	| "searchMatchText";
 
-type OptionalThemeBg = "searchMatchBg" | "promptBg";
+type OptionalThemeBg = "searchMatchBg" | "promptBg" | "handBg" | "handChipBg";
 
 export type ThemeAppearance = TerminalTheme;
 
@@ -154,10 +171,10 @@ function resolveVarRefs(
 		return value;
 	}
 	if (visited.has(value)) {
-		throw new Error(`Circular variable reference detected: ${value}`);
+		throw new Error(`Circular variable: ${value}`);
 	}
 	if (!(value in vars)) {
-		throw new Error(`Variable reference not found: ${value}`);
+		throw new Error(`Missing variable: ${value}`);
 	}
 	visited.add(value);
 	return resolveVarRefs(vars[value], vars, visited);
@@ -182,6 +199,8 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 	searchMatchText: ColorValue;
 	selectionText: ColorValue;
 	promptBg: ColorValue;
+	handBg: ColorValue;
+	handChipBg: ColorValue;
 } {
 	return {
 		...colors,
@@ -192,11 +211,15 @@ function withThemeColorFallbacks(colors: ThemeJson["colors"]): ThemeJson["colors
 		searchMatchText: colors.searchMatchText ?? colors.text,
 		selectionText: colors.selectionText ?? colors.success,
 		promptBg: colors.promptBg ?? colors.userMessageBg,
+		handBg: colors.handBg ?? colors.customMessageBg,
+		handChipBg: colors.handChipBg ?? colors.customMessageBg,
 	};
 }
 
 let terminalColors: TerminalColors = {};
+
 let terminalColorsPending = false;
+
 let terminalColorScheme: TerminalTheme | undefined;
 
 export function setTerminalColors(colors: TerminalColors): void {
@@ -218,7 +241,9 @@ const GUESSED_DEFAULT_COLORS: Record<ThemeAppearance, { foreground: Color; backg
 };
 
 function averageLightness(colors: Color[]): number | undefined {
-	const fixed = colors.filter((color) => color.kind !== "indexed" || color.index >= 16);
+	const fixed = colors.filter(
+		(color) => color.kind !== "indexed" || color.index >= ANSI_PALETTE_SIZE,
+	);
 	if (fixed.length === 0) return undefined;
 	return fixed.reduce((sum, color) => sum + colorToOklch(color).l, 0) / fixed.length;
 }
@@ -227,9 +252,63 @@ function detectAppearance(foregrounds: Color[], backgrounds: Color[]): ThemeAppe
 	const fg = averageLightness(foregrounds);
 	const bg = averageLightness(backgrounds);
 	if (fg !== undefined && bg !== undefined) return bg < fg ? "dark" : "light";
-	if (bg !== undefined) return bg < 0.5 ? "dark" : "light";
-	if (fg !== undefined) return fg > 0.5 ? "dark" : "light";
+	if (bg !== undefined) return bg < MID_LIGHTNESS ? "dark" : "light";
+	if (fg !== undefined) return fg > MID_LIGHTNESS ? "dark" : "light";
 	return undefined;
+}
+
+export function parseAutoThemeSetting(
+	themeSetting: string | undefined,
+): { lightTheme: string; darkTheme: string } | undefined {
+	if (!themeSetting) return undefined;
+	const slashIndex = themeSetting.indexOf("/");
+	if (slashIndex === -1 || themeSetting.indexOf("/", slashIndex + 1) !== -1) {
+		return undefined;
+	}
+
+	const lightTheme = themeSetting.slice(0, slashIndex).trim();
+	const darkTheme = themeSetting.slice(slashIndex + 1).trim();
+	if (!lightTheme || !darkTheme) {
+		return undefined;
+	}
+	return { lightTheme, darkTheme };
+}
+
+export function resolveThemeSetting(
+	themeSetting: string | undefined,
+	terminalTheme: TerminalTheme,
+): string | undefined {
+	const autoTheme = parseAutoThemeSetting(themeSetting);
+	if (autoTheme) {
+		return terminalTheme === "light" ? autoTheme.lightTheme : autoTheme.darkTheme;
+	}
+	if (themeSetting?.includes("/")) return undefined;
+	if (typeof themeSetting === "string") return themeSetting;
+	return undefined;
+}
+
+export function detectColorFgBgTheme(
+	env: NodeJS.ProcessEnv = process.env,
+): TerminalTheme | undefined {
+	const bg = env.COLORFGBG?.split(";").at(-1)?.trim();
+	if (!bg || !/^\d{1,2}$/.test(bg)) return undefined;
+	const index = Number(bg);
+	if (index >= ANSI_PALETTE_SIZE) return undefined;
+	return index <= 6 || index === 8 ? "dark" : "light";
+}
+
+export function detectTerminalTheme(
+	colors: TerminalColors = {},
+	reportedScheme?: TerminalTheme,
+	env: NodeJS.ProcessEnv = process.env,
+): TerminalTheme {
+	const { background, foreground } = colors;
+	if (background) return terminalAppearance(background, foreground);
+	return reportedScheme ?? detectColorFgBgTheme(env) ?? "dark";
+}
+
+export function getTerminalTheme(): TerminalTheme {
+	return detectTerminalTheme(terminalColors, terminalColorScheme);
 }
 
 export class Theme {
@@ -279,6 +358,8 @@ export class Theme {
 			...bgColors,
 			searchMatchBg: bgColors.searchMatchBg ?? bgColors.selectedBg,
 			promptBg: bgColors.promptBg ?? bgColors.userMessageBg,
+			handBg: bgColors.handBg ?? bgColors.customMessageBg,
+			handChipBg: bgColors.handChipBg ?? bgColors.customMessageBg,
 		};
 		const concreteForegrounds: Color[] = [];
 		const concreteBackgrounds: Color[] = [];
@@ -291,7 +372,7 @@ export class Theme {
 				(isBackground ? this.defaultBackgroundTokens : this.defaultForegroundTokens).push(
 					token,
 				);
-				return isBackground ? "\x1b[49m" : "\x1b[39m";
+				return isBackground ? ANSI_NO_BACKGROUND : ANSI_NO_FOREGROUND;
 			}
 			const color = parseColor(value);
 			this.concreteColors[token] = color;
@@ -329,7 +410,7 @@ export class Theme {
 			}
 			for (const token of this.dimTokens) {
 				const color = colors[token];
-				if (color) colors[token] = mixColors(color, background, 0.4);
+				if (color) colors[token] = mixColors(color, background, DIM_MIX);
 			}
 			this.resolvedColors = {
 				terminal,
@@ -361,38 +442,34 @@ export class Theme {
 	fg(color: ThemeColor, text: string): string {
 		const ansi = this.tokenAnsi(this.fgAnsi, color);
 		if (this.dimTokens.has(color)) return `${ansi}\x1b[2m${text}\x1b[22;39m`;
-		return `${ansi}${text}\x1b[39m`;
+		return `${ansi}${text}${ANSI_NO_FOREGROUND}`;
 	}
 
 	bg(color: ThemeBg, text: string): string {
 		const ansi = this.tokenAnsi(this.bgAnsi, color);
-		return `${ansi}${text}\x1b[49m`;
+		return `${ansi}${text}${ANSI_NO_BACKGROUND}`;
 	}
 
 	private tokenAnsi<T extends ThemeToken>(ansi: Map<T, string>, token: T): string {
 		const value = ansi.get(token);
-		if (value === undefined) throw new Error(`Unknown theme color: ${token}`);
+		if (value === undefined) throw new Error(`Unknown color: ${token}`);
 		return value;
 	}
 
 	bold(text: string): string {
-		return chalk.bold(text);
+		return `\x1b[1m${text}\x1b[22m`;
 	}
 
 	italic(text: string): string {
-		return chalk.italic(text);
-	}
-
-	underline(text: string): string {
-		return chalk.underline(text);
+		return `\x1b[3m${text}\x1b[23m`;
 	}
 
 	inverse(text: string): string {
-		return chalk.inverse(text);
+		return `\x1b[7m${text}\x1b[27m`;
 	}
 
 	strikethrough(text: string): string {
-		return chalk.strikethrough(text);
+		return `\x1b[9m${text}\x1b[29m`;
 	}
 
 	getFgAnsi(color: ThemeColor): string {
@@ -512,8 +589,7 @@ function getCustomThemeInfos(): ThemeInfo[] {
 function assertThemeNameIsValid(name: string): void {
 	if (name.includes("/")) {
 		throw new Error(
-			`Invalid theme name "${name}": theme names cannot contain "/" ` +
-				"because it is reserved for automatic light/dark theme settings.",
+			`Invalid theme name "${name}"`,
 		);
 	}
 }
@@ -521,7 +597,7 @@ function assertThemeNameIsValid(name: string): void {
 function parseThemeJson(label: string, json: unknown): ThemeJson {
 	if (themeJsonValidator) return themeJsonValidator(label, json);
 	if (typeof json !== "object" || json === null || !("colors" in json)) {
-		throw new Error(`Invalid theme "${label}": expected an object with a "colors" map.`);
+		throw new Error(`Invalid theme: ${label}`);
 	}
 	return json as ThemeJson;
 }
@@ -530,8 +606,8 @@ function parseThemeJsonContent(label: string, content: string): ThemeJson {
 	let json: unknown;
 	try {
 		json = JSON.parse(stripBom(content));
-	} catch (error) {
-		throw new Error(`Failed to parse theme ${label}: ${error}`);
+	} catch {
+		throw new Error(`Invalid theme: ${label}`);
 	}
 	return parseThemeJson(label, json);
 }
@@ -547,7 +623,7 @@ function loadThemeJson(name: string): ThemeJson {
 		return parseThemeJsonContent(registeredTheme.sourcePath, content);
 	}
 	if (registeredTheme) {
-		throw new Error(`Theme "${name}" does not have a source path for export`);
+		throw new Error(`Theme not exportable: ${name}`);
 	}
 	const customThemesDir = getCustomThemesDir();
 	const themePath = path.join(customThemesDir, `${name}.json`);
@@ -564,6 +640,8 @@ const BACKGROUND_TOKENS: ReadonlySet<string> = new Set<ThemeBg>([
 	"searchMatchBg",
 	"userMessageBg",
 	"customMessageBg",
+	"handBg",
+	"handChipBg",
 	"toolPendingBg",
 	"toolSuccessBg",
 	"toolErrorBg",
@@ -637,67 +715,14 @@ export function getThemeByName(name: string): Theme | undefined {
 	}
 }
 
-export function parseAutoThemeSetting(
-	themeSetting: string | undefined,
-): { lightTheme: string; darkTheme: string } | undefined {
-	if (!themeSetting) return undefined;
-	const slashIndex = themeSetting.indexOf("/");
-	if (slashIndex === -1 || themeSetting.indexOf("/", slashIndex + 1) !== -1) {
-		return undefined;
-	}
-
-	const lightTheme = themeSetting.slice(0, slashIndex).trim();
-	const darkTheme = themeSetting.slice(slashIndex + 1).trim();
-	if (!lightTheme || !darkTheme) {
-		return undefined;
-	}
-	return { lightTheme, darkTheme };
-}
-
-export function resolveThemeSetting(
-	themeSetting: string | undefined,
-	terminalTheme: TerminalTheme,
-): string | undefined {
-	const autoTheme = parseAutoThemeSetting(themeSetting);
-	if (autoTheme) {
-		return terminalTheme === "light" ? autoTheme.lightTheme : autoTheme.darkTheme;
-	}
-	if (themeSetting?.includes("/")) return undefined;
-	if (typeof themeSetting === "string") return themeSetting;
-	return undefined;
-}
-
-export function detectColorFgBgTheme(
-	env: NodeJS.ProcessEnv = process.env,
-): TerminalTheme | undefined {
-	const bg = env.COLORFGBG?.split(";").at(-1)?.trim();
-	if (!bg || !/^\d{1,2}$/.test(bg)) return undefined;
-	const index = Number(bg);
-	if (index > 15) return undefined;
-	return index <= 6 || index === 8 ? "dark" : "light";
-}
-
-export function detectTerminalTheme(
-	colors: TerminalColors = {},
-	reportedScheme?: TerminalTheme,
-	env: NodeJS.ProcessEnv = process.env,
-): TerminalTheme {
-	const { background, foreground } = colors;
-	if (background) return terminalAppearance(background, foreground);
-	return reportedScheme ?? detectColorFgBgTheme(env) ?? "dark";
-}
-
-export function getTerminalTheme(): TerminalTheme {
-	return detectTerminalTheme(terminalColors, terminalColorScheme);
-}
-
 const THEME_KEY = Symbol.for("@huranth/gama-harness:theme");
 
 export const theme: Theme = new Proxy({} as Theme, {
 	get(_target, prop) {
-		const t = (globalThis as Record<symbol, Theme>)[THEME_KEY];
-		if (!t) throw new Error("Theme not initialized. Call initTheme() first.");
-		return (t as unknown as Record<string | symbol, unknown>)[prop];
+		const current = (globalThis as Record<symbol, Theme>)[THEME_KEY];
+		if (!current) throw new Error("Theme not initialized");
+
+		return (current as unknown as Record<string | symbol, unknown>)[prop];
 	},
 });
 
@@ -706,9 +731,13 @@ function setGlobalTheme(t: Theme): void {
 }
 
 let currentThemeName: string | undefined;
+
 let themeWatcher: fs.FSWatcher | undefined;
+
 let themeReloadTimer: NodeJS.Timeout | undefined;
+
 let onThemeChangeCallback: (() => void) | undefined;
+
 const registeredThemes = new Map<string, Theme>();
 
 export function setRegisteredThemes(themes: Theme[]): void {
@@ -722,7 +751,7 @@ export function setRegisteredThemes(themes: Theme[]): void {
 }
 
 export function initTheme(themeName?: string, enableWatcher: boolean = false): void {
-	const name = themeName ?? SYSTEM_THEME_NAME;
+	const name = themeName ?? DEFAULT_THEME_NAME;
 	currentThemeName = name;
 	try {
 		setGlobalTheme(loadTheme(name));
@@ -816,7 +845,7 @@ function startThemeWatcher(): void {
 					onThemeChangeCallback();
 				}
 			} catch (_error) {}
-		}, 100);
+		}, THEME_RELOAD_DELAY_MS);
 	};
 
 	themeWatcher =
@@ -858,10 +887,6 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
 	);
 }
 
-export function isLightTheme(themeName?: string): boolean {
-	return loadTheme(themeName ?? currentThemeName ?? SYSTEM_THEME_NAME).appearance === "light";
-}
-
 export function getThemeExportColors(themeName?: string): {
 	pageBg?: string;
 	cardBg?: string;
@@ -895,6 +920,7 @@ export function getThemeExportColors(themeName?: string): {
 }
 
 let cachedHighlightThemeFor: Theme | undefined;
+
 let cachedCliHighlightTheme: CliHighlightTheme | undefined;
 
 function buildCliHighlightTheme(t: Theme): CliHighlightTheme {
@@ -921,7 +947,7 @@ function buildCliHighlightTheme(t: Theme): CliHighlightTheme {
 		punctuation: (s: string) => t.fg("syntaxPunctuation", s),
 		emphasis: (s: string) => t.italic(s),
 		strong: (s: string) => t.bold(s),
-		link: (s: string) => t.underline(s),
+		link: (s: string) => s,
 		addition: (s: string) => t.fg("toolDiffAdded", s),
 		deletion: (s: string) => t.fg("toolDiffRemoved", s),
 	};
@@ -1034,7 +1060,7 @@ export function getMarkdownTheme(): MarkdownTheme {
 		listBullet: (text: string) => theme.fg("mdListBullet", text),
 		bold: (text: string) => theme.bold(text),
 		italic: (text: string) => theme.italic(text),
-		underline: (text: string) => theme.underline(text),
+		underline: (text: string) => text,
 		strikethrough: (text: string) => theme.strikethrough(text),
 		highlightCode: (code: string, lang?: string): string[] => {
 			const validLang = lang && supportsLanguage(lang) ? lang : undefined;
@@ -1058,9 +1084,7 @@ export function getMarkdownTheme(): MarkdownTheme {
 export function getSelectListTheme(): SelectListTheme {
 	return {
 		selectedPrefix: (text: string) => theme.fg("accent", text),
-		// Cursor row.
 		selectedText: (text: string) => theme.bg("selectedBg", theme.bold(theme.fg("accent", text))),
-		// Current value.
 		currentText: (text: string) => theme.fg("selectionText", text),
 		description: (text: string) => theme.fg("muted", text),
 		scrollInfo: (text: string) => theme.fg("muted", text),

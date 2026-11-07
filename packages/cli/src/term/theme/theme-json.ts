@@ -36,6 +36,8 @@ const ThemeJsonSchema = Type.Object({
 		customMessageBg: ColorValueSchema,
 		customMessageText: ColorValueSchema,
 		customMessageLabel: ColorValueSchema,
+		handBg: Type.Optional(ColorValueSchema),
+		handChipBg: Type.Optional(ColorValueSchema),
 		toolPendingBg: ColorValueSchema,
 		toolSuccessBg: ColorValueSchema,
 		toolErrorBg: ColorValueSchema,
@@ -123,8 +125,7 @@ export function validateThemeJson(label: string, json: unknown): ValidatedThemeJ
 	const themeJson = json as ValidatedThemeJson;
 	if (themeJson.name.includes("/")) {
 		throw new Error(
-			`Invalid theme name "${themeJson.name}": theme names cannot contain "/" ` +
-				"because it is reserved for automatic light/dark theme settings.",
+			`Invalid theme name "${themeJson.name}"`,
 		);
 	}
 	return themeJson;

@@ -1,5 +1,5 @@
 {
-	"$schema": "https://raw.githubusercontent.com/huranth/gama/main/packages/coding-agent/src/modes/tui/theme/theme-schema.json",
+	"$schema": "https://raw.githubusercontent.com/huranth/gama/main/packages/cli/src/term/theme/theme-schema.json",
 	"name": "dark",
 	"appearance": "dark",
 	"vars": {
@@ -34,6 +34,8 @@
 		"userMessageBg": "okhsl(80 2% 20%)",
 		"userMessageText": "steel",
 		"customMessageBg": "okhsl(80 2% 20%)",
+		"handBg": "okhsl(275 20% 20%)",
+		"handChipBg": "okhsl(275 24% 28%)",
 		"customMessageText": "okhsl(80 2% 71%)",
 		"customMessageLabel": "amber",
 		"toolPendingBg": "okhsl(80 2% 19%)",

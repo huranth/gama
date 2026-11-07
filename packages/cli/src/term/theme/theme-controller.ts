@@ -1,6 +1,7 @@
 import type { RgbColor, TerminalColors, TUI } from "@huranth/gama-tui";
-import type { SettingsManager } from "../../../core/settings-manager.ts";
+import type { SettingsStore } from "../../core/settings.ts";
 import {
+	DEFAULT_THEME_NAME,
 	getTerminalTheme,
 	initTheme,
 	markTerminalColorsPending,
@@ -40,7 +41,12 @@ function sameRgb(a: RgbColor | undefined, b: RgbColor | undefined): boolean {
 }
 
 function sameTerminalColors(a: TerminalColors, b: TerminalColors): boolean {
-	if (!sameRgb(a.foreground, b.foreground) || !sameRgb(a.background, b.background)) return false;
+	if (
+		!sameRgb(a.foreground, b.foreground) ||
+		!sameRgb(a.background, b.background)
+	) {
+		return false;
+	}
 
 	if (a.palette === b.palette) return true;
 	if (!a.palette || !b.palette || a.palette.length !== b.palette.length) return false;
@@ -49,7 +55,7 @@ function sameTerminalColors(a: TerminalColors, b: TerminalColors): boolean {
 
 export class InteractiveThemeController {
 	private readonly ui: TUI;
-	private readonly getSettingsManager: () => SettingsManager;
+	private readonly getSettingsManager: () => SettingsStore;
 	private readonly showError: (message: string) => void;
 	private readonly onChanged: () => void;
 	private currentThemeSetting: string | undefined;
@@ -62,7 +68,7 @@ export class InteractiveThemeController {
 	constructor(
 		ui: TUI,
 		options: {
-			getSettingsManager: () => SettingsManager;
+			getSettingsManager: () => SettingsStore;
 			showError: (message: string) => void;
 			onChanged: () => void;
 			initialThemeSetting?: string;
@@ -159,12 +165,12 @@ export class InteractiveThemeController {
 	}
 
 	private resolveThemeName(): string {
-		return resolveThemeSetting(this.getThemeSetting(), getTerminalTheme()) ?? SYSTEM_THEME_NAME;
+		return resolveThemeSetting(this.getThemeSetting(), getTerminalTheme()) ?? DEFAULT_THEME_NAME;
 	}
 
 	private applyThemeName(themeName: string, showError = false): ThemeResult {
 		const result = setTheme(themeName, true);
-		this.activeThemeName = result.success ? themeName : SYSTEM_THEME_NAME;
+		this.activeThemeName = result.success ? themeName : DEFAULT_THEME_NAME;
 		this.notifyChanged();
 
 		if (!result.success && showError) {

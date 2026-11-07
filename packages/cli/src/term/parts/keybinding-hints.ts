@@ -5,6 +5,14 @@ export interface KeyTextFormatOptions {
 	capitalize?: boolean;
 }
 
+function formatKeyPart(part: string, options: KeyTextFormatOptions): string {
+	const isMac = process.platform === "darwin";
+	const displayPart = isMac && part.toLowerCase() === "alt" ? "option" : part;
+	if (!options.capitalize) return displayPart;
+
+	return displayPart.charAt(0).toUpperCase() + displayPart.slice(1);
+}
+
 export function formatKeyText(key: string, options: KeyTextFormatOptions = {}): string {
 	const groups = key.split("/");
 
@@ -15,6 +23,12 @@ export function formatKeyText(key: string, options: KeyTextFormatOptions = {}): 
 			return parts.map((part) => formatKeyPart(part, options)).join("+");
 		})
 		.join("/");
+}
+
+function formatKeys(keys: KeyId[], options: KeyTextFormatOptions = {}): string {
+	if (keys.length === 0) return "";
+
+	return formatKeyText(keys.join("/"), options);
 }
 
 export function keyText(keybinding: Keybinding): string {
@@ -35,18 +49,4 @@ export function rawKeyHint(key: string, description: string): string {
 	const keys = theme.fg("dim", formatKeyText(key));
 
 	return keys + theme.fg("muted", ` ${description}`);
-}
-
-function formatKeys(keys: KeyId[], options: KeyTextFormatOptions = {}): string {
-	if (keys.length === 0) return "";
-
-	return formatKeyText(keys.join("/"), options);
-}
-
-function formatKeyPart(part: string, options: KeyTextFormatOptions): string {
-	const isMac = process.platform === "darwin";
-	const displayPart = isMac && part.toLowerCase() === "alt" ? "option" : part;
-	if (!options.capitalize) return displayPart;
-
-	return displayPart.charAt(0).toUpperCase() + displayPart.slice(1);
 }
