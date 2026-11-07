@@ -6,18 +6,27 @@ import { keyHint } from "./keybinding-hints.ts";
 export class BorderedLoader extends Container {
 	private loader: CancellableLoader | Loader;
 	private cancellable: boolean;
+	private showCancelHint: boolean;
+	private showBorders: boolean;
 	private signalController?: AbortController;
 
-	constructor(tui: TUI, theme: Theme, message: string, options?: { cancellable?: boolean }) {
+	constructor(
+		tui: TUI,
+		theme: Theme,
+		message: string,
+		options?: { cancellable?: boolean; showCancelHint?: boolean; showBorders?: boolean },
+	) {
 		super();
 
 		this.cancellable = options?.cancellable ?? true;
+		this.showCancelHint = options?.showCancelHint ?? true;
+		this.showBorders = options?.showBorders ?? true;
 
 		const borderColor = (text: string) => theme.fg("border", text);
 		const spinnerColor = (text: string) => theme.fg("accent", text);
 		const messageColor = (text: string) => theme.fg("muted", text);
 
-		this.addChild(new DynamicBorder(borderColor));
+		if (this.showBorders) this.addChild(new DynamicBorder(borderColor));
 
 		if (this.cancellable) {
 			this.loader = new CancellableLoader(tui, spinnerColor, messageColor, message);
@@ -28,13 +37,13 @@ export class BorderedLoader extends Container {
 
 		this.addChild(this.loader);
 
-		if (this.cancellable) {
+		if (this.cancellable && this.showCancelHint) {
 			this.addChild(new Spacer(1));
 			this.addChild(new Text(keyHint("tui.select.cancel", "cancel"), 1, 0));
 		}
 
 		this.addChild(new Spacer(1));
-		this.addChild(new DynamicBorder(borderColor));
+		if (this.showBorders) this.addChild(new DynamicBorder(borderColor));
 	}
 
 	get signal(): AbortSignal {

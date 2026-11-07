@@ -1,5 +1,5 @@
 import { Container, Markdown, type MarkdownTheme, Spacer, Text } from "@huranth/gama-tui";
-import type { MarkdownTransformer } from "../../../core/ext/types.ts";
+import type { MarkdownTransformer } from "../../core/ext/types.ts";
 import { theme } from "../theme/theme.ts";
 import { createMarkdownTransform } from "./markdown-transform.ts";
 

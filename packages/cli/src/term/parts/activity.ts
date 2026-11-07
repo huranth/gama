@@ -2,11 +2,13 @@ import { existsSync } from "node:fs";
 import type { Component, TUI, TuiMouseEvent, TuiMouseEventResult } from "@huranth/gama-tui";
 import { sliceByColumn, visibleWidth, wrapTextWithAnsi } from "@huranth/gama-tui";
 import { diffLines } from "diff";
-import { resolveToCwd } from "../../../core/tools/path-utils.ts";
-import { getTextOutput } from "../../../core/tools/render-utils.ts";
-import { stripAnsi } from "../../../utils/ansi.ts";
-import { formatPathRelativeToCwdOrAbsolute } from "../../../utils/paths.ts";
-import { theme } from "../theme/theme.ts";
+import { formatHandFailureBody, handFailureNext } from "../../core/hand-failure.ts";
+import { resolveToCwd } from "../../core/tools/path-utils.ts";
+import { getTextOutput } from "../../core/tools/render-utils.ts";
+import { stripAnsi } from "../../utils/ansi.ts";
+import { formatPathRelativeToCwdOrAbsolute } from "../../utils/paths.ts";
+import { ANSI_RESET, theme } from "../theme/theme.ts";
+import { handKindColor, handStatusPaint } from "./hand-colors.ts";
 import { clipToWidth, renderCardBodyRows } from "./read-content.ts";
 
 export interface ActivityRecord {
@@ -28,20 +30,52 @@ interface LiveCounts {
 interface ActivityDetails {
 	created?: boolean;
 	diff?: string;
+	matchCount?: number;
+	resultCount?: number;
+	results?: number;
 }
 
-type CardBg = "toolErrorBg" | "toolSuccessBg" | "toolPendingBg";
+type CardBg = "toolErrorBg" | "toolSuccessBg" | "toolPendingBg" | "handBg";
+
+const HANDS_CARD_WIDTH = 64;
+
+const HANDS_MAX_NAMES = 3;
+
+const HANDS_START_MAX_ROLES = 6;
 
 const INDENT = "  ";
+
 const BODY_INDENT = "    ";
-const EXPAND_MAX = 200;
-const READ_FLOOR = 650;
-const LIVE_ROW = 2000;
+
+const EXPANDED_LINE_LIMIT = 200;
+
+const MINIMUM_READ_MS = 650;
+
+const LIVE_ROW_WINDOW_MS = 2000;
+
 const STRIKE_DRAW_MS = 220;
-const STRIKE_FRAME = 40;
-const HIGHLIGHT_FRAME = 110;
+
+const STRIKE_FRAME_MS = 40;
+
+const HIGHLIGHT_FRAME_MS = 110;
+
 const HIGHLIGHT_WIDTH = 2;
-const HIGHLIGHT_HOLD = 220;
+
+const HIGHLIGHT_HOLD_MS = 220;
+
+const MINIMUM_COMMAND_WIDTH = 16;
+
+const SENTENCE_GAP = 5;
+
+const MINIMUM_SENTENCE_WIDTH = 28;
+
+const CARD_PAD = 2;
+
+const MINIMUM_WRAP_WIDTH = 1;
+
+const WRAP_PAD = 2;
+
+const SHORT_NAME_WIDTH = 24;
 
 const PATH_TOOLS = new Set([
 	"read",
@@ -49,8 +83,7 @@ const PATH_TOOLS = new Set([
 	"find",
 	"glob",
 	"ls",
-	"webfetch",
-	"websearch",
+	"fetch",
 	"edit",
 	"write",
 ]);
@@ -61,7 +94,7 @@ function cleanText(value: string): string {
 
 function keepCardBg(bg: CardBg, text: string): string {
 	const ansi = theme.getBgAnsi(bg);
-	return text.replace(/\x1b\[0m/g, `\x1b[0m${ansi}`);
+	return text.split(ANSI_RESET).join(`${ANSI_RESET}${ansi}`);
 }
 
 function isRunning(record: ActivityRecord): boolean {
@@ -78,10 +111,6 @@ function detailsOf(record: ActivityRecord): ActivityDetails {
 	const details = record.result?.details;
 	if (!details || typeof details !== "object" || Array.isArray(details)) return {};
 	return details as ActivityDetails;
-}
-
-export function activityVerb(record: ActivityRecord): string {
-	return verbsOf(record).done;
 }
 
 function commandOf(record: ActivityRecord): string {
@@ -102,6 +131,166 @@ function resultLines(record: ActivityRecord): string[] {
 
 function plural(count: number, one: string, many = `${one}s`): string {
 	return `${count} ${count === 1 ? one : many}`;
+}
+
+function capitalize(value: string): string {
+	return value.replace(/^./, (letter) => letter.toUpperCase());
+}
+
+function handsActionOf(record: ActivityRecord): string {
+	const action = argsOf(record).action;
+	return typeof action === "string" ? action : "";
+}
+
+function objectOf(value: unknown): Record<string, unknown> | undefined {
+	return typeof value === "object" && value !== null && !Array.isArray(value)
+		? (value as Record<string, unknown>)
+		: undefined;
+}
+
+interface HandSummary {
+	id?: string;
+	title: string;
+	kind?: string;
+	status?: string;
+	chars: number;
+}
+
+interface HandsInfo {
+	action: string;
+	hand?: string;
+	total: number;
+	delivered: number;
+	collected: number;
+	deliveredHands: HandSummary[];
+	collectedHands: HandSummary[];
+	kinds: string[];
+	running: number;
+	chars: number;
+}
+
+function handsInfoOf(record: ActivityRecord): HandsInfo {
+	const args = argsOf(record);
+	const details = objectOf(record.result?.details);
+	const snapshots = Array.isArray(details?.hands) ? details.hands : [];
+	const argsHands = Array.isArray(args.hands) ? args.hands : [];
+	const action = handsActionOf(record);
+	const hand = typeof args.hand === "string" ? args.hand.trim() : undefined;
+	const deliveredIds = new Set(
+		Array.isArray(details?.delivered)
+			? details.delivered.filter((id): id is string => typeof id === "string")
+			: [],
+	);
+	const rawCollected = Array.isArray(details?.collected) ? details.collected : details?.delivered;
+	const collectedIds = new Set(
+		Array.isArray(rawCollected)
+			? rawCollected.filter((id): id is string => typeof id === "string")
+			: [],
+	);
+	const allHands: HandSummary[] = [];
+	let running = 0;
+
+	for (const value of snapshots) {
+		const snapshot = objectOf(value);
+		if (!snapshot) continue;
+		const status = typeof snapshot.status === "string" ? snapshot.status : undefined;
+		if (status === "running") running++;
+		allHands.push({
+			id: typeof snapshot.id === "string" ? snapshot.id : undefined,
+			title: typeof snapshot.title === "string" ? snapshot.title : "hand",
+			kind: typeof snapshot.kind === "string" ? snapshot.kind : undefined,
+			status,
+			chars: typeof snapshot.result === "string" ? snapshot.result.length : 0,
+		});
+	}
+
+	const kinds = allHands
+		.map((snapshot) => snapshot.kind)
+		.filter((kind): kind is string => Boolean(kind));
+	if (kinds.length === 0) {
+		for (const value of argsHands) {
+			const kind = objectOf(value)?.kind;
+			if (typeof kind === "string") kinds.push(kind);
+		}
+	}
+
+	const collectedHands = allHands.filter(
+		(snapshot) => snapshot.id && collectedIds.has(snapshot.id),
+	);
+	const deliveredHands = allHands.filter(
+		(snapshot) => snapshot.id && deliveredIds.has(snapshot.id),
+	);
+	if (action === "read" && deliveredHands.length === 0) {
+		const match = allHands.find((snapshot) => snapshot.title === hand) ?? allHands[0];
+		if (match) {
+			deliveredHands.push(match);
+			if (match.id && !collectedIds.has(match.id)) {
+				collectedIds.add(match.id);
+				collectedHands.push(match);
+			}
+		}
+	}
+
+	const total =
+		snapshots.length ||
+		argsHands.length ||
+		(action === "read" || (action === "wait" && hand) ? 1 : 0);
+
+	return {
+		action,
+		hand,
+		total,
+		delivered: deliveredIds.size,
+		collected: collectedIds.size,
+		deliveredHands,
+		collectedHands,
+		kinds,
+		running,
+		chars: deliveredHands[0]?.chars ?? collectedHands[0]?.chars ?? 0,
+	};
+}
+
+function handFailureRows(record: ActivityRecord): string[] {
+	return formatHandFailureBody(
+		stripAnsi(getTextOutput(record.result, false)),
+		handFailureNext(handsActionOf(record)),
+	).split("\n");
+}
+
+function handsTarget(record: ActivityRecord, maxWidth: number): string {
+	const info = handsInfoOf(record);
+	if (info.hand) return clipPlain(cleanText(info.hand), maxWidth);
+
+	if (info.action === "wait") {
+		if (isRunning(record)) {
+			return info.total > 1 ? `the first of ${plural(info.total, "hand")}` : "a hand";
+		}
+		if (info.collected > 0) {
+			return info.collected === info.total
+				? plural(info.total, "hand")
+				: `${info.collected} of ${plural(info.total, "hand")}`;
+		}
+		return info.total > 0 ? "all hands" : "hands";
+	}
+
+	return info.total > 0 ? plural(info.total, "hand") : "hands";
+}
+
+function handNames(info: HandsInfo): string {
+	const names = info.collectedHands.slice(0, HANDS_MAX_NAMES).map((hand) => hand.title);
+	const rest = info.collectedHands.length - names.length;
+	if (rest > 0) names.push(`+${rest}`);
+	return names.join(", ");
+}
+
+function handProgress(done: number, total: number): string {
+	const slots = Math.min(Math.max(total, 1), 10);
+	const filled = Math.min(Math.max(done, 0), slots);
+	let text = "";
+	for (let index = 0; index < slots; index++) {
+		text += theme.fg(index < filled ? "success" : "dim", index < filled ? "●" : "○");
+	}
+	return text;
 }
 
 function lineCount(text: string): number {
@@ -127,7 +316,7 @@ function runningText(
 function shortName(value: string): string {
 	const text = cleanText(value).trim();
 	const first = text.split(/\s+/, 1)[0] ?? text;
-	return clipToWidth(first || text, 24);
+	return clipToWidth(first || text, SHORT_NAME_WIDTH);
 }
 
 export function activityKind(toolName: string): ActivityKind {
@@ -137,8 +326,8 @@ export function activityKind(toolName: string): ActivityKind {
 		case "find":
 		case "glob":
 		case "ls":
-		case "webfetch":
-		case "websearch":
+		case "outline":
+		case "fetch":
 			return "reading";
 		case "edit":
 		case "write":
@@ -177,11 +366,15 @@ function failedVerb(record: ActivityRecord): string {
 			return "failed to find";
 		case "ls":
 			return "failed to list";
+		case "outline":
+			return "failed to outline";
 		case "bash":
 		case "powershell":
 			return "failed to run";
-		case "webfetch":
+		case "fetch":
 			return "failed to fetch";
+		case "hands":
+			return `failed to ${handsActionOf(record) || "use"}`;
 		default:
 			return "failed";
 	}
@@ -256,10 +449,18 @@ function counterText(record: ActivityRecord, counts: LiveCounts): string {
 	return `+${counts.added} -${counts.removed}`;
 }
 
+function visibleResultLines(record: ActivityRecord): string[] {
+	return resultLines(record).filter((line) => {
+		const text = line.trim();
+		if (!text) return false;
+		return !/^\[(?:Showing lines |\d+ more lines|Line \d+ is )/.test(text);
+	});
+}
+
 function tailText(record: ActivityRecord): string {
 	switch (record.name) {
 		case "read": {
-			const lines = resultLines(record).length;
+			const lines = visibleResultLines(record).length;
 			return lines > 0 ? plural(lines, "line") : "";
 		}
 		case "edit": {
@@ -273,15 +474,14 @@ function tailText(record: ActivityRecord): string {
 			const counts = getCounts(record);
 			return counts && counts.added > 0 ? `+${counts.added}` : "";
 		}
-		case "grep":
-		case "websearch": {
-			const lines = resultLines(record).length;
-			return lines > 0 ? plural(lines, "match", "matches") : "";
+		case "grep": {
+			const count = detailsOf(record).matchCount ?? visibleResultLines(record).length;
+			return count > 0 ? plural(count, "match", "matches") : "";
 		}
 		case "find":
 		case "glob": {
-			const lines = resultLines(record).length;
-			return lines > 0 ? plural(lines, "file") : "";
+			const count = detailsOf(record).resultCount ?? visibleResultLines(record).length;
+			return count > 0 ? plural(count, "file") : "";
 		}
 		default:
 			return "";
@@ -324,11 +524,12 @@ function verbsOf(record: ActivityRecord, cwd?: string): { running: string; done:
 		case "grep":
 		case "find":
 		case "glob":
-		case "websearch":
 			return { running: "searching", done: "search" };
 		case "ls":
 			return { running: "listing", done: "list" };
-		case "webfetch":
+		case "outline":
+			return { running: "outlining", done: "outline" };
+		case "fetch":
 			return { running: "fetching", done: "fetch" };
 		case "edit":
 			return { running: "editing", done: "edit" };
@@ -337,7 +538,6 @@ function verbsOf(record: ActivityRecord, cwd?: string): { running: string; done:
 			if (created === true) return { running: "writing", done: "create" };
 			if (created === false) return { running: "editing", done: "edit" };
 
-			// Existing file.
 			if (isRunning(record) && cwd && writeExists(record, cwd)) {
 				return { running: "editing", done: "edit" };
 			}
@@ -348,6 +548,26 @@ function verbsOf(record: ActivityRecord, cwd?: string): { running: string; done:
 			return { running: "running", done: "bash" };
 		case "powershell":
 			return { running: "running", done: "powershell" };
+		case "hands": {
+			switch (handsActionOf(record)) {
+				case "read":
+					return { running: "reading", done: "read" };
+				case "wait":
+					return { running: "waiting for", done: "collected" };
+				case "note":
+					return { running: "noting", done: "noted" };
+				case "talk":
+					return { running: "talking to", done: "talked to" };
+				case "merge":
+					return { running: "merging", done: "merged" };
+				case "finish":
+					return { running: "closing", done: "closed" };
+				case "start":
+					return { running: "starting", done: "started" };
+				default:
+					return { running: "working on", done: "used" };
+			}
+		}
 		default:
 			return { running: "working", done: shortName(record.name) };
 	}
@@ -359,16 +579,20 @@ function targetText(
 	withName = false,
 	maxWidth = Number.POSITIVE_INFINITY,
 ): string {
+	if (record.name === "hands") return handsTarget(record, maxWidth);
+
 	if (record.name === "bash" || record.name === "powershell") {
 		return clipPlain(commandOf(record), maxWidth);
 	}
 
 	const path = activityTargetPath(record);
-	if (path) return formatPathRelativeToCwdOrAbsolute(path, cwd);
+	if (path) {
+		if (record.name === "fetch") return clipPlain(path, maxWidth);
+		return formatPathRelativeToCwdOrAbsolute(path, cwd);
+	}
 
 	if (record.name === "ls") return ".";
 
-	// No path.
 	if (withName && !PATH_TOOLS.has(record.name)) return shortName(record.name);
 
 	return "";
@@ -420,9 +644,9 @@ function streamedCounts(record: ActivityRecord): LiveCounts {
 
 function clipPlain(value: string, width: number): string {
 	if (visibleWidth(value) <= width) return value;
-	if (width <= 1) return "…";
+	if (width <= 1) return "...";
 
-	return `${sliceByColumn(value, 0, width - 1)}…`;
+	return `${sliceByColumn(value, 0, width - 1)}...`;
 }
 
 function editLength(entry: unknown): string {
@@ -447,7 +671,7 @@ function countKey(args: unknown): string {
 }
 
 export class ActivityLineComponent implements Component {
-	readonly record: ActivityRecord;
+	record: ActivityRecord;
 
 	private expanded = false;
 	private readonly getCwd: () => string;
@@ -474,6 +698,11 @@ export class ActivityLineComponent implements Component {
 
 	get isExpanded(): boolean {
 		return this.expanded;
+	}
+
+	setRecord(record: ActivityRecord): void {
+		this.record = record;
+		this.cache = undefined;
 	}
 
 	refresh(): void {}
@@ -517,7 +746,7 @@ export class ActivityLineComponent implements Component {
 			return this.withBody(sentence, maxWidth);
 		}
 
-		// Read pause.
+		// Read pause
 		this.startHold(now);
 
 		if (this.holdUntil > now) {
@@ -532,7 +761,7 @@ export class ActivityLineComponent implements Component {
 
 		if (this.holdUntil) {
 			this.holdUntil = 0;
-			this.settleUntil = now + HIGHLIGHT_HOLD;
+			this.settleUntil = now + HIGHLIGHT_HOLD_MS;
 		}
 
 		const highlighted = this.isHighlighted();
@@ -543,11 +772,10 @@ export class ActivityLineComponent implements Component {
 		if (highlighted) this.armHighlight(Math.max(0, this.settleUntil - now));
 
 		return this.withBody(sentence, maxWidth);
-	}
-
-	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+	}	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "click" || event.button !== "left") return undefined;
 		if (event.y < 0) return undefined;
+		if (this.record.name === "hands" && this.record.status !== "error") return undefined;
 
 		this.toggleExpanded();
 
@@ -557,7 +785,7 @@ export class ActivityLineComponent implements Component {
 	private commandClip(width: number, verb: string): number {
 		if (this.expanded) return Number.POSITIVE_INFINITY;
 
-		return Math.max(16, width - INDENT.length - verb.length - 5);
+		return Math.max(MINIMUM_COMMAND_WIDTH, width - INDENT.length - verb.length - SENTENCE_GAP);
 	}
 
 	private isHighlighted(): boolean {
@@ -568,7 +796,7 @@ export class ActivityLineComponent implements Component {
 		return isRunning(this.record) || this.holdUntil > Date.now();
 	}
 
-	private armHighlight(delay = HIGHLIGHT_FRAME): void {
+	private armHighlight(delay = HIGHLIGHT_FRAME_MS): void {
 		if (this.highlightTimer !== undefined || !this.ui) return;
 
 		this.highlightTimer = setTimeout(() => {
@@ -593,13 +821,13 @@ export class ActivityLineComponent implements Component {
 
 		if (!this.canHold(now, counts)) {
 			if (this.visibleAt) {
-				this.settleUntil = now + HIGHLIGHT_HOLD;
+				this.settleUntil = now + HIGHLIGHT_HOLD_MS;
 			}
 			return;
 		}
 
 		const start = this.visibleAt > 0 ? this.visibleAt : now;
-		this.holdUntil = start + READ_FLOOR;
+		this.holdUntil = start + MINIMUM_READ_MS;
 		this.holdCounts = counts;
 	}
 
@@ -609,11 +837,11 @@ export class ActivityLineComponent implements Component {
 
 		const seenFor = this.visibleAt > 0 ? now - this.visibleAt : now - this.record.timestamp;
 
-		return seenFor < (this.visibleAt > 0 ? READ_FLOOR : LIVE_ROW);
+		return seenFor < (this.visibleAt > 0 ? MINIMUM_READ_MS : LIVE_ROW_WINDOW_MS);
 	}
 
 	private runningSentence(counts: LiveCounts | undefined, maxWidth: number): string {
-		const phase = Math.floor(Date.now() / HIGHLIGHT_FRAME);
+		const phase = Math.floor(Date.now() / HIGHLIGHT_FRAME_MS);
 		const head = highlight(verbsOf(this.record, this.getCwd()).running, phase);
 		const detail = runningText(this.record, this.getCwd(), counts, maxWidth);
 
@@ -621,41 +849,137 @@ export class ActivityLineComponent implements Component {
 	}
 
 	private withBody(sentence: string, width: number): string[] {
-		const rows: string[] = this.expanded ? renderCardBodyRows(this.record) : [];
+		if (this.record.name === "hands" && this.record.status !== "error") {
+			const action = handsActionOf(this.record);
+			if (action === "wait" || action === "read") return this.handsBlock(width);
+			if (action === "start") return this.startBlock(width);
+		}
 
-		const shown = rows.slice(0, EXPAND_MAX).map((row) => `${BODY_INDENT}${row}`);
-		const hidden = rows.length - EXPAND_MAX;
-
-		if (hidden > 0) shown.push(`${BODY_INDENT}… +${hidden} more lines`);
-
-		// Shared width.
-		const bodyWidth =
-			shown.length > 0
-				? Math.min(width, Math.max(24, ...shown.map((row) => visibleWidth(` ${row} `))))
-				: 0;
-		const cardWidth = Math.min(width, Math.max(this.sentenceWidth(sentence, width), bodyWidth));
+		const rows: string[] = this.expanded
+			? this.record.name === "hands"
+				? this.record.status === "error"
+					? handFailureRows(this.record)
+					: []
+				: renderCardBodyRows(this.record)
+			: [];
+		// Fixed width
+		const cardWidth = this.expanded
+			? width
+			: Math.min(width, this.sentenceWidth(sentence, width));
 		const lines = this.cardBlock(sentence, cardWidth);
 
-		if (shown.length > 0) lines.push(...this.bodyBlock(shown, cardWidth));
+		if (rows.length > 0) lines.push(...this.bodyBlock(rows, cardWidth));
 
 		return lines;
+	}
+
+	private handsBlock(width: number): string[] {
+		const info = handsInfoOf(this.record);
+		const cardWidth = Math.min(width, HANDS_CARD_WIDTH);
+		if (cardWidth < 1) return [];
+
+		const rows: string[] = [];
+
+		if (info.action === "wait") {
+			const total = info.total || info.collected;
+			const names = handNames(info);
+			if (isRunning(this.record)) {
+				rows.push(`${INDENT}${theme.fg("text", theme.bold("Waiting"))}`);
+				if (total > 0) {
+					rows.push(
+						`${INDENT}${handProgress(info.collected, total)}  ${theme.fg(
+							"muted",
+							`${info.collected} of ${total}`,
+						)}${names ? `  ${theme.fg("muted", names)}` : ""}`,
+					);
+				}
+			} else {
+				rows.push(
+					`${INDENT}${theme.fg(
+						"success",
+						theme.bold(total > 0 ? `${info.collected} of ${total} collected` : "Collected"),
+					)}`,
+				);
+				rows.push(
+					`${INDENT}${handProgress(info.collected, total)}${
+						names ? `  ${theme.fg("muted", names)}` : ""
+					}`,
+				);
+			}
+		} else {
+			const hand = info.deliveredHands[0];
+			const title =
+				info.hand ?? hand?.title ?? (info.total > 0 ? plural(info.total, "hand") : "Hand");
+			const status = isRunning(this.record) ? "Reading" : "Done";
+			const chars = info.chars > 0 ? `${info.chars.toLocaleString()} chars` : "";
+			rows.push(`${INDENT}${theme.fg("accent", theme.bold("Reading"))}`);
+			rows.push(`${INDENT}${theme.fg(handKindColor(hand?.kind), title)}`);				rows.push(
+				`${INDENT}${handStatusPaint(hand?.status, status)}${
+					chars ? `   ${theme.fg("muted", chars)}` : ""
+				}`,
+			);
+		}
+
+		return this.cardRows(rows, cardWidth);
+	}
+
+	private startBlock(width: number): string[] {
+		const info = handsInfoOf(this.record);
+		const cardWidth = Math.min(width, HANDS_CARD_WIDTH);
+		if (cardWidth < 1) return [];
+
+		const total = info.total || info.kinds.length;
+		const rows = [
+			`${INDENT}${theme.fg("text", theme.bold(`${plural(total, "hand")} started`))}`,
+		];
+		const roles = info.kinds
+			.slice(0, HANDS_START_MAX_ROLES)
+			.map((kind) => theme.fg(handKindColor(kind), capitalize(kind)));
+		const rest = Math.max(0, total - roles.length);
+		if (rest > 0) roles.push(theme.fg("muted", `+${rest}`));
+		if (roles.length > 0) rows.push(`${INDENT}${roles.join(", ")}`);
+
+		return this.cardRows(rows, cardWidth);
+	}
+
+	private cardRows(rows: string[], cardWidth: number): string[] {
+		const bg = this.cardBg();
+		const padding = theme.bg(bg, " ".repeat(cardWidth));
+		const text = rows.map((row) => {
+			const clipped = clipToWidth(row, cardWidth);
+			const fill = " ".repeat(Math.max(0, cardWidth - visibleWidth(clipped)));
+
+			return theme.bg(bg, `${keepCardBg(bg, `${clipped}${ANSI_RESET}`)}${fill}`);
+		});
+
+		return [padding, ...text, padding];
 	}
 
 	private bodyBlock(rows: string[], cardWidth: number): string[] {
 		const bg = this.cardBg();
 		const blank = theme.bg(bg, " ".repeat(cardWidth));
+		const contentWidth = Math.max(1, cardWidth - 2 - BODY_INDENT.length);
 
-		const body = rows.map((row) => {
+		const wrapped = rows.flatMap((row) => {
+			const content = row.startsWith(BODY_INDENT) ? row.slice(BODY_INDENT.length) : row;
+			return wrapTextWithAnsi(content, contentWidth).map((line) => `${BODY_INDENT}${line}`);
+		});
+		const shown = wrapped.slice(0, EXPANDED_LINE_LIMIT);
+		const hidden = wrapped.length - shown.length;
+		if (hidden > 0) shown.push(`${BODY_INDENT}... +${hidden} more lines`);
+
+		const body = shown.map((row) => {
 			const clipped = clipToWidth(` ${row} `, cardWidth);
 			const fill = " ".repeat(Math.max(0, cardWidth - visibleWidth(clipped)));
 
-			return theme.bg(bg, `${keepCardBg(bg, `${clipped}\x1b[0m`)}${fill}`);
+			return theme.bg(bg, `${keepCardBg(bg, `${clipped}${ANSI_RESET}`)}${fill}`);
 		});
 
 		return [blank, ...body, blank];
 	}
 
 	private cardBg(): CardBg {
+		if (this.record.name === "hands" && this.record.status !== "error") return "handBg";
 		if (this.record.status === "error") return "toolErrorBg";
 		if (this.record.status === "success") return "toolSuccessBg";
 
@@ -664,8 +988,9 @@ export class ActivityLineComponent implements Component {
 
 	private sentenceWidth(sentence: string, width: number): number {
 		const body = this.record.status === "error" ? this.struckSentence(sentence) : sentence;
+		const clipped = visibleWidth(clipToWidth(body, width)) + CARD_PAD;
 
-		return Math.min(width, Math.max(28, visibleWidth(clipToWidth(body, width)) + 2));
+		return Math.min(width, Math.max(MINIMUM_SENTENCE_WIDTH, clipped));
 	}
 
 	private cardBlock(sentence: string, cardWidth: number): string[] {
@@ -679,7 +1004,7 @@ export class ActivityLineComponent implements Component {
 			const clipped = clipToWidth(row, cardWidth);
 			const fill = " ".repeat(Math.max(0, cardWidth - visibleWidth(clipped)));
 
-			return theme.bg(bg, `${keepCardBg(bg, `${clipped}\x1b[0m`)}${fill}`);
+			return theme.bg(bg, `${keepCardBg(bg, `${clipped}${ANSI_RESET}`)}${fill}`);
 		});
 
 		const padding = theme.bg(bg, " ".repeat(cardWidth));
@@ -690,7 +1015,7 @@ export class ActivityLineComponent implements Component {
 	private wrappedRows(body: string, cardWidth: number): string[] {
 		const indent = /^\s*/.exec(stripAnsi(body))?.[0] ?? "";
 		const content = body.slice(indent.length);
-		const width = Math.max(1, cardWidth - indent.length - 2);
+		const width = Math.max(MINIMUM_WRAP_WIDTH, cardWidth - indent.length - WRAP_PAD);
 
 		return wrapTextWithAnsi(content, width).map((row) => `${indent}${row}`);
 	}
@@ -711,7 +1036,9 @@ export class ActivityLineComponent implements Component {
 
 		const cut = Math.round(command.length * progress);
 		const head =
-			cut > 0 ? `\x1b[1m\x1b[9m${theme.fg("error", command.slice(0, cut))}\x1b[0m` : "";
+			cut > 0
+				? theme.bold(theme.strikethrough(theme.fg("error", command.slice(0, cut))))
+				: "";
 		const tail = theme.fg("error", command.slice(cut));
 
 		return `${indent}${head}${tail}`;
@@ -723,7 +1050,7 @@ export class ActivityLineComponent implements Component {
 		this.strikeTimer = setTimeout(() => {
 			this.strikeTimer = undefined;
 			this.ui?.requestRender();
-		}, STRIKE_FRAME);
+		}, STRIKE_FRAME_MS);
 
 		this.strikeTimer.unref?.();
 	}

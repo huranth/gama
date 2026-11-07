@@ -1,5 +1,7 @@
 import type { TUI } from "@huranth/gama-tui";
 
+const MS_PER_SECOND = 1000;
+
 export class CountdownTimer {
 	private intervalId: ReturnType<typeof setInterval> | undefined;
 	private remainingSeconds: number;
@@ -16,7 +18,7 @@ export class CountdownTimer {
 		this.tui = tui;
 		this.onTick = onTick;
 		this.onExpire = onExpire;
-		this.remainingSeconds = Math.ceil(timeoutMs / 1000);
+		this.remainingSeconds = Math.ceil(timeoutMs / MS_PER_SECOND);
 		this.onTick(this.remainingSeconds);
 
 		this.intervalId = setInterval(() => {
@@ -30,7 +32,7 @@ export class CountdownTimer {
 				this.dispose();
 				this.onExpire();
 			}
-		}, 1000);
+		}, MS_PER_SECOND);
 		this.intervalId.unref?.();
 	}
 

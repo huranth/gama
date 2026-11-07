@@ -1,5 +1,5 @@
 import { truncateToWidth } from "@huranth/gama-tui";
-import { getTextOutput, replaceTabs } from "../../../core/tools/render-utils.ts";
+import { getTextOutput, replaceTabs } from "../../core/tools/render-utils.ts";
 import { getLanguageFromPath, highlightCode, theme } from "../theme/theme.ts";
 import type { ActivityRecord } from "./activity.ts";
 import { renderDiff } from "./diff.ts";
@@ -68,7 +68,7 @@ function writeContentRows(record: ActivityRecord): string[] | undefined {
 }
 
 function resultTextRows(record: ActivityRecord): string[] {
-	const output = getTextOutput(record.result, true);
+	const output = stripReadPrefix(record, getTextOutput(record.result, true));
 	if (!output.trim()) return [];
 
 	const lines = toLines(output);
@@ -93,6 +93,20 @@ function resultTextRows(record: ActivityRecord): string[] {
 
 		return highlighted[index] ?? theme.fg(color, raw);
 	});
+}
+
+function stripReadPrefix(record: ActivityRecord, output: string): string {
+	if (record.status !== "error" || record.name !== "read") return output;
+
+	const args = cardArgs(record);
+	const path = args.path ?? args.file_path;
+	if (!path) return output;
+
+	for (const prefix of [`Could not read ${path}, `, `Could not read the image ${path}, `]) {
+		if (output.startsWith(prefix)) return output.slice(prefix.length);
+	}
+
+	return output;
 }
 
 function pendingTextParts(args: CardBodyArgs): string[] {

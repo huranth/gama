@@ -1,8 +1,8 @@
 import { type Component, Loader, type TUI, truncateToWidth } from "@huranth/gama-tui";
-import type { WorkingIndicatorOptions } from "../../../core/ext/index.ts";
+import type { WorkingIndicatorOptions } from "../../core/ext/index.ts";
 import { theme } from "../theme/theme.ts";
-import { CountdownTimer } from "./countdown-timer.ts";
-import { keyText } from "./keybinding-hints.ts";
+
+const BORDER_PADDING = 2;
 
 export type StatusIndicatorKind = "working" | "retry" | "compaction" | "branchSummary";
 
@@ -24,8 +24,13 @@ export class StatusIndicator extends Loader {
 	}
 
 	renderInBorder(width: number): string {
-		const line = super.render(width + 2)[1] ?? "";
-		const trimmed = line.startsWith(" ") ? line.slice(1).trimEnd() : line.trimEnd();
+		// Second row
+		const line = super.render(width + BORDER_PADDING)[1] ?? "";
+
+		// Trim padding
+		const trimmed = line
+			.replace(/^\s+/, "")
+			.replace(/\s+(?=(?:\x1b\[[0-9;]*m|\s)*$)/g, "");
 
 		return truncateToWidth(trimmed, width, "");
 	}
@@ -58,49 +63,25 @@ export class WorkingStatusIndicator extends StatusIndicator {
 }
 
 export class RetryStatusIndicator extends StatusIndicator {
-	private countdown: CountdownTimer | undefined;
-
-	constructor(ui: TUI, attempt: number, maxAttempts: number, delayMs: number) {
-		const cancelHint = keyText("app.interrupt");
-		const retryMessage = (seconds: number) =>
-			`Retrying (${attempt}/${maxAttempts}) in ${seconds}s... (${cancelHint} to cancel)`;
-		const seconds = Math.ceil(delayMs / 1000);
-
+	constructor(ui: TUI, attempt: number, maxAttempts: number) {
 		super(
 			"retry",
 			ui,
 			(spinner) => theme.fg("warning", spinner),
 			(text) => theme.fg("muted", text),
-			retryMessage(seconds),
+			`Retrying ${attempt}/${maxAttempts}`,
 		);
-
-		this.countdown = new CountdownTimer(
-			delayMs,
-			ui,
-			(seconds) => {
-				this.setMessage(retryMessage(seconds));
-			},
-			() => {
-				this.countdown = undefined;
-			},
-		);
-	}
-
-	override dispose(): void {
-		this.countdown?.dispose();
-		this.countdown = undefined;
-		super.dispose();
 	}
 }
 
 export class CompactionStatusIndicator extends StatusIndicator {
 	constructor(ui: TUI, reason: CompactionStatusReason) {
-		const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
-		const overflowPrefix = reason === "overflow" ? "Context overflow detected, " : "";
-		const isManual = reason === "manual";
-		const label = isManual
-			? `Compacting context... ${cancelHint}`
-			: `${overflowPrefix}Auto-compacting... ${cancelHint}`;
+		let label = "Auto-compacting";
+		if (reason === "manual") {
+			label = "Compacting context";
+		} else if (reason === "overflow") {
+			label = "Context overflow, auto-compacting";
+		}
 
 		super(
 			"compaction",
@@ -119,7 +100,7 @@ export class BranchSummaryStatusIndicator extends StatusIndicator {
 			ui,
 			(spinner) => theme.fg("accent", spinner),
 			(text) => theme.fg("muted", text),
-			`Summarizing branch... (${keyText("app.interrupt")} to cancel)`,
+			"Summarizing branch",
 		);
 	}
 }
