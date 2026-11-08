@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
@@ -9,24 +9,26 @@ import {
 	type Model,
 } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { AgentSession } from "../src/core/agent-session.ts";
-import type { AgentSessionRuntime } from "../src/core/agent-session-runtime.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { RunSession } from "../src/core/session/session.ts";
+import type { SessionRuntime } from "../src/core/session/runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import type { LoadExtensionsResult } from "../src/core/ext/index.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
+import { runRpcMode } from "../src/rpc/server.ts";
 import {
 	createInMemoryModelRegistry,
 	getModelRuntime,
 	registerTestAnthropicProvider,
 	testAnthropicModel,
-} from "./model-runtime-test-utils.ts";
-import { createTestExtensionsResult, createTestResourceLoader } from "./utilities.ts";
+} from "./model-run-test-utils.ts";
+import { createTestExtensionsResult, createTestResourceLoader } from "./test-helpers.ts";
 
 const rpcIo = vi.hoisted(() => ({
 	outputLines: [] as string[],
 	lineHandler: undefined as ((line: string) => void) | undefined,
+	inputErrorHandler: undefined as ((error: Error) => void) | undefined,
+	failingWrites: false,
 }));
 
 vi.mock("../src/core/output-guard.js", () => ({
@@ -34,16 +36,24 @@ vi.mock("../src/core/output-guard.js", () => ({
 	takeOverStdout: vi.fn(),
 	waitForRawStdoutBackpressure: vi.fn(async () => {}),
 	writeRawStdout: (line: string) => {
+		if (rpcIo.failingWrites && line.includes('"get_state"')) {
+			throw new Error("write broke");
+		}
 		rpcIo.outputLines.push(line);
 	},
 }));
 
-vi.mock("../src/modes/tui/theme/theme.js", () => ({ theme: {} }));
+vi.mock("../src/term/theme/theme.js", () => ({ theme: {} }));
 
-vi.mock("../src/modes/rpc/jsonl.js", () => ({
+vi.mock("../src/rpc/jsonl.js", () => ({
 	attachJsonlLineReader: vi.fn(
-		(_stream: NodeJS.ReadableStream, onLine: (line: string) => void) => {
+		(
+			_stream: NodeJS.ReadableStream,
+			onLine: (line: string) => void,
+			onError: (error: Error) => void,
+		) => {
 			rpcIo.lineHandler = onLine;
+			rpcIo.inputErrorHandler = onError;
 			return () => {};
 		},
 	),
@@ -108,7 +118,7 @@ async function createRuntimeHost(options: {
 	model?: Model<any>;
 	extensionsResult?: LoadExtensionsResult;
 }): Promise<{
-	runtimeHost: AgentSessionRuntime;
+	runtimeHost: SessionRuntime;
 	cleanup: () => Promise<void>;
 }> {
 	const tempDir = join(
@@ -122,7 +132,7 @@ async function createRuntimeHost(options: {
 		throw new Error("Test model not found");
 	}
 
-	const agent = new Agent({
+	const agent = new Runner({
 		getApiKey: () => "test-key",
 		initialState: {
 			model,
@@ -145,8 +155,8 @@ async function createRuntimeHost(options: {
 		},
 	});
 
-	const sessionManager = SessionManager.inMemory();
-	const settingsManager = SettingsManager.create(tempDir, tempDir);
+	const sessionManager = SessionStore.inMemory();
+	const settingsManager = SettingsStore.create(tempDir, tempDir);
 	const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 	const modelRegistry = await createInMemoryModelRegistry(authStorage);
 	registerTestAnthropicProvider(modelRegistry);
@@ -154,7 +164,7 @@ async function createRuntimeHost(options: {
 		await authStorage.modify("anthropic", async () => ({ type: "api_key", key: "test-key" }));
 	}
 
-	const session = new AgentSession({
+	const session = new RunSession({
 		agent,
 		sessionManager,
 		settingsManager,
@@ -170,7 +180,7 @@ async function createRuntimeHost(options: {
 		fork: vi.fn(async () => ({ cancelled: true, selectedText: "" })),
 		dispose: vi.fn(async () => {}),
 		setRebindSession: vi.fn(),
-	} as unknown as AgentSessionRuntime;
+	} as unknown as SessionRuntime;
 
 	return {
 		runtimeHost,
@@ -188,11 +198,13 @@ async function createRuntimeHost(options: {
 
 async function startRpcMode(options: Parameters<typeof createRuntimeHost>[0]): Promise<{
 	lineHandler: (line: string) => void;
-	runtimeHost: AgentSessionRuntime;
+	runtimeHost: SessionRuntime;
 	cleanup: () => Promise<void>;
 }> {
 	rpcIo.outputLines = [];
 	rpcIo.lineHandler = undefined;
+	rpcIo.inputErrorHandler = undefined;
+	rpcIo.failingWrites = false;
 
 	const { runtimeHost, cleanup } = await createRuntimeHost(options);
 	void runRpcMode(runtimeHost);
@@ -205,6 +217,32 @@ describe("RPC prompt response semantics", () => {
 	afterEach(() => {
 		rpcIo.outputLines = [];
 		rpcIo.lineHandler = undefined;
+		rpcIo.inputErrorHandler = undefined;
+		rpcIo.failingWrites = false;
+	});
+
+	it("keeps reading lines after one line handler throws", async () => {
+		const { lineHandler, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+
+		try {
+			rpcIo.failingWrites = true;
+			lineHandler(JSON.stringify({ id: "boom", type: "get_state" }));
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual(
+					expect.objectContaining({ command: "input", success: false, error: "write broke" }),
+				);
+			});
+
+			rpcIo.failingWrites = false;
+			lineHandler(JSON.stringify({ id: "after", type: "get_state" }));
+			await vi.waitFor(() => {
+				expect(parseOutputLines(rpcIo.outputLines)).toContainEqual(
+					expect.objectContaining({ id: "after", command: "get_state", success: true }),
+				);
+			});
+		} finally {
+			await cleanup();
+		}
 	});
 
 	it("emits one failure response when prompt preflight rejects", async () => {
@@ -236,12 +274,41 @@ describe("RPC prompt response semantics", () => {
 					type: "response",
 					command: "prompt",
 					success: false,
-					error: expect.stringContaining(
-						"No API key found for fake-provider.\n\nConfigure a provider API key",
-					),
+					error: expect.stringContaining("No API key found for fake-provider."),
 				});
 			});
 		} finally {
+			await cleanup();
+		}
+	});
+
+	it("responds safely when prompt rejects a non-Error", async () => {
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+		});
+		const session = runtimeHost.session as unknown as {
+			prompt: (...args: unknown[]) => Promise<unknown>;
+		};
+		const originalPrompt = session.prompt;
+		session.prompt = () => Promise.reject("prompt failed");
+
+		try {
+			lineHandler(JSON.stringify({ id: "b2a", type: "prompt", message: "Hello" }));
+
+			await vi.waitFor(() => {
+				const responses = getPromptResponses(rpcIo.outputLines, "b2a");
+				expect(responses).toHaveLength(1);
+				expect(responses[0]).toMatchObject({
+					id: "b2a",
+					type: "response",
+					command: "prompt",
+					success: false,
+					error: "prompt failed",
+				});
+			});
+		} finally {
+			session.prompt = originalPrompt;
 			await cleanup();
 		}
 	});
@@ -268,7 +335,9 @@ describe("RPC prompt response semantics", () => {
 		}
 	});
 
-	it("reports extension commands and intercepted input as handled without starting a run", async () => {
+	it(
+		"reports extension commands and intercepted input as handled without starting a run",
+		async () => {
 		const { lineHandler, cleanup } = await startRpcMode({
 			withAuth: false,
 			responseDelayMs: 0,
@@ -510,7 +579,7 @@ describe("RPC prompt response semantics", () => {
 
 		try {
 			await vi.waitFor(() => expect(sessionStarts).toHaveLength(1));
-			// The real runtime calls the registered rebind callback itself when it replaces the session.
+			// Rebind
 			const rebind = vi.mocked(runtimeHost.setRebindSession).mock.calls[0]![0]!;
 			vi.mocked(runtimeHost.newSession).mockImplementation((async () => {
 				await rebind(runtimeHost.session);
@@ -593,6 +662,44 @@ describe("RPC prompt response semantics", () => {
 		} finally {
 			exit.mockRestore();
 			await cleanup();
+		}
+	});
+
+	it("rejects pending extension dialogs when the input stream fails", async () => {
+		const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+		const rejections: string[] = [];
+		const { lineHandler, runtimeHost, cleanup } = await startRpcMode({
+			withAuth: true,
+			responseDelayMs: 0,
+			extensionsResult: await createTestExtensionsResult([
+				(gama) => {
+					gama.on("input", async (_event, ctx) => {
+						await ctx.ui
+							.confirm("Proceed?", "blocked on the client")
+							.catch((error: unknown) => {
+								rejections.push(error instanceof Error ? error.message : String(error));
+							});
+					});
+				},
+			]),
+		});
+
+		try {
+			lineHandler(JSON.stringify({ id: "dlg", type: "prompt", message: "Hello" }));
+			await vi.waitFor(() => {
+				expect(
+					parseOutputLines(rpcIo.outputLines).some((l) => l.type === "extension_ui_request"),
+				).toBe(true);
+			});
+
+			rpcIo.inputErrorHandler?.(new Error("stdin broke"));
+
+			await vi.waitFor(() => expect(rejections).toEqual(["Input stream failed"]));
+			await vi.waitFor(() => expect(runtimeHost.dispose).toHaveBeenCalledTimes(1));
+			expect(exit).toHaveBeenCalledWith(1);
+		} finally {
+			await cleanup();
+			exit.mockRestore();
 		}
 	});
 

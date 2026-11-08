@@ -2,12 +2,12 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { discoverAndLoadExtensions } from "../src/core/ext/loader.ts";
-import { ExtensionRunner } from "../src/core/ext/runner.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { PluginHost } from "../src/core/ext/runner.ts";
+import { SessionStore } from "../src/core/sessions.ts";
 
-import { createInMemoryModelRegistry } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRegistry } from "./model-run-test-utils.ts";
 
 describe("Input Event", () => {
 	let tempDir: string;
@@ -28,9 +28,9 @@ describe("Input Event", () => {
 		for (let i = 0; i < extensions.length; i++)
 			fs.writeFileSync(path.join(extensionsDir, `e${i}.ts`), extensions[i]);
 		const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-		const sm = SessionManager.inMemory();
+		const sm = SessionStore.inMemory();
 		const mr = await createInMemoryModelRegistry(AuthStorage.inMemory());
-		return new ExtensionRunner(result.extensions, result.runtime, tempDir, sm, mr);
+		return new PluginHost(result.extensions, result.runtime, tempDir, sm, mr);
 	}
 
 	it("returns continue when no handlers, undefined return, or explicit continue", async () => {
@@ -56,7 +56,8 @@ describe("Input Event", () => {
 
 	it("transforms and replaces images when provided", async () => {
 		const r = await createRunner(
-			`export default p => p.on("input", async () => ({ action: "transform", text: "X", images: [{ type: "image", data: "new", mimeType: "image/jpeg" }] }));`,
+			`export default p => p.on("input", async () => ({ action: "transform", ` +
+				`text: "X", images: [{ type: "image", data: "new", mimeType: "image/jpeg" }] }));`,
 		);
 		const result = await r.emitInput(
 			"hi",
@@ -91,7 +92,8 @@ describe("Input Event", () => {
 
 	it("passes source correctly for all source types", async () => {
 		const r = await createRunner(
-			`export default p => p.on("input", async e => { globalThis.testVar = e.source; return { action: "continue" }; });`,
+			`export default p => p.on("input", async e => { globalThis.testVar = e.source; ` +
+				`return { action: "continue" }; });`,
 		);
 		for (const source of ["interactive", "rpc", "extension"] as const) {
 			await r.emitInput("x", undefined, source);
@@ -101,7 +103,8 @@ describe("Input Event", () => {
 
 	it("passes streamingBehavior correctly", async () => {
 		const r = await createRunner(
-			`export default p => p.on("input", async e => { globalThis.testVar = e.streamingBehavior; return { action: "continue" }; });`,
+			`export default p => p.on("input", async e => { globalThis.testVar = e.streamingBehavior; ` +
+				`return { action: "continue" }; });`,
 		);
 		await r.emitInput("x", undefined, "interactive", "steer");
 		expect((globalThis as any).testVar).toBe("steer");

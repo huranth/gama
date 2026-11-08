@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import type { ToolRenderContext } from "../src/core/ext/types.ts";
 import { codemodeRenderers } from "../src/ext/codemode/renderer.ts";
 import type { CodemodeToolDetails } from "../src/ext/codemode/tool.ts";
-import { initTheme, theme } from "../src/modes/tui/theme/theme.ts";
+import { initTheme, theme } from "../src/term/theme/theme.ts";
 
 function render(
 	result: AgentToolResult<CodemodeToolDetails | undefined>,
@@ -114,7 +114,7 @@ describe("codemode renderer", () => {
 		const lines = text.split("\n");
 		expect(lines).toHaveLength(7);
 		expect(lines.slice(0, 5)).toEqual(Array(5).fill("x".repeat(50)));
-		expect(lines[5]).toMatch(/^\.\.\. \(15 more lines,/);
+		expect(lines[5]).toBe("... (15 more lines)");
 		expect(lines[6]).toBe("Full output: /tmp/out.txt");
 	});
 });

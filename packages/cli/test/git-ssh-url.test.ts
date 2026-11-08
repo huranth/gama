@@ -3,7 +3,7 @@ import { parseGitUrl } from "../src/utils/git.ts";
 
 describe("Git URL Parsing", () => {
 	describe("protocol URLs (accepted without git: prefix)", () => {
-		it("should parse HTTPS URL", () => {
+		it("parse HTTPS URL", () => {
 			const result = parseGitUrl("https://github.com/user/repo");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -12,7 +12,7 @@ describe("Git URL Parsing", () => {
 			});
 		});
 
-		it("should parse ssh:// URL", () => {
+		it("parse ssh:// URL", () => {
 			const result = parseGitUrl("ssh://git@github.com/user/repo");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -21,7 +21,7 @@ describe("Git URL Parsing", () => {
 			});
 		});
 
-		it("should parse protocol URL with ref", () => {
+		it("parse protocol URL with ref", () => {
 			const result = parseGitUrl("https://github.com/user/repo@v1.0.0");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -33,7 +33,7 @@ describe("Git URL Parsing", () => {
 	});
 
 	describe("shorthand URLs (accepted only with git: prefix)", () => {
-		it("should parse git@host:path with git: prefix", () => {
+		it("parse git@host:path with git: prefix", () => {
 			const result = parseGitUrl("git:git@github.com:user/repo");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -42,7 +42,7 @@ describe("Git URL Parsing", () => {
 			});
 		});
 
-		it("should parse host/path shorthand with git: prefix", () => {
+		it("parse host/path shorthand with git: prefix", () => {
 			const result = parseGitUrl("git:github.com/user/repo");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -51,7 +51,7 @@ describe("Git URL Parsing", () => {
 			});
 		});
 
-		it("should parse shorthand with ref and git: prefix", () => {
+		it("parse shorthand with ref and git: prefix", () => {
 			const result = parseGitUrl("git:git@github.com:user/repo@v1.0.0");
 			expect(result).toMatchObject({
 				host: "github.com",
@@ -62,7 +62,7 @@ describe("Git URL Parsing", () => {
 		});
 	});
 
-	it("should reject unsafe git install path inputs", () => {
+	it("reject unsafe git install path inputs", () => {
 		for (const source of [
 			"git:git@evil.example:../../victim/repo",
 			"https://evil.example/..%2F..%2Fvictim/repo",
@@ -76,15 +76,15 @@ describe("Git URL Parsing", () => {
 	});
 
 	describe("unsupported without git: prefix", () => {
-		it("should reject git@host:path without git: prefix", () => {
+		it("reject git@host:path without git: prefix", () => {
 			expect(parseGitUrl("git@github.com:user/repo")).toBeNull();
 		});
 
-		it("should reject host/path shorthand without git: prefix", () => {
+		it("reject host/path shorthand without git: prefix", () => {
 			expect(parseGitUrl("github.com/user/repo")).toBeNull();
 		});
 
-		it("should reject user/repo shorthand", () => {
+		it("reject user/repo shorthand", () => {
 			expect(parseGitUrl("user/repo")).toBeNull();
 		});
 	});

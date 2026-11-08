@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { DefaultPackageManager } from "../src/core/package-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
+import { getGitInstallPath } from "../src/core/pkg/dirs.ts";
+import { parseSource } from "../src/core/pkg/source.ts";
+import type { PackageContext } from "../src/core/pkg/types.ts";
+import { SettingsStore } from "../src/core/settings.ts";
 import { allowNetwork } from "./test-network-env.ts";
 
 function git(args: string[], cwd: string): string {
@@ -39,18 +42,13 @@ function getFileContent(repoDir: string, filename: string): string {
 	return readFileSync(join(repoDir, filename), "utf-8");
 }
 
-type GitSourceForTest = {
-	type: "git";
-	repo: string;
-	host: string;
-	path: string;
-	pinned: boolean;
-	ref?: string;
-};
+function temporaryGitPath(agentDir: string, source: string): string {
+	const parsed = parseSource(source);
 
-interface PackageManagerPathInternals {
-	parseSource(source: string): GitSourceForTest;
-	getGitInstallPath(source: GitSourceForTest, scope: "temporary"): string;
+	if (parsed.type !== "git") throw new Error("Not a git source");
+
+	// agentDir only
+	return getGitInstallPath({ agentDir } as PackageContext, parsed, "temporary");
 }
 
 describe("DefaultPackageManager git update", () => {
@@ -58,7 +56,7 @@ describe("DefaultPackageManager git update", () => {
 	let remoteDir: string;
 	let agentDir: string;
 	let installedDir: string;
-	let settingsManager: SettingsManager;
+	let settingsManager: SettingsStore;
 	let packageManager: DefaultPackageManager;
 
 	const gitSource = "git:github.com/test/extension";
@@ -77,7 +75,7 @@ describe("DefaultPackageManager git update", () => {
 
 		mkdirSync(agentDir, { recursive: true });
 
-		settingsManager = SettingsManager.inMemory();
+		settingsManager = SettingsStore.inMemory();
 		packageManager = new DefaultPackageManager({
 			cwd: tempDir,
 			agentDir,
@@ -105,7 +103,7 @@ describe("DefaultPackageManager git update", () => {
 	}
 
 	describe("normal updates (no force-push)", () => {
-		it("should skip reset, clean, and install when already up to date", async () => {
+		it("skip reset, clean, and install when already up to date", async () => {
 			mkdirSync(remoteDir, { recursive: true });
 			initGitRepo(remoteDir);
 			writeFileSync(
@@ -152,7 +150,7 @@ describe("DefaultPackageManager git update", () => {
 			expect(executedCommands).not.toContain("npm install");
 		});
 
-		it("should update to latest commit when remote has new commits", async () => {
+		it("update to latest commit when remote has new commits", async () => {
 			setupRemoteAndInstall();
 			expect(getFileContent(installedDir, "extension.ts")).toBe("// v1");
 
@@ -166,7 +164,7 @@ describe("DefaultPackageManager git update", () => {
 	});
 
 	describe("force-push scenarios", () => {
-		it("should handle complete history rewrite", async () => {
+		it("handle complete history rewrite", async () => {
 			setupRemoteAndInstall();
 
 			createCommit(remoteDir, "extension.ts", "// v2", "v2");
@@ -188,7 +186,7 @@ describe("DefaultPackageManager git update", () => {
 
 	describe("pinned sources", () => {
 		it(
-			"should checkout the configured pinned git ref during " + "full and targeted updates",
+			"checkouteckout the configured pinned git ref during " + "full and targeted updates",
 			async () => {
 				mkdirSync(remoteDir, { recursive: true });
 				initGitRepo(remoteDir);
@@ -221,12 +219,8 @@ describe("DefaultPackageManager git update", () => {
 	});
 
 	describe("temporary git sources", () => {
-		it("should refresh cached temporary git sources when resolving", async () => {
-			const managerWithPaths = packageManager as unknown as PackageManagerPathInternals;
-			const cachedDir = managerWithPaths.getGitInstallPath(
-				managerWithPaths.parseSource(gitSource),
-				"temporary",
-			);
+		it("refresh cached temporary git sources when resolving", async () => {
+			const cachedDir = temporaryGitPath(agentDir, gitSource);
 			const extensionFile = join(cachedDir, "gama-extensions", "session-breakdown.ts");
 
 			rmSync(cachedDir, { recursive: true, force: true });

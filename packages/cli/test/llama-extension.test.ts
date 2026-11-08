@@ -7,7 +7,7 @@ import type {
 	ModelsPublication,
 	ModelsStoreEntry,
 } from "@huranth/gama-ai";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { createEventBus } from "../src/core/event-bus.ts";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/ext/loader.ts";
 import {
@@ -36,6 +36,7 @@ function json(response: ServerResponse, value: unknown): void {
 }
 
 afterEach(async () => {
+	vi.unstubAllGlobals();
 	await Promise.all(
 		servers.splice(0).map(
 			(server) =>
@@ -69,7 +70,7 @@ describe("llama.cpp extension", () => {
 		expect(normalizeLlamaServerUrl("https://example.com/prefix/v1")).toBe(
 			"https://example.com/prefix",
 		);
-		expect(() => normalizeLlamaServerUrl("file:///tmp/llama")).toThrow("http or https");
+		expect(() => normalizeLlamaServerUrl("file:///tmp/llama")).toThrow("Invalid server URL");
 	});
 
 	it("exposes loaded and sleeping models with router metadata", () => {
@@ -585,6 +586,27 @@ describe("llama.cpp extension", () => {
 		);
 		expect(model.status.value).toBe("loaded");
 		expect(progress).toContain("Loading text model");
+	});
+
+	it("releases the SSE reader after the stream closes", async () => {
+		const stream = new ReadableStream<Uint8Array>({
+			start(controller) {
+				controller.enqueue(
+					new TextEncoder().encode('data: {"model":"m","event":"status_change"}\n\n'),
+				);
+				controller.close();
+			},
+		});
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => new Response(stream, { status: 200 })),
+		);
+		const events: string[] = [];
+
+		await new LlamaClient("http://127.0.0.1:1").watch((event) => events.push(event.event));
+
+		expect(events).toEqual(["status_change"]);
+		expect(stream.locked).toBe(false);
 	});
 
 	it("downloads with byte progress and returns the refreshed catalog", async () => {

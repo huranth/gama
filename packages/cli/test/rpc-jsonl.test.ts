@@ -1,6 +1,6 @@
 import { Readable } from "node:stream";
 import { describe, expect, test } from "vitest";
-import { attachJsonlLineReader, serializeJsonLine } from "../src/modes/rpc/jsonl.ts";
+import { attachJsonlLineReader, serializeJsonLine } from "../src/rpc/jsonl.ts";
 
 describe("RPC JSONL framing", () => {
 	test("serializes strict JSONL records without escaping Unicode separators", () => {
@@ -44,6 +44,29 @@ describe("RPC JSONL framing", () => {
 		await done;
 
 		expect(lines).toEqual(['{"a":1}', '{"b":2}']);
+	});
+
+	test("reports a stream error instead of treating it as a clean end", async () => {
+		const lines: string[] = [];
+		const errors: Error[] = [];
+		const stream = new Readable({ read() {} });
+
+		attachJsonlLineReader(
+			stream,
+			(line) => {
+				lines.push(line);
+			},
+			(error) => {
+				errors.push(error);
+			},
+		);
+
+		stream.push(Buffer.from('{"a":1}\n{'));
+		stream.destroy(new Error("stdin broke"));
+		await new Promise((resolve) => setTimeout(resolve, 20));
+
+		expect(errors.map((error) => error.message)).toEqual(["stdin broke"]);
+		expect(lines).toEqual(['{"a":1}']);
 	});
 
 	test("emits a final line without trailing LF", async () => {

@@ -4,12 +4,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { AgentEvent } from "@huranth/gama-agent-core";
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } from "vitest";
-import { RpcClient } from "../src/modes/rpc/rpc-client.ts";
+import { RpcClient } from "../src/rpc/client.ts";
 import { type AnthropicMockServer, startAnthropicMockServer } from "./anthropic-mock.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
-// Config.
+// Config
 function writeMockProviderConfig(agentDir: string, baseUrl: string): void {
 	mkdirSync(agentDir, { recursive: true });
 	writeFileSync(
@@ -77,7 +77,7 @@ describe("RPC mode", () => {
 		}
 	});
 
-	test("should get state", async () => {
+	test("let state", async () => {
 		await client.start();
 		const state = await client.getState();
 
@@ -88,7 +88,7 @@ describe("RPC mode", () => {
 		expect(state.messageCount).toBe(0);
 	}, 30000);
 
-	test("should save messages to session file", async () => {
+	test("save messages to session file", async () => {
 		await client.start();
 
 		const events = await client.promptAndWait("Reply with just the word 'hello'");
@@ -120,7 +120,7 @@ describe("RPC mode", () => {
 		expect(roles).toContain("assistant");
 	}, 90000);
 
-	test("should handle manual compaction", async () => {
+	test("handle manual compaction", async () => {
 		await client.start();
 
 		await client.promptAndWait("Say hello");
@@ -144,7 +144,7 @@ describe("RPC mode", () => {
 		expect(compactionEntries[0].summary).toBeDefined();
 	}, 120000);
 
-	test("should execute bash command", async () => {
+	test("execute bash command", async () => {
 		await client.start();
 
 		const result = await client.bash("echo hello");
@@ -153,7 +153,7 @@ describe("RPC mode", () => {
 		expect(result.cancelled).toBe(false);
 	}, 30000);
 
-	test("should add bash output to context", async () => {
+	test("add bash output to context", async () => {
 		await client.start();
 
 		await client.promptAndWait("Say hi");
@@ -179,14 +179,15 @@ describe("RPC mode", () => {
 		expect(bashMessages[0].message.output).toContain(uniqueValue);
 	}, 90000);
 
-	test("should include bash output in LLM context", async () => {
+	test("include bash output in LLM context", async () => {
 		await client.start();
 
 		const uniqueValue = `unique-${Date.now()}`;
 		await client.bash(`echo ${uniqueValue}`);
 
 		const events = await client.promptAndWait(
-			"What was the exact output of the echo command I just ran? Reply with just the value, nothing else.",
+			"What was the exact output of the echo command I just ran? Reply with just the value, nothing " +
+				"else.",
 		);
 
 		const messageEndEvents = events.filter((e) => e.type === "message_end") as AgentEvent[];
@@ -200,7 +201,7 @@ describe("RPC mode", () => {
 		expect(textContent?.text).toContain(uniqueValue);
 	}, 90000);
 
-	test("should set and get thinking level", async () => {
+	test("let and get thinking level", async () => {
 		await client.start();
 
 		await client.setThinkingLevel("high");
@@ -209,7 +210,7 @@ describe("RPC mode", () => {
 		expect(state.thinkingLevel).toBe("high");
 	}, 30000);
 
-	test("should cycle thinking level", async () => {
+	test("cycle thinking level", async () => {
 		await client.start();
 
 		const initialState = await client.getState();
@@ -223,7 +224,7 @@ describe("RPC mode", () => {
 		expect(newState.thinkingLevel).toBe(result!.level);
 	}, 30000);
 
-	test("should get available thinking levels", async () => {
+	test("let available thinking levels", async () => {
 		await client.start();
 
 		const levels = await client.getAvailableThinkingLevels();
@@ -242,7 +243,7 @@ describe("RPC mode", () => {
 		}
 	}, 30000);
 
-	test("should get available models", async () => {
+	test("let available models", async () => {
 		await client.start();
 
 		const models = await client.getAvailableModels();
@@ -256,7 +257,7 @@ describe("RPC mode", () => {
 		}
 	}, 30000);
 
-	test("should get session stats", async () => {
+	test("let session stats", async () => {
 		await client.start();
 
 		await client.promptAndWait("Hello");
@@ -268,7 +269,7 @@ describe("RPC mode", () => {
 		expect(stats.assistantMessages).toBeGreaterThanOrEqual(1);
 	}, 90000);
 
-	test("should create new session", async () => {
+	test("create new session", async () => {
 		await client.start();
 
 		await client.promptAndWait("Hello");
@@ -282,7 +283,7 @@ describe("RPC mode", () => {
 		expect(state.messageCount).toBe(0);
 	}, 90000);
 
-	test("should export to HTML", async () => {
+	test("export to HTML", async () => {
 		await client.start();
 
 		await client.promptAndWait("Hello");
@@ -293,7 +294,7 @@ describe("RPC mode", () => {
 		expect(existsSync(result.path)).toBe(true);
 	}, 90000);
 
-	test("should get last assistant text", async () => {
+	test("let last assistant text", async () => {
 		await client.start();
 
 		let text = await client.getLastAssistantText();
@@ -305,7 +306,7 @@ describe("RPC mode", () => {
 		expect(text).toContain("test123");
 	}, 90000);
 
-	test("should get session entries with since cursor", async () => {
+	test("let session entries with since cursor", async () => {
 		await client.start();
 
 		await client.promptAndWait("Reply with just 'ok'");
@@ -324,7 +325,7 @@ describe("RPC mode", () => {
 		await expect(client.getEntries("nonexistent-id")).rejects.toThrow("Entry not found");
 	}, 90000);
 
-	test("should get session tree", async () => {
+	test("let session tree", async () => {
 		await client.start();
 
 		await client.promptAndWait("Reply with just 'ok'");
@@ -344,7 +345,7 @@ describe("RPC mode", () => {
 		expect(chainIds).toEqual(entries.map((e) => e.id));
 	}, 90000);
 
-	test("should retain pre-compaction entries in get_entries", async () => {
+	test("retain pre-compaction entries in get_entries", async () => {
 		await client.start();
 
 		await client.promptAndWait("Reply with just 'ok'");
@@ -359,7 +360,7 @@ describe("RPC mode", () => {
 		expect(after.entries.some((e) => e.type === "compaction")).toBe(true);
 	}, 120000);
 
-	test("should set and get session name", async () => {
+	test("let and get session name", async () => {
 		await client.start();
 
 		let state = await client.getState();

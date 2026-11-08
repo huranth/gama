@@ -1,15 +1,22 @@
 import { dirname, join } from "node:path";
 import * as readline from "node:readline";
 import { fileURLToPath } from "node:url";
-import { RpcClient } from "../src/modes/rpc/rpc-client.ts";
+import { RpcClient } from "../src/rpc/client.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+const DEFAULT_MODEL = "claude-sonnet-4-20250514";
+
+// Model override
+function pickModel(): string {
+	return process.argv[2] ?? process.env.GAMA_MODEL ?? DEFAULT_MODEL;
+}
 
 async function main() {
 	const client = new RpcClient({
 		cliPath: join(__dirname, "../dist/cli.js"),
 		provider: "anthropic",
-		model: "claude-sonnet-4-20250514",
+		model: pickModel(),
 		args: ["--no-session"],
 	});
 
