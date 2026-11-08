@@ -26,7 +26,7 @@ import {
 	type SessionEntry,
 	type SessionMessageEntry,
 	type ThinkingLevelChangeEntry,
-} from "../src/core/session-manager.ts";
+} from "../src/core/sessions.ts";
 
 function loadLargeSessionEntries(): SessionEntry[] {
 	const sessionPath = join(__dirname, "fixtures/large-session.jsonl");
@@ -189,19 +189,19 @@ function extractText(messages: AgentMessage[]): string {
 }
 
 describe("Token calculation", () => {
-	it("should calculate total context tokens from usage", () => {
+	it("calculate total context tokens from usage", () => {
 		const usage = createMockUsage(1000, 500, 200, 100);
 		expect(calculateContextTokens(usage)).toBe(1800);
 	});
 
-	it("should handle zero values", () => {
+	it("handle zero values", () => {
 		const usage = createMockUsage(0, 0, 0, 0);
 		expect(calculateContextTokens(usage)).toBe(0);
 	});
 });
 
 describe("getLastAssistantUsage", () => {
-	it("should find the last non-aborted assistant message usage", () => {
+	it("kind the last non-aborted assistant message usage", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("Hello")),
 			createMessageEntry(createAssistantMessage("Hi", createMockUsage(100, 50))),
@@ -214,7 +214,7 @@ describe("getLastAssistantUsage", () => {
 		expect(usage!.input).toBe(200);
 	});
 
-	it("should skip aborted messages", () => {
+	it("skip aborted messages", () => {
 		const abortedMsg: AssistantMessage = {
 			...createAssistantMessage("Aborted", createMockUsage(300, 150)),
 			stopReason: "aborted",
@@ -232,7 +232,7 @@ describe("getLastAssistantUsage", () => {
 		expect(usage!.input).toBe(100);
 	});
 
-	it("should skip all-zero assistant usage", () => {
+	it("skip all-zero assistant usage", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("Hello")),
 			createMessageEntry(createAssistantMessage("Hi", createMockUsage(100, 50))),
@@ -245,7 +245,7 @@ describe("getLastAssistantUsage", () => {
 		expect(usage!.input).toBe(100);
 	});
 
-	it("should return undefined if no assistant messages", () => {
+	it("return undefined if no assistant messages", () => {
 		const entries: SessionEntry[] = [createMessageEntry(createUserMessage("Hello"))];
 		expect(getLastAssistantUsage(entries)).toBeUndefined();
 	});
@@ -270,7 +270,7 @@ describe("estimateContextTokens", () => {
 });
 
 describe("shouldCompact", () => {
-	it("should return true when context exceeds threshold", () => {
+	it("return true when context exceeds threshold", () => {
 		const settings: CompactionSettings = {
 			enabled: true,
 			reserveTokens: 10000,
@@ -303,7 +303,7 @@ describe("shouldCompact", () => {
 		expect(shouldCompact(5000, -1, settings)).toBe(false);
 	});
 
-	it("should return false when disabled", () => {
+	it("return false when disabled", () => {
 		const settings: CompactionSettings = {
 			enabled: false,
 			reserveTokens: 10000,
@@ -315,7 +315,7 @@ describe("shouldCompact", () => {
 });
 
 describe("findCutPoint", () => {
-	it("should find cut point based on actual token differences", () => {
+	it("kind cut point based on actual token differences", () => {
 		const entries: SessionEntry[] = [];
 		for (let i = 0; i < 10; i++) {
 			entries.push(createMessageEntry(createUserMessage(`User ${i}`)));
@@ -333,13 +333,13 @@ describe("findCutPoint", () => {
 		expect(role === "user" || role === "assistant").toBe(true);
 	});
 
-	it("should return startIndex if no valid cut points in range", () => {
+	it("return startIndex if no valid cut points in range", () => {
 		const entries: SessionEntry[] = [createMessageEntry(createAssistantMessage("a"))];
 		const result = findCutPoint(entries, 0, entries.length, 1000);
 		expect(result.firstKeptEntryIndex).toBe(0);
 	});
 
-	it("should keep everything if all messages fit within budget", () => {
+	it("keep everything if all messages fit within budget", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a", createMockUsage(0, 50, 500, 0))),
@@ -351,7 +351,7 @@ describe("findCutPoint", () => {
 		expect(result.firstKeptEntryIndex).toBe(0);
 	});
 
-	it("should indicate split turn when cutting at assistant message", () => {
+	it("indicate split turn when cutting at assistant message", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("Turn 1")),
 			createMessageEntry(createAssistantMessage("A1", createMockUsage(0, 100, 1000, 0))),
@@ -370,7 +370,7 @@ describe("findCutPoint", () => {
 		}
 	});
 
-	it("should budget context-visible custom message entries", () => {
+	it("budget context-visible custom message entries", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("hi")),
 			createMessageEntry(createAssistantMessage("hello")),
@@ -390,7 +390,7 @@ describe("findCutPoint", () => {
 	});
 
 	it(
-		"should fall back to the latest valid cut point before " + "oversized trailing tool results",
+		"callll back to the latest valid cut point before " + "oversized trailing tool results",
 		() => {
 			const oldUser = createMessageEntry(createUserMessage("old history"));
 			const oldAssistant = createMessageEntry(createAssistantMessage("old answer"));
@@ -431,7 +431,7 @@ describe("findCutPoint", () => {
 });
 
 describe("buildSessionContext", () => {
-	it("should load all messages when no compaction", () => {
+	it("load all messages when no compaction", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("1")),
 			createMessageEntry(createAssistantMessage("a")),
@@ -445,7 +445,7 @@ describe("buildSessionContext", () => {
 		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
 	});
 
-	it("should handle single compaction", () => {
+	it("handle single compaction", () => {
 		const u1 = createMessageEntry(createUserMessage("1"));
 		const a1 = createMessageEntry(createAssistantMessage("a"));
 		const u2 = createMessageEntry(createUserMessage("2"));
@@ -462,7 +462,7 @@ describe("buildSessionContext", () => {
 		expect((loaded.messages[0] as any).summary).toContain("Summary of 1,a,2,b");
 	});
 
-	it("should handle multiple compactions (only latest matters)", () => {
+	it("handle multiple compactions (only latest matters)", () => {
 		const u1 = createMessageEntry(createUserMessage("1"));
 		const a1 = createMessageEntry(createAssistantMessage("a"));
 		const compact1 = createCompactionEntry("First summary", u1.id);
@@ -481,7 +481,7 @@ describe("buildSessionContext", () => {
 		expect((loaded.messages[0] as any).summary).toContain("Second summary");
 	});
 
-	it("should keep all messages when firstKeptEntryId is first entry", () => {
+	it("keep all messages when firstKeptEntryId is first entry", () => {
 		const u1 = createMessageEntry(createUserMessage("1"));
 		const a1 = createMessageEntry(createAssistantMessage("a"));
 		const compact1 = createCompactionEntry("First summary", u1.id);
@@ -494,7 +494,7 @@ describe("buildSessionContext", () => {
 		expect(loaded.messages.length).toBe(5);
 	});
 
-	it("should track model and thinking level changes", () => {
+	it("track model and thinking level changes", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("1")),
 			createModelChangeEntry("openai", "gpt-4"),
@@ -532,7 +532,7 @@ describe("prepareCompaction", () => {
 });
 
 describe("prepareCompaction with previous compaction", () => {
-	it("should skip repeated compactions when kept messages still fit", () => {
+	it("skip repeated compactions when kept messages still fit", () => {
 		const u1 = createMessageEntry(createUserMessage("user msg 1 (summarized by compaction1)"));
 		const a1 = createMessageEntry(createAssistantMessage("assistant msg 1"));
 		const u2 = createMessageEntry(createUserMessage("user msg 2 - kept by compaction1"));
@@ -554,7 +554,7 @@ describe("prepareCompaction with previous compaction", () => {
 	});
 
 	it(
-		"should re-summarize previously kept messages when the " + "recent window moves past them",
+		"be-summarize previously kept messages when the " + "recent window moves past them",
 		() => {
 			const u1 = createMessageEntry(
 				createUserMessage("user msg 1 (summarized by compaction1)".repeat(4)),
@@ -598,7 +598,7 @@ describe("prepareCompaction with previous compaction", () => {
 });
 
 describe("Large session fixture", () => {
-	it("should parse the large session", () => {
+	it("parse the large session", () => {
 		const entries = loadLargeSessionEntries();
 		expect(entries.length).toBeGreaterThan(100);
 
@@ -606,7 +606,7 @@ describe("Large session fixture", () => {
 		expect(messageCount).toBeGreaterThan(100);
 	});
 
-	it("should find cut point in large session", () => {
+	it("kind cut point in large session", () => {
 		const entries = loadLargeSessionEntries();
 		const result = findCutPoint(
 			entries,
@@ -620,7 +620,7 @@ describe("Large session fixture", () => {
 		expect(role === "user" || role === "assistant").toBe(true);
 	});
 
-	it("should load session correctly", () => {
+	it("load session correctly", () => {
 		const entries = loadLargeSessionEntries();
 		const loaded = buildSessionContext(entries);
 
@@ -635,7 +635,7 @@ describe("LLM summarization", () => {
 		"compaction, and session navigation. File operations touched the interactive components. " +
 		"The remaining work is the agent loop and the provider adapters.";
 
-	it("should generate a compaction result for the large session", async () => {
+	it("generate a compaction result for the large session", async () => {
 		const entries = loadLargeSessionEntries();
 		const faux = registerFauxProvider();
 		const model = faux.getModel();
@@ -660,7 +660,7 @@ describe("LLM summarization", () => {
 		expect(compactionResult.tokensBefore).toBeGreaterThan(0);
 	}, 60000);
 
-	it("should produce valid session after compaction", async () => {
+	it("produce valid session after compaction", async () => {
 		const entries = loadLargeSessionEntries();
 		const loaded = buildSessionContext(entries);
 		const faux = registerFauxProvider();

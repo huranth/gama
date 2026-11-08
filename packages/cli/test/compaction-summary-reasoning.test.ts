@@ -206,6 +206,8 @@ describe("generateSummary reasoning options", () => {
 
 			expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 			expect(result.summary).toContain("previous checkpoint");
+			expect(result.summary).toContain("## Requests");
+			expect(result.summary).toContain("- Summarize this.");
 			const requestContext = completeSimpleMock.mock.calls[0][1] as TranscriptContext;
 			const prompt = JSON.stringify(requestContext.messages);
 			expect(prompt).toContain("# Conversation\\n[User]: Summarize this.");
@@ -220,7 +222,27 @@ describe("generateSummary reasoning options", () => {
 
 		await expect(
 			generateSummaryWithUsage(messages, createModel(false), 2000, "test-key"),
-		).rejects.toThrow("Summarization attempted to call a tool");
+		).rejects.toThrow("Summary used tool");
+	});
+
+	it("rejects an empty split-turn summary", async () => {
+		completeSimpleMock.mockResolvedValueOnce({
+			...mockSummaryResponse,
+			content: [{ type: "text", text: "   " }],
+		});
+		const preparation: CompactionPreparation = {
+			firstKeptEntryId: "entry-keep",
+			messagesToSummarize: [],
+			turnPrefixMessages: messages,
+			isSplitTurn: true,
+			tokensBefore: 100,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
+		};
+
+		await expect(compact(preparation, createModel(false), "test-key")).rejects.toThrow(
+			"Empty summary",
+		);
 	});
 
 	it("rejects tool calls from split-turn summaries", async () => {
@@ -236,7 +258,7 @@ describe("generateSummary reasoning options", () => {
 		};
 
 		await expect(compact(preparation, createModel(false), "test-key")).rejects.toThrow(
-			"Turn prefix summarization attempted to call a tool",
+			"Summary used tool",
 		);
 	});
 
@@ -364,7 +386,25 @@ describe("generateSummary reasoning options", () => {
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		});
 		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([
-			128000, 90000,
+			2000, 2000,
 		]);
+	});
+
+	it("asks for the handoff checkpoint format", async () => {
+		await generateSummary(messages, createModel(false), 2000, "test-key");
+
+		const context = completeSimpleMock.mock.calls[0][1] as TranscriptContext;
+		const prompt = JSON.stringify(context.messages);
+		for (const heading of [
+			"## Goal",
+			"## Now",
+			"## Rules",
+			"## Decisions",
+			"## Open",
+			"## Verified",
+		]) {
+			expect(prompt).toContain(heading);
+		}
+		expect(prompt).not.toContain("## Critical Context");
 	});
 });

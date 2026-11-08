@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { serializeConversation } from "../src/core/comp/utils.ts";
 
 describe("serializeConversation", () => {
-	it("should truncate long tool results", () => {
+	it("truncate long tool results", () => {
 		const longContent = "x".repeat(5000);
 		const messages: Message[] = [
 			{
@@ -19,13 +19,13 @@ describe("serializeConversation", () => {
 		const result = serializeConversation(messages);
 
 		expect(result).toContain("[Tool result]:");
-		expect(result).toContain("[... 3000 more characters truncated]");
-		expect(result).not.toContain("x".repeat(3000));
-		expect(result).toContain("x".repeat(2000));
+		expect(result).toContain("[... 4000 more characters truncated]");
+		expect(result).not.toContain("x".repeat(4000));
+		expect(result).toContain("x".repeat(1000));
 	});
 
-	it("should not truncate short tool results", () => {
-		const shortContent = "x".repeat(1500);
+	it("not truncate short tool results", () => {
+		const shortContent = "x".repeat(800);
 		const messages: Message[] = [
 			{
 				role: "toolResult",
@@ -43,7 +43,7 @@ describe("serializeConversation", () => {
 		expect(result).not.toContain("truncated");
 	});
 
-	it("should not truncate assistant or user messages", () => {
+	it("not truncate assistant or user messages", () => {
 		const longText = "y".repeat(5000);
 		const messages: Message[] = [
 			{
@@ -74,5 +74,35 @@ describe("serializeConversation", () => {
 
 		expect(result).not.toContain("truncated");
 		expect(result).toContain(longText);
+	});
+
+	it("omit assistant thinking", () => {
+		const messages: Message[] = [
+			{
+				role: "assistant",
+				content: [
+					{ type: "thinking", thinking: "private reasoning" },
+					{ type: "text", text: "visible answer" },
+				],
+				api: "anthropic",
+				provider: "anthropic",
+				model: "test",
+				usage: {
+					input: 0,
+					output: 0,
+					cacheRead: 0,
+					cacheWrite: 0,
+					totalTokens: 0,
+					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+				},
+				stopReason: "stop",
+				timestamp: Date.now(),
+			},
+		];
+
+		const result = serializeConversation(messages);
+
+		expect(result).toContain("visible answer");
+		expect(result).not.toContain("private reasoning");
 	});
 });

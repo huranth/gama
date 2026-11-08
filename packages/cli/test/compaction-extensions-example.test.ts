@@ -15,7 +15,7 @@ const { default: customCompactionExtension } = await import(
 );
 
 describe("Documentation example", () => {
-	it("custom compaction example should type-check correctly", () => {
+	it("custom compaction example type-checks", () => {
 		const exampleExtension = (gama: ExtensionAPI) => {
 			gama.on("session_before_compact", async (event: SessionBeforeCompactEvent, ctx) => {
 				const { preparation, branchEntries } = event;
@@ -115,6 +115,7 @@ describe("Documentation example", () => {
 			},
 			{
 				ui: { notify: vi.fn() },
+				model,
 				modelRegistry: {
 					find: vi.fn(() => model),
 					complete,
@@ -125,7 +126,7 @@ describe("Documentation example", () => {
 		expect(complete).toHaveBeenCalledWith(
 			model,
 			expect.objectContaining({ messages: expect.any(Array) }),
-			expect.objectContaining({ maxTokens: 8192 }),
+			expect.objectContaining({ maxTokens: 2000 }),
 		);
 		expect(complete).not.toHaveBeenCalledWith(
 			expect.anything(),
@@ -141,7 +142,7 @@ describe("Documentation example", () => {
 		});
 	});
 
-	it("compact event should have correct fields", () => {
+	it("compact event has correct fields", () => {
 		const checkCompactEvent = (gama: ExtensionAPI) => {
 			gama.on("session_compact", async (event: SessionCompactEvent) => {
 				const entry = event.compactionEntry;

@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import { fauxAssistantMessage } from "@huranth/gama-ai";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AgentSession } from "../src/core/agent-session.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { RunSession } from "../src/core/session/session.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	createExtensionRuntime,
 	type Extension,
@@ -14,15 +14,15 @@ import {
 	type SessionCompactEvent,
 	type SessionEvent,
 } from "../src/core/ext/index.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
+import { createSyntheticSourceInfo } from "../src/core/origin.ts";
 import { createCodingTools } from "../src/index.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
-import { createTestResourceLoader } from "./utilities.ts";
+import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
+import { createTestResourceLoader } from "./test-helpers.ts";
 
 describe("Compaction extensions", () => {
-	let session: AgentSession;
+	let session: RunSession;
 	let tempDir: string;
 	let capturedEvents: SessionEvent[];
 
@@ -88,7 +88,7 @@ describe("Compaction extensions", () => {
 		faux.setResponses(
 			Array.from({ length: 12 }, (_, index) => fauxAssistantMessage(`response ${index}`)),
 		);
-		const agent = new Agent({
+		const agent = new Runner({
 			getApiKey: () => "faux-key",
 			streamFn: streamSimple,
 			initialState: {
@@ -98,8 +98,8 @@ describe("Compaction extensions", () => {
 			},
 		});
 
-		const sessionManager = SessionManager.create(tempDir);
-		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		const sessionManager = SessionStore.create(tempDir);
+		const settingsManager = SettingsStore.create(tempDir, tempDir);
 		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "faux-key" }));
@@ -126,7 +126,7 @@ describe("Compaction extensions", () => {
 			getExtensions: () => ({ extensions, errors: [], runtime }),
 		};
 
-		session = new AgentSession({
+		session = new RunSession({
 			agent,
 			sessionManager,
 			settingsManager,
@@ -139,7 +139,7 @@ describe("Compaction extensions", () => {
 		return session;
 	}
 
-	it("should emit before_compact and compact events", async () => {
+	it("emit before_compact and compact events", async () => {
 		const extension = createExtension();
 		await createSession([extension]);
 
@@ -176,7 +176,7 @@ describe("Compaction extensions", () => {
 		expect(afterEvent.fromExtension).toBe(false);
 	}, 120000);
 
-	it("should allow extensions to cancel compaction", async () => {
+	it("allow extensions to cancel compaction", async () => {
 		const extension = createExtension(() => ({ cancel: true }));
 		await createSession([extension]);
 
@@ -189,7 +189,7 @@ describe("Compaction extensions", () => {
 		expect(compactEvents.length).toBe(0);
 	}, 120000);
 
-	it("should allow extensions to provide custom compaction", async () => {
+	it("allow extensions to provide custom compaction", async () => {
 		const customSummary = "Custom summary from extension";
 
 		const extension = createExtension((event) => {
@@ -226,7 +226,7 @@ describe("Compaction extensions", () => {
 		}
 	}, 120000);
 
-	it("should include entries in compact event after compaction is saved", async () => {
+	it("include entries in compact event after compaction is saved", async () => {
 		const extension = createExtension();
 		await createSession([extension]);
 
@@ -246,7 +246,7 @@ describe("Compaction extensions", () => {
 		}
 	}, 120000);
 
-	it("should continue with default compaction if extension throws error", async () => {
+	it("continue with default compaction if extension throws error", async () => {
 		const throwingExtension: Extension = {
 			path: "throwing-extension",
 			resolvedPath: "/test/throwing-extension.ts",
@@ -295,7 +295,7 @@ describe("Compaction extensions", () => {
 		expect(compactEvents[0].fromExtension).toBe(false);
 	}, 120000);
 
-	it("should call multiple extensions in order", async () => {
+	it("call multiple extensions in order", async () => {
 		const callOrder: string[] = [];
 
 		const extension1: Extension = {
@@ -375,7 +375,7 @@ describe("Compaction extensions", () => {
 		]);
 	}, 120000);
 
-	it("should pass correct data in before_compact event", async () => {
+	it("pass correct data in before_compact event", async () => {
 		let capturedBeforeEvent: SessionBeforeCompactEvent | null = null;
 
 		const extension = createExtension((event) => {
@@ -412,7 +412,7 @@ describe("Compaction extensions", () => {
 		expect(entries.length).toBeGreaterThan(0);
 	}, 120000);
 
-	it("should use extension compaction even with different values", async () => {
+	it("use extension compaction even with different values", async () => {
 		const customSummary = "Custom summary with modified values";
 
 		const extension = createExtension((event) => {
