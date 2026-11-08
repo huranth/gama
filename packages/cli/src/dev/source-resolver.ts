@@ -17,17 +17,29 @@ interface SourceAlias {
 }
 
 const repositoryRoot = fileURLToPath(new URL("../../../..", import.meta.url));
+
 const tsconfigPath = resolve(repositoryRoot, "tsconfig.json");
+
 const tsconfig = JSON.parse(readFileSync(tsconfigPath, "utf8")) as TsConfig;
+
 const paths = tsconfig.compilerOptions?.paths;
-if (!paths) throw new Error(`Source runtime requires compilerOptions.paths in ${tsconfigPath}`);
+if (!paths) throw new Error(`Missing tsconfig paths: ${tsconfigPath}`);
+
+// Extensions
+const SOURCE_EXT: Readonly<Record<string, string>> = {
+	".js": ".ts",
+	".mjs": ".mts",
+	".cjs": ".cts",
+};
+
+const PLAIN_EXT: ReadonlySet<string> = new Set([".ts", ".mts", ".cts", ".json"]);
 
 const aliases: SourceAlias[] = Object.entries(paths)
 	.filter(([pattern]) => pattern.startsWith("@huranth/"))
 	.map(([pattern, replacements]) => {
 		const wildcard = pattern.indexOf("*");
 		if (wildcard !== -1 && pattern.indexOf("*", wildcard + 1) !== -1) {
-			throw new Error(`Source runtime does not support multiple wildcards in ${pattern}`);
+			throw new Error(`Multiple wildcards: ${pattern}`);
 		}
 		return {
 			pattern,
@@ -38,56 +50,67 @@ const aliases: SourceAlias[] = Object.entries(paths)
 	})
 	.sort((left, right) => right.pattern.length - left.pattern.length);
 
-registerHooks({
-	resolve(specifier, context, nextResolve) {
-		let matchedPattern: string | undefined;
-		for (const alias of aliases) {
-			const wildcard = matchAlias(alias, specifier);
-			if (wildcard === undefined) continue;
-			matchedPattern ??= alias.pattern;
-			for (const replacement of alias.replacements) {
-				const resolved = resolveSourcePath(replacement.replace("*", wildcard));
-				if (resolved) return { url: pathToFileURL(resolved).href, shortCircuit: true };
-			}
-		}
-		if (matchedPattern) {
-			throw new Error(
-				`Source runtime could not resolve ${specifier} through tsconfig path ${matchedPattern}`,
-			);
-		}
-		return nextResolve(specifier, context);
-	},
-});
-
 function matchAlias(alias: SourceAlias, specifier: string): string | undefined {
 	if (!alias.pattern.includes("*")) return specifier === alias.pattern ? "" : undefined;
 	if (!specifier.startsWith(alias.prefix) || !specifier.endsWith(alias.suffix)) return undefined;
 	return specifier.slice(alias.prefix.length, specifier.length - alias.suffix.length);
 }
 
+function candidatesFor(basePath: string): string[] {
+	const extension = extname(basePath);
+	const sourceExtension = SOURCE_EXT[extension];
+
+	if (sourceExtension) {
+		return [basePath, `${basePath.slice(0, -extension.length)}${sourceExtension}`];
+	}
+
+	if (PLAIN_EXT.has(extension)) return [basePath];
+
+	return [basePath, `${basePath}.ts`, resolve(basePath, "index.ts")];
+}
+
 function resolveSourcePath(replacement: string): string | undefined {
 	const basePath = resolve(repositoryRoot, replacement);
 	const rootPrefix = repositoryRoot.endsWith(sep) ? repositoryRoot : `${repositoryRoot}${sep}`;
+
 	if (!basePath.startsWith(rootPrefix)) return undefined;
 
-	const extension = extname(basePath);
-	const sourceExtension =
-		extension === ".js"
-			? ".ts"
-			: extension === ".mjs"
-				? ".mts"
-				: extension === ".cjs"
-					? ".cts"
-					: undefined;
-
-	const candidates = sourceExtension
-		? [basePath, `${basePath.slice(0, -extension.length)}${sourceExtension}`]
-		: extension === ".ts" || extension === ".mts" || extension === ".cts" || extension === ".json"
-			? [basePath]
-			: [basePath, `${basePath}.ts`, resolve(basePath, "index.ts")];
-
-	for (const candidate of candidates) {
+	for (const candidate of candidatesFor(basePath)) {
 		if (existsSync(candidate) && statSync(candidate).isFile()) return candidate;
 	}
+
 	return undefined;
 }
+
+function resolveAlias(specifier: string): string | undefined {
+	let matchedPattern: string | undefined;
+
+	for (const alias of aliases) {
+		const wildcard = matchAlias(alias, specifier);
+		if (wildcard === undefined) continue;
+
+		matchedPattern ??= alias.pattern;
+
+		for (const replacement of alias.replacements) {
+			const resolved = resolveSourcePath(replacement.replace("*", wildcard));
+			if (resolved) return resolved;
+		}
+	}
+
+	if (matchedPattern) {
+		throw new Error(
+			`Source runtime could not resolve ${specifier} through tsconfig path ${matchedPattern}`,
+		);
+	}
+
+	return undefined;
+}
+
+registerHooks({
+	resolve(specifier, context, nextResolve) {
+		const resolved = resolveAlias(specifier);
+		if (resolved) return { url: pathToFileURL(resolved).href, shortCircuit: true };
+
+		return nextResolve(specifier, context);
+	},
+});

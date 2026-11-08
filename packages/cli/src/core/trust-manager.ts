@@ -5,6 +5,7 @@ import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import { canonicalizePath, resolvePath } from "../utils/paths.ts";
+import { sleepSync } from "../utils/sleep.ts";
 import { stripBom } from "../utils/text.ts";
 
 export type ProjectTrustDecision = boolean | null;
@@ -28,6 +29,16 @@ export interface ProjectTrustOption {
 
 type TrustFile = Record<string, boolean | null | undefined>;
 
+const LOCK_ATTEMPTS = 10;
+
+const LOCK_RETRY_DELAY_MS = 20;
+
+const AGENTS_DIR_NAME = ".agents";
+
+const SKILLS_DIR_NAME = "skills";
+
+const TRUST_FILE_NAME = "trust.json";
+
 const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [
 	"settings.json",
 	"extensions",
@@ -42,8 +53,16 @@ function normalizeCwd(cwd: string): string {
 	return canonicalizePath(resolvePath(cwd));
 }
 
+export function getProjectTrustParentPath(cwd: string): string | undefined {
+	const trustPath = normalizeCwd(cwd);
+	const parentDir = dirname(trustPath);
+
+	return parentDir === trustPath ? undefined : parentDir;
+}
+
 function findNearestTrustEntry(data: TrustFile, cwd: string): ProjectTrustStoreEntry | null {
 	let currentDir = normalizeCwd(cwd);
+
 	while (true) {
 		const value = data[currentDir];
 		if (value === true || value === false) {
@@ -56,12 +75,6 @@ function findNearestTrustEntry(data: TrustFile, cwd: string): ProjectTrustStoreE
 		}
 		currentDir = parentDir;
 	}
-}
-
-export function getProjectTrustParentPath(cwd: string): string | undefined {
-	const trustPath = normalizeCwd(cwd);
-	const parentDir = dirname(trustPath);
-	return parentDir === trustPath ? undefined : parentDir;
 }
 
 export function getProjectTrustOptions(
@@ -109,6 +122,22 @@ export function getProjectTrustOptions(
 	return trustOptions;
 }
 
+function validateTrustFile(path: string, parsed: unknown): TrustFile {
+	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
+		throw new Error(`Invalid trust store: ${path}`);
+	}
+
+	const data: TrustFile = {};
+	for (const [key, value] of Object.entries(parsed)) {
+		if (value !== true && value !== false && value !== null) {
+			throw new Error(`Invalid trust value: ${JSON.stringify(key)}`);
+		}
+		data[key] = value;
+	}
+
+	return data;
+}
+
 function readTrustFile(path: string): TrustFile {
 	if (!existsSync(path)) {
 		return {};
@@ -118,25 +147,10 @@ function readTrustFile(path: string): TrustFile {
 	try {
 		parsed = JSON.parse(stripBom(readFileSync(path, "utf-8")));
 	} catch (error) {
-		const message = error instanceof Error ? error.message : String(error);
-		throw new Error(`Failed to read trust store ${path}: ${message}`);
+		throw new Error(`Trust read failed: ${path}`, { cause: error });
 	}
 
-	if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) {
-		throw new Error(`Invalid trust store ${path}: expected an object`);
-	}
-
-	const data: TrustFile = {};
-	for (const [key, value] of Object.entries(parsed)) {
-		if (value !== true && value !== false && value !== null) {
-			throw new Error(
-				`Invalid trust store ${path}: value for ${JSON.stringify(key)} must be true, false, or null`,
-			);
-		}
-		data[key] = value;
-	}
-
-	return data;
+	return validateTrustFile(path, parsed);
 }
 
 function writeTrustFile(path: string, data: TrustFile): void {
@@ -152,34 +166,35 @@ function writeTrustFile(path: string, data: TrustFile): void {
 	writeFileAtomicSync(path, `${JSON.stringify(sorted, null, 2)}\n`);
 }
 
+function readErrorCode(error: unknown): string | undefined {
+	if (typeof error !== "object" || error === null || !("code" in error)) return undefined;
+
+	return String((error as { code?: unknown }).code);
+}
+
 function acquireTrustLockSync(path: string): () => void {
 	const trustDir = dirname(path);
 	mkdirSync(trustDir, { recursive: true });
-	const maxAttempts = 10;
-	const delayMs = 20;
 	let lastError: unknown;
 
-	for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+	for (let attempt = 1; attempt <= LOCK_ATTEMPTS; attempt++) {
 		try {
 			return lockfile.lockSync(trustDir, { realpath: false, lockfilePath: `${path}.lock` });
 		} catch (error) {
-			const code =
-				typeof error === "object" && error !== null && "code" in error
-					? String((error as { code?: unknown }).code)
-					: undefined;
-			if (code !== "ELOCKED" || attempt === maxAttempts) {
+			const code = readErrorCode(error);
+			if (code !== "ELOCKED" || attempt === LOCK_ATTEMPTS) {
 				throw error;
 			}
+
 			lastError = error;
-			const start = Date.now();
-			while (Date.now() - start < delayMs) {}
+			sleepSync(LOCK_RETRY_DELAY_MS);
 		}
 	}
 
 	if (lastError instanceof Error) {
 		throw lastError;
 	}
-	throw new Error("Failed to acquire trust store lock");
+	throw new Error("Trust lock failed");
 }
 
 function withTrustFileLock<T>(path: string, fn: () => T): T {
@@ -193,7 +208,7 @@ function withTrustFileLock<T>(path: string, fn: () => T): T {
 
 export function hasTrustRequiringProjectResources(cwd: string): boolean {
 	const homeDir = canonicalizePath(resolvePath(process.env.HOME || homedir()));
-	const userAgentsSkillsDir = join(homeDir, ".agents", "skills");
+	const userAgentsSkillsDir = join(homeDir, AGENTS_DIR_NAME, SKILLS_DIR_NAME);
 	let currentDir = canonicalizePath(resolvePath(cwd));
 
 	const configDir = join(currentDir, CONFIG_DIR_NAME);
@@ -204,7 +219,7 @@ export function hasTrustRequiringProjectResources(cwd: string): boolean {
 	}
 
 	while (true) {
-		const agentsSkillsDir = join(currentDir, ".agents", "skills");
+		const agentsSkillsDir = join(currentDir, AGENTS_DIR_NAME, SKILLS_DIR_NAME);
 		if (agentsSkillsDir !== userAgentsSkillsDir && existsSync(agentsSkillsDir)) {
 			return true;
 		}
@@ -221,7 +236,7 @@ export class ProjectTrustStore {
 	private trustPath: string;
 
 	constructor(agentDir: string) {
-		this.trustPath = join(resolvePath(agentDir), "trust.json");
+		this.trustPath = join(resolvePath(agentDir), TRUST_FILE_NAME);
 	}
 
 	get(cwd: string): ProjectTrustDecision {

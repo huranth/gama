@@ -9,15 +9,15 @@ import {
 	completeSummarization,
 	estimateTokens,
 	getSummarizationFailure,
-} from "./comp/compaction.ts";
+} from "./comp/compact.ts";
 import { serializeConversation } from "./comp/utils.ts";
 import type { CrashRecord } from "./crash-log.ts";
 import { DEFAULT_CONTEXT_WINDOW } from "./custom-provider.ts";
 import type { Extension } from "./ext/types.ts";
-import { convertToLlm } from "./messages.ts";
-import type { ModelRuntime } from "./model-runtime.ts";
-import type { ReadonlySessionManager } from "./session-manager.ts";
-import type { Settings } from "./settings-manager.ts";
+import { convertToLlm } from "./msg.ts";
+import type { ModelHub } from "./model-run.ts";
+import type { ReadonlySessionManager } from "./sessions.ts";
+import type { Settings } from "./settings.ts";
 
 interface CollectBugReportMetadataOptions {
 	id?: string;
@@ -28,7 +28,7 @@ interface CollectBugReportMetadataOptions {
 	includeSummary: boolean;
 	messageCount: number;
 	model?: Model<Api>;
-	modelRuntime: ModelRuntime;
+	modelRuntime: ModelHub;
 	thinkingLevel: ThinkingLevel;
 	extensions: readonly Extension[];
 	extensionErrors: ReadonlyArray<{ path: string; error: string }>;
@@ -83,16 +83,22 @@ const BUG_REPORT_SCHEMA_VERSION = 1;
 
 const REDACTED = "<redacted>";
 
+// Summary budget
+const SUMMARY_BUDGET_RATIO = 0.6;
+
+const MAX_SUMMARY_TOKENS = 4096;
+
 const SENSITIVE_KEY =
 	/(?:^|[-_])(api[-_]?key|secret|token|password|passwd|credential|authorization|cookie)(?:$|[-_])/i;
 
 const BUG_SUMMARY_SYSTEM_PROMPT =
-	"You are helping a user file a bug report about gama, the coding agent they are " +
-	"talking to. You will be shown the conversation transcript. Write a report for " +
-	`the gama developers describing what the user was doing and what went wrong.
+	`You are helping a user file a bug report about gama, the coding ` +
+	`agent they are talking to.
+You will be shown the conversation transcript.
+Write a report for the gama developers describing what the user was doing and what went wrong.
 
-Do NOT continue the conversation. Do NOT respond to any questions in the ` +
-	`conversation. ONLY output the report.`;
+Do NOT continue the conversation. Do NOT ` +
+	`respond to any questions in the conversation. ONLY output the report.`;
 
 const BUG_SUMMARY_INSTRUCTIONS =
 	`Write the bug report in Markdown with these sections:
@@ -101,25 +107,27 @@ const BUG_SUMMARY_INSTRUCTIONS =
 One short paragraph.
 
 ## What went wrong
-Concrete description of the failure: wrong output, errors, hangs, tool failures, ` +
-	`unexpected behavior. Quote error messages and tool output verbatim where they exist.
+Concrete description of the failure: wrong output, errors, hangs, tool ` +
+	`failures, unexpected behavior.
+Quote error messages and tool output verbatim where they exist.
 
 ## Steps to reproduce
 Numbered list, as specific as the transcript allows.
 
 ## Relevant details
-Tool calls involved, files touched, model behavior, anything else that helps a ` +
-	`developer reproduce or locate the problem.
+Tool calls involved, files touched, model behavior, anything else that ` +
+	`helps a developer reproduce or locate the problem.
 
-Do not include file contents, secrets, or credentials from the transcript; refer to ` +
-	`files by path only. Keep the report factual and concise.`;
+Do not include file contents, secrets, or credentials from the ` +
+	`transcript; refer to files by path only.
+Keep the report factual and concise.`;
 
 function isSensitiveKey(key: string): boolean {
 	return SENSITIVE_KEY.test(key.replace(/([a-z0-9])([A-Z])/g, "$1_$2"));
 }
 
 function redactSettings(settings: Settings): Settings {
-	const { trackingId: _trackingId, deviceId: _deviceId, ...rest } = settings;
+	const { deviceId: _deviceId, ...rest } = settings;
 	return redactJsonValue(rest) as Settings;
 }
 
@@ -190,7 +198,7 @@ export function collectBugReportMetadata(options: CollectBugReportMetadataOption
 	};
 }
 
-function describeProvider(modelRuntime: ModelRuntime, provider: Provider) {
+function describeProvider(modelRuntime: ModelHub, provider: Provider) {
 	const authTypes: Array<"api_key"> = [];
 
 	if (provider.auth.apiKey) {
@@ -320,7 +328,8 @@ export async function generateBugReportSummary(
 ): Promise<string> {
 	const { model } = options;
 	const contextWindow = model.contextWindow > 0 ? model.contextWindow : DEFAULT_CONTEXT_WINDOW;
-	const messages = selectMessages(options.messages, Math.floor(contextWindow * 0.6));
+	const budget = Math.floor(contextWindow * SUMMARY_BUDGET_RATIO);
+	const messages = selectMessages(options.messages, budget);
 	const hint = options.hint?.trim();
 	const prompt = [
 		messages.length < options.messages.length
@@ -333,7 +342,10 @@ export async function generateBugReportSummary(
 		.filter((part) => part !== undefined)
 		.join("\n\n");
 	const requestOptions: SimpleStreamOptions = {
-		maxTokens: Math.min(4096, model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY),
+		maxTokens: Math.min(
+			MAX_SUMMARY_TOKENS,
+			model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
+		),
 		signal: options.signal,
 		apiKey: options.apiKey,
 		headers: options.headers,
@@ -355,14 +367,14 @@ export async function generateBugReportSummary(
 		options.streamFn,
 		options.retry,
 	);
-	if (response.stopReason === "aborted") throw new Error("Bug report summary was cancelled");
+	if (response.stopReason === "aborted") throw new Error("Summary cancelled");
 	const failure = getSummarizationFailure(response, "Bug report summary");
 	if (failure) throw new Error(failure);
 	if (response.content.some((block) => block.type === "toolCall")) {
-		throw new Error("Bug report summary attempted to call a tool");
+		throw new Error("Summary used tool");
 	}
 	const text = contentText(response.content).trim();
-	if (!text) throw new Error("Bug report summary was empty");
+	if (!text) throw new Error("Summary empty");
 	return text;
 }
 
@@ -371,7 +383,7 @@ export function collectBugReportDiagnostics(
 	crashes: readonly CrashRecord[] = [],
 ) {
 	const entries = sessionManager.getEntries();
-	const assistant = [];
+	const assistant: unknown[] = [];
 	let assistantMessageCount = 0;
 
 	for (const entry of entries) {

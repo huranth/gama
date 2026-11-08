@@ -1,12 +1,15 @@
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { getAgentDir, VERSION } from "../config.ts";
+import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import type { Extension } from "./ext/types.ts";
-import { isSyntheticPath } from "./source-info.ts";
+import { isSyntheticPath } from "./origin.ts";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const MAX_CRASH_RECORDS = 5;
 
-const MAX_AGE = 7 * 24 * 60 * 60 * 1000;
+const MAX_AGE_MS = 7 * DAY_MS;
 
 export interface CrashRecord {
 	timestamp: string;
@@ -26,33 +29,37 @@ function crashLogPath(agentDir = getAgentDir()): string {
 }
 
 function writeCrashLog(records: readonly CrashRecord[], path: string): void {
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(records, null, 2)}\n`);
+	mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+	writeFileAtomicSync(path, `${JSON.stringify(records, null, 2)}\n`, 0o600);
 }
 
 function normalizeStackPath(value: string): string {
 	return value.replace(/\\/g, "/").replace(/\/+$/u, "");
 }
 
+function isCrashRecord(record: unknown): record is CrashRecord {
+	if (typeof record !== "object" || record === null) return false;
+
+	const candidate = record as CrashRecord;
+	return typeof candidate.timestamp === "string" && typeof candidate.message === "string";
+}
+
 export function clearCrashLog(path = crashLogPath()): void {
 	try {
 		rmSync(path, { force: true });
-	} catch {}
+	} catch {
+		// Already gone
+	}
 }
 
 export function readCrashLog(path = crashLogPath()): CrashRecord[] {
 	try {
 		const records: unknown = JSON.parse(readFileSync(path, "utf8"));
-		return Array.isArray(records)
-			? records.filter(
-					(record): record is CrashRecord =>
-						typeof record === "object" &&
-						record !== null &&
-						typeof (record as CrashRecord).timestamp === "string" &&
-						typeof (record as CrashRecord).message === "string",
-				)
-			: [];
+		if (!Array.isArray(records)) return [];
+
+		return records.filter(isCrashRecord);
 	} catch {
+		// Unreadable log
 		return [];
 	}
 }
@@ -86,14 +93,18 @@ export function takeUnnotifiedCrash(
 	const records = readCrashLog(path);
 	const crash = [...records]
 		.reverse()
-		.find((record) => !record.notified && now - Date.parse(record.timestamp) <= MAX_AGE);
+		.find((record) => !record.notified && now - Date.parse(record.timestamp) <= MAX_AGE_MS);
 	if (!crash) return undefined;
+
 	try {
-		writeCrashLog(
-			records.map((record) => (record === crash ? { ...record, notified: true } : record)),
-			path,
+		const marked = records.map((record) =>
+			record === crash ? { ...record, notified: true } : record,
 		);
-	} catch {}
+		writeCrashLog(marked, path);
+	} catch {
+		// Write failed
+	}
+
 	return crash;
 }
 

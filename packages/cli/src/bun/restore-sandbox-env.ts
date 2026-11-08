@@ -7,11 +7,14 @@ export function restoreSandboxEnv(): void {
 
 	try {
 		const data = readFileSync("/proc/self/environ", "utf-8");
+
 		for (const entry of data.split("\0")) {
-			const idx = entry.indexOf("=");
-			if (idx > 0) {
-				process.env[entry.slice(0, idx)] = entry.slice(idx + 1);
+			const separator = entry.indexOf("=");
+			if (separator > 0) {
+				process.env[entry.slice(0, separator)] = entry.slice(separator + 1);
 			}
 		}
-	} catch {}
+	} catch {
+		// Unreadable
+	}
 }

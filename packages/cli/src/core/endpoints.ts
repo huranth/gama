@@ -20,8 +20,16 @@ let resolvedEndpoints: Readonly<GamaServiceEndpoints> | undefined;
 
 function readUrl(value: unknown): string | undefined {
 	const text = typeof value === "string" ? value.trim() : "";
+	if (!text) return undefined;
 
-	return /^https?:\/\//.test(text) ? text : undefined;
+	try {
+		const url = new URL(text);
+		if (url.protocol !== "http:" && url.protocol !== "https:") return undefined;
+		if (!url.hostname) return undefined;
+		return text;
+	} catch {
+		return undefined;
+	}
 }
 
 function injectedEndpoints(): Partial<GamaServiceEndpoints> {
@@ -61,17 +69,23 @@ export function getUpdateCheckUrl(): string {
 	return override ?? getServiceEndpoints().updateCheck;
 }
 
-export function getInstallPingUrl(version: string): string {
-	const base = getServiceEndpoints().installPing.replace(/[?&]+$/, "");
-	const separator = base.includes("?") ? "&" : "?";
-	return `${base}${separator}version=${encodeURIComponent(version)}`;
-}
-
 export function getReleasesUrl(): string {
-	return getServiceEndpoints().releasesPage;
+	const override = readUrl(process.env.GAMA_RELEASES_URL);
+	return override ?? getServiceEndpoints().releasesPage;
 }
 
 export function getShareViewerBaseUrl(): string {
 	const override = readUrl(process.env.GAMA_SHARE_VIEWER_URL);
 	return override ?? getServiceEndpoints().shareViewer;
+}
+
+export function getInstallPingUrl(version: string): string {
+	const override = readUrl(process.env.GAMA_INSTALL_PING_URL);
+	const rawBase = (override ?? getServiceEndpoints().installPing).replace(/[?&]+$/, "");
+	const fragmentIndex = rawBase.indexOf("#");
+	const base = fragmentIndex === -1 ? rawBase : rawBase.slice(0, fragmentIndex);
+	const fragment = fragmentIndex === -1 ? "" : rawBase.slice(fragmentIndex);
+	const separator = base.includes("?") ? "&" : "?";
+
+	return `${base}${separator}version=${encodeURIComponent(version)}${fragment}`;
 }

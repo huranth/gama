@@ -2,7 +2,7 @@ import {
 	type AnyModel,
 	type Api,
 	type ApiKeyAuth,
-	type AssistantMessageEventStream,
+	type ReplyStream,
 	type AuthContext,
 	type AuthInteraction,
 	type AuthResult,
@@ -24,13 +24,20 @@ import {
 } from "@huranth/gama-ai";
 import { getApiProvider } from "@huranth/gama-ai/compat";
 import { classifierErrorResult, imageErrorResult } from "@huranth/gama-ai/utils/model-operations";
-import { fetchEndpointModels, NO_PRICE, resolveModels } from "./custom-provider.ts";
+import {
+	DEFAULT_CONTEXT_WINDOW,
+	DEFAULT_MAX_TOKENS,
+	fetchEndpointModels,
+	NO_PRICE,
+	resolveModels,
+} from "./custom-provider.ts";
 import type {
 	ModelConfig,
 	ModelsJsonModel,
 	ModelsJsonModelOverride,
 	ModelsJsonProvider,
 } from "./model-config.ts";
+import { getModelsDevCatalog } from "./models-dev.ts";
 import {
 	clearConfigValueCache,
 	getConfigValueEnvVarNames,
@@ -89,7 +96,7 @@ export interface ProviderConfigInput {
 		model: Model<Api>,
 		context: TranscriptContext,
 		options?: SimpleStreamOptions,
-	) => AssistantMessageEventStream;
+	) => ReplyStream;
 	images?: Partial<Record<ImageApi, ProviderImages>>;
 	classifiers?: Partial<Record<ClassifierApi, ProviderClassifier>>;
 	headers?: Record<string, string>;
@@ -114,6 +121,8 @@ export interface CompatibilityRequestConfig {
 	headers?: ProviderHeaders;
 	authHeader: boolean;
 }
+
+const DEFAULT_CHAT_API = "openai-completions";
 
 export const clearApiKeyCache = clearConfigValueCache;
 
@@ -210,22 +219,19 @@ function modelFromJson(
 ): Model<Api> {
 	const api = definition.api ?? providerConfig.api ?? defaults?.api;
 	if (!api) {
-		throw new Error(
-			`Provider ${providerId}, model ${definition.id}: no "api" specified. ` +
-				"Set at provider or model level.",
-		);
+		throw new Error(`Missing API: ${providerId}/${definition.id}`);
 	}
 	const baseUrl = definition.baseUrl ?? providerConfig.baseUrl ?? defaults?.baseUrl;
 	if (!baseUrl) {
-		throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
+		throw new Error(`Missing baseUrl: ${providerId}`);
 	}
 
 	if (definition.contextWindow !== undefined && definition.contextWindow < 0) {
-		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid contextWindow`);
+		throw new Error(`Invalid contextWindow: ${definition.id}`);
 	}
 
 	if (definition.maxTokens !== undefined && definition.maxTokens < 0) {
-		throw new Error(`Provider ${providerId}, model ${definition.id}: invalid maxTokens`);
+		throw new Error(`Invalid maxTokens: ${definition.id}`);
 	}
 
 	return {
@@ -240,13 +246,28 @@ function modelFromJson(
 		inputLimits: definition.inputLimits,
 		cost: definition.cost ?? NO_PRICE,
 		promptCache: definition.promptCache,
-		// Defaults.
-		contextWindow: definition.contextWindow || 128000,
-		maxTokens: definition.maxTokens || 16384,
+		// Defaults
+		contextWindow: definition.contextWindow || DEFAULT_CONTEXT_WINDOW,
+		maxTokens: definition.maxTokens || DEFAULT_MAX_TOKENS,
 		samplingParams: definition.samplingParams,
 		headers: undefined,
 		compat: mergeCompat(providerConfig.compat, definition.compat),
 	};
+}
+
+function pickModelDefaults<TModel extends AnyModel>(
+	candidates: readonly TModel[],
+	modelId: string,
+	api?: string,
+): TModel | undefined {
+	const byId = candidates.find((model) => model.id === modelId);
+	if (byId) return byId;
+
+	const byApi = api ? candidates.find((model) => model.api === api) : undefined;
+	if (byApi) return byApi;
+
+	const byDefaultApi = candidates.find((model) => model.api === DEFAULT_CHAT_API);
+	return byDefaultApi ?? candidates[0];
 }
 
 function findModelDefaults(
@@ -254,24 +275,9 @@ function findModelDefaults(
 	modelId: string,
 	api?: Api,
 ): Model<Api> | undefined {
-	const chatModels = models.filter((model) => isModelType(model, "chat"));
+	const chatModels = models.filter((model): model is Model<Api> => isModelType(model, "chat"));
 
-	const byId = chatModels.find((model) => model.id === modelId);
-	if (byId) {
-		return byId;
-	}
-
-	const byApi = api ? chatModels.find((model) => model.api === api) : undefined;
-	if (byApi) {
-		return byApi;
-	}
-
-	const byDefaultApi = chatModels.find((model) => model.api === "openai-completions");
-	if (byDefaultApi) {
-		return byDefaultApi;
-	}
-
-	return chatModels[0];
+	return pickModelDefaults(chatModels, modelId, api);
 }
 
 function findExtensionModelDefaults(
@@ -281,26 +287,7 @@ function findExtensionModelDefaults(
 	const type = definition.type ?? "chat";
 	const candidates = models.filter((model) => isModelType(model, type));
 
-	const byId = candidates.find((model) => model.id === definition.id);
-	if (byId) {
-		return byId;
-	}
-
-	const byApi = definition.api
-		? candidates.find((model) => model.api === definition.api)
-		: undefined;
-	if (byApi) {
-		return byApi;
-	}
-
-	if (type === "chat") {
-		const byDefaultApi = candidates.find((model) => model.api === "openai-completions");
-		if (byDefaultApi) {
-			return byDefaultApi;
-		}
-	}
-
-	return candidates[0];
+	return pickModelDefaults(candidates, definition.id, definition.api);
 }
 
 function extensionModelFromDefinition(
@@ -313,14 +300,11 @@ function extensionModelFromDefinition(
 	const defaults = findExtensionModelDefaults(models, definition);
 	const api = definition.api ?? (type === "chat" ? config.api : undefined) ?? defaults?.api;
 	if (!api) {
-		throw new Error(
-			`Provider ${providerId}, model ${definition.id}: no "api" specified. ` +
-				`Set it at model level${type === "chat" ? " or provider level" : ""}.`,
-		);
+		throw new Error(`Missing API: ${providerId}/${definition.id}`);
 	}
 	const baseUrl = definition.baseUrl ?? config.baseUrl ?? defaults?.baseUrl;
 	if (!baseUrl) {
-		throw new Error(`Provider ${providerId}: "baseUrl" is required when defining custom models.`);
+		throw new Error(`Missing baseUrl: ${providerId}`);
 	}
 
 	if (definition.type === "image") {
@@ -364,10 +348,7 @@ function applyModelsJson(
 
 	if (!hasModels && !hasBaseUrl && !hasHeaders && !hasCompat && !hasOverrides) {
 		if (!hasApiKey && config.authHeader === undefined) {
-			throw new Error(
-				`Provider ${providerId}: must specify "baseUrl", "headers", "compat", ` +
-					'"modelOverrides", or "models".',
-			);
+			throw new Error(`Empty provider: ${providerId}`);
 		}
 	}
 
@@ -438,7 +419,7 @@ function withConfiguredAuth(
 
 	if (authHeader) {
 		if (!auth.apiKey) {
-			throw new Error("authHeader requires a resolved API key");
+			throw new Error("Missing API key");
 		}
 
 		mergedHeaders = { ...mergedHeaders, Authorization: `Bearer ${auth.apiKey}` };
@@ -591,7 +572,7 @@ export function validateExtensionProvider(
 	extension: ProviderConfigInput,
 ): void {
 	if (extension.streamSimple && !extension.api) {
-		throw new Error(`Provider ${providerId}: "api" is required when registering streamSimple.`);
+		throw new Error(`Missing API: ${providerId}`);
 	}
 	applyExtension(
 		providerId,
@@ -610,11 +591,10 @@ export function composeModelProvider(
 	const config = modelConfig.getProvider(providerId);
 	let refreshedExtensionModels: ProviderConfigInput["models"];
 
-	// Endpoint models.
+	// Endpoint models
 	let discoveredEndpointModels: AnyModel[] | undefined;
-
-	// Drop stale
 	let liveEndpointModelIds: Set<string> | undefined;
+
 	const currentExtension = (): ProviderConfigInput | undefined =>
 		refreshedExtensionModels ? { ...extension, models: refreshedExtensionModels } : extension;
 
@@ -629,6 +609,7 @@ export function composeModelProvider(
 	const configuredModelIds = new Set((config?.models ?? []).map((model) => model.id));
 	const getAllModels = (): AnyModel[] => {
 		const curated = applyModelsJson(providerId, getAllProviderModels(base), config, emitWarning);
+		// Drop stale
 		const visible = liveEndpointModelIds
 			? curated.filter(
 					(model) => !configuredModelIds.has(model.id) || liveEndpointModelIds!.has(model.id),
@@ -649,7 +630,7 @@ export function composeModelProvider(
 	getAllModels();
 	const apiKey = composeApiKeyAuth(providerId, base, config, extension);
 	if (!apiKey) {
-		throw new Error(`Provider ${providerId}: no authentication method configured.`);
+		throw new Error(`No auth method: ${providerId}`);
 	}
 
 	const supportsBaseApi = (model: Model<Api>) =>
@@ -659,7 +640,7 @@ export function composeModelProvider(
 		context: TranscriptContext,
 		options: StreamOptions | undefined,
 		simple: boolean,
-	): AssistantMessageEventStream =>
+	): ReplyStream =>
 		lazyStream(model, async () => {
 			const simpleOptions = options as SimpleStreamOptions;
 
@@ -675,13 +656,110 @@ export function composeModelProvider(
 
 			const api = getApiProvider(model.api);
 			if (!api) {
-				throw new Error(`No API provider registered for api: ${model.api}`);
+				throw new Error(`Unknown API: ${model.api}`);
 			}
 
 			if (simple) return api.streamSimple(model, context, simpleOptions);
 
 			return api.stream(model, context, options);
 		});
+
+	const refreshFromExtension = async (context: RefreshModelsContext): Promise<void> => {
+		await base?.refreshModels?.(context);
+		let refreshed: NonNullable<ProviderConfigInput["models"]> | undefined;
+		if (extension?.refreshModels) refreshed = await extension.refreshModels(context);
+		if (context.signal.aborted) return;
+		await context.publish({
+			update: () => {
+				if (!refreshed) return;
+				applyExtension(
+					providerId,
+					applyModelsJson(providerId, getAllProviderModels(base), config, emitWarning),
+					{ ...extension, models: refreshed },
+				);
+				refreshedExtensionModels = refreshed;
+			},
+		});
+	};
+
+	const refreshFromEndpoint = async (context: RefreshModelsContext): Promise<void> => {
+		// Network refresh
+		if (!context.allowNetwork || context.signal.aborted) return;
+		const key =
+			context.credential?.type === "api_key"
+				? (context.credential.key ?? "")
+				: "";
+		const endpoint = (extension?.baseUrl ?? config?.baseUrl ?? "").trim();
+		if (!key || !endpoint) return;
+		const live = await fetchEndpointModels(endpoint, key, {
+			signal: context.signal,
+		});
+		if (context.signal.aborted) return;
+		const builtinModels = getAllProviderModels(base).filter(
+			(model): model is Model<Api> => isModelType(model, "chat"),
+		);
+		const catalog = await getModelsDevCatalog({
+			signal: context.signal,
+			allowNetwork: context.allowNetwork,
+		});
+		if (context.signal.aborted) return;
+		const resolved = resolveModels(live, builtinModels, catalog, providerId);
+		if (context.signal.aborted) return;
+		const definitions: ProviderConfigInput["models"] = resolved.map((model) => ({
+			id: model.id,
+			name: model.name,
+			input: model.input,
+			cost: model.cost ?? NO_PRICE,
+			reasoning: model.reasoning,
+			contextWindow: model.contextWindow,
+			maxTokens: model.maxTokens,
+		}));
+		if (context.signal.aborted) return;
+		await context.publish({
+			update: () => {
+				if (!extension) {
+					// Config models
+					const curated = applyModelsJson(
+						providerId,
+						getAllProviderModels(base),
+						config,
+						onWarning,
+					);
+					const known = new Set(curated.map((model) => model.id));
+					liveEndpointModelIds = new Set(definitions.map((definition) => definition.id));
+					discoveredEndpointModels = definitions
+						.filter((definition) => !known.has(definition.id))
+						.map((definition) =>
+							extensionModelFromDefinition(
+								providerId,
+								curated,
+								{ api: config?.api, baseUrl: endpoint },
+								definition,
+							),
+						);
+					return;
+				}
+				applyExtension(
+					providerId,
+					applyModelsJson(providerId, getAllProviderModels(base), config, onWarning),
+					{
+						...extension,
+						api: extension?.api ?? config?.api,
+						baseUrl: endpoint,
+						models: definitions,
+					},
+				);
+				refreshedExtensionModels = definitions;
+			},
+		});
+	};
+
+	let refreshModels: Provider["refreshModels"] = undefined;
+	if (base?.refreshModels || extension?.refreshModels) {
+		refreshModels = refreshFromExtension;
+	} else if ((extension?.baseUrl ?? config?.baseUrl) !== undefined) {
+		refreshModels = refreshFromEndpoint;
+	}
 
 	const provider: Provider = {
 		id: providerId,
@@ -691,109 +769,7 @@ export function composeModelProvider(
 		auth: { apiKey },
 		getModels: () => getAllModels().filter((model) => isModelType(model, "chat")),
 		getAllModels,
-		refreshModels:
-			base?.refreshModels || extension?.refreshModels
-				? async (context) => {
-						await base?.refreshModels?.(context);
-						let refreshed: NonNullable<ProviderConfigInput["models"]> | undefined;
-						if (extension?.refreshModels) refreshed = await extension.refreshModels(context);
-						if (context.signal.aborted) return;
-						await context.publish({
-							update: () => {
-								if (refreshed) {
-									applyExtension(
-										providerId,
-										applyModelsJson(
-											providerId,
-											getAllProviderModels(base),
-											config,
-											emitWarning,
-										),
-										{
-											...extension,
-											models: refreshed,
-										},
-									);
-									refreshedExtensionModels = refreshed;
-								}
-							},
-						});
-					}
-				: (extension?.baseUrl ?? config?.baseUrl) !== undefined
-					? async (context) => {
-							// Network refresh.
-							if (!context.allowNetwork || context.signal.aborted) return;
-							const key =
-								context.credential?.type === "api_key"
-									? (context.credential.key ?? "")
-									: "";
-							const endpoint = (extension?.baseUrl ?? config?.baseUrl ?? "").trim();
-							if (!key || !endpoint) return;
-							const live = await fetchEndpointModels(endpoint, key, {
-								signal: context.signal,
-							});
-							if (context.signal.aborted) return;
-							const builtinModels = getAllProviderModels(base).filter(
-								(model): model is Model<Api> => isModelType(model, "chat"),
-							);
-							const resolved = resolveModels(live, builtinModels);
-							if (context.signal.aborted) return;
-							const definitions: ProviderConfigInput["models"] = resolved.map((model) => ({
-								id: model.id,
-								name: model.name,
-								input: model.input,
-								cost: model.cost ?? NO_PRICE,
-								reasoning: model.reasoning,
-								contextWindow: model.contextWindow,
-								maxTokens: model.maxTokens,
-							}));
-							if (context.signal.aborted) return;
-							await context.publish({
-								update: () => {
-									if (!extension) {
-										// Config models.
-										const curated = applyModelsJson(
-											providerId,
-											getAllProviderModels(base),
-											config,
-											onWarning,
-										);
-										const known = new Set(curated.map((model) => model.id));
-										liveEndpointModelIds = new Set(
-											definitions.map((definition) => definition.id),
-										);
-										discoveredEndpointModels = definitions
-											.filter((definition) => !known.has(definition.id))
-											.map((definition) =>
-												extensionModelFromDefinition(
-													providerId,
-													curated,
-													{ api: config?.api, baseUrl: endpoint },
-													definition,
-												),
-											);
-										return;
-									}
-									applyExtension(
-										providerId,
-										applyModelsJson(
-											providerId,
-											getAllProviderModels(base),
-											config,
-											onWarning,
-										),
-										{
-											...extension,
-											api: extension?.api ?? config?.api,
-											baseUrl: endpoint,
-											models: definitions,
-										},
-									);
-									refreshedExtensionModels = definitions;
-								},
-							});
-						}
-					: undefined,
+		refreshModels,
 		filterModels: base?.filterModels
 			? (models, credential: Credential | undefined) => base.filterModels!(models, credential)
 			: undefined,
@@ -822,7 +798,7 @@ export function composeModelProvider(
 			return Promise.resolve(
 				imageErrorResult(
 					model,
-					new Error(`Provider ${providerId} has no image implementation for "${model.api}"`),
+					new Error(`No image API: ${model.api}`),
 				),
 			);
 		};
@@ -837,9 +813,7 @@ export function composeModelProvider(
 			return Promise.resolve(
 				classifierErrorResult(
 					model,
-					new Error(
-						`Provider ${providerId} has no classifier implementation for "${model.api}"`,
-					),
+					new Error(`No classifier API: ${model.api}`),
 				),
 			);
 		};

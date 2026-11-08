@@ -1,18 +1,20 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { resolvePath } from "../utils/paths.ts";
 import {
 	CURRENT_SESSION_VERSION,
 	type FileEntry,
+	SESSION_DIR_MODE,
+	SESSION_FILE_MODE,
 	type SessionHeader,
-	type SessionManager,
+	type SessionStore,
 	serializeSessionFileEntry,
-} from "./session-manager.ts";
+} from "./sessions.ts";
 
 type TrailingEntries = (parentId: string | null, timestamp: string) => readonly object[];
 
 export function serializeSessionBranch(
-	sessionManager: SessionManager,
+	sessionManager: SessionStore,
 	createTrailingEntries?: TrailingEntries,
 ): string {
 	const timestamp = new Date().toISOString();
@@ -32,11 +34,12 @@ export function serializeSessionBranch(
 	}
 
 	entries.push(...(createTrailingEntries?.(parentId, timestamp) ?? []));
+
 	return `${entries.map((entry) => serializeSessionFileEntry(entry as FileEntry)).join("\n")}\n`;
 }
 
 export function exportSessionToJsonl(
-	sessionManager: SessionManager,
+	sessionManager: SessionStore,
 	outputPath?: string,
 	createTrailingEntries?: TrailingEntries,
 ): string {
@@ -46,8 +49,12 @@ export function exportSessionToJsonl(
 	);
 
 	const dir = dirname(filePath);
-	if (!existsSync(dir)) mkdirSync(dir, { recursive: true });
+	if (!existsSync(dir)) mkdirSync(dir, { recursive: true, mode: SESSION_DIR_MODE });
 
-	writeFileSync(filePath, serializeSessionBranch(sessionManager, createTrailingEntries));
+	const content = serializeSessionBranch(sessionManager, createTrailingEntries);
+
+	writeFileSync(filePath, content, { mode: SESSION_FILE_MODE });
+	chmodSync(filePath, SESSION_FILE_MODE);
+
 	return filePath;
 }

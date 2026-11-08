@@ -1,11 +1,21 @@
 import { readFile } from "node:fs/promises";
 
-import { type Model, type ModelCost, normalizeModelId } from "@huranth/gama-ai";
+import {
+	fetchModelsDevCatalog as fetchModelsDevCatalogFromApi,
+	findModelsDevModel,
+	type Model,
+	type ModelCost,
+	type ModelsDevCatalog,
+	normalizeModelId,
+} from "@huranth/gama-ai";
 
 import { writeFileAtomicSync } from "../utils/atomic-write.ts";
 import { stripJsonComments } from "../utils/json.ts";
 import { stripBom } from "../utils/text.ts";
 import { modelsDevCacheHint } from "./cache/models-dev.ts";
+import { getModelsDevCatalog } from "./models-dev.ts";
+
+export type { ModelsDevCatalog } from "@huranth/gama-ai";
 
 export interface EndpointModel {
 	id: string;
@@ -29,13 +39,6 @@ export interface ResolvedModel {
 	cachePriced: boolean;
 }
 
-export interface ModelsDevCost {
-	input?: number;
-	output?: number;
-	cache_read?: number;
-	cache_write?: number;
-}
-
 export interface FetchModelsOptions {
 	fetchImpl?: typeof fetch;
 	signal?: AbortSignal;
@@ -47,23 +50,6 @@ export interface ConnectProviderInput {
 	apiKey: string;
 }
 
-export interface ModelsDevCatalog {
-	[providerId: string]: {
-		npm?: string;
-		api?: string;
-		models?: Record<
-			string,
-			{
-				limit?: { context?: number; output?: number };
-				reasoning?: boolean;
-				modalities?: { input?: string[] };
-				family?: string;
-				cost?: ModelsDevCost;
-			}
-		>;
-	};
-}
-
 interface ModelsJsonFile {
 	providers?: Record<string, unknown>;
 }
@@ -71,15 +57,16 @@ interface ModelsJsonFile {
 type CatalogModel = NonNullable<ModelsDevCatalog[string]["models"]>[string];
 
 export const DEFAULT_CONTEXT_WINDOW = 128_000;
+
 export const DEFAULT_MAX_TOKENS = 16_384;
 
 const DEFAULT_ENDPOINT_TIMEOUT_MS = 10_000;
+
 const TOKENS_PER_MILLION = 1_000_000;
+
 export const NO_PRICE: ModelCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+
 export const CUSTOM_PROVIDER_API = "openai-completions";
-const MODELS_DEV_URL = "https://models.dev/api.json";
-const MODELS_DEV_TIMEOUT_MS = 6_000;
-const MODELS_DEV_MAX_BYTES = 20 * 1024 * 1024;
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
 	return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -101,7 +88,7 @@ function readTokenRate(value: unknown): number | undefined {
 	return rate !== undefined && rate > 0 ? rate * TOKENS_PER_MILLION : undefined;
 }
 
-// Per million.
+// Per million
 function toModelCost(prices: {
 	input?: number;
 	output?: number;
@@ -125,6 +112,16 @@ function readPricingCost(pricing: Record<string, unknown> | undefined): ModelCos
 		output: readCostRate(pricing.output_usd_per_1m),
 		cacheRead: readCostRate(pricing.cache_read_usd_per_1m),
 		cacheWrite: readCostRate(pricing.cache_write_usd_per_1m),
+	});
+}
+
+function readTokenCost(record: Record<string, unknown> | undefined): ModelCost | undefined {
+	if (!record) return undefined;
+	return toModelCost({
+		input: readTokenRate(record.prompt ?? record.input_cost_per_token),
+		output: readTokenRate(record.completion ?? record.output_cost_per_token),
+		cacheRead: readTokenRate(record.input_cache_read ?? record.cache_read_input_token_cost),
+		cacheWrite: readTokenRate(record.input_cache_write ?? record.cache_creation_input_token_cost),
 	});
 }
 
@@ -153,6 +150,29 @@ function hasImageModality(value: unknown): boolean {
 		Array.isArray(value) &&
 		value.some((entry) => typeof entry === "string" && entry.includes("image"))
 	);
+}
+
+function positiveFinite(value: unknown): number | undefined {
+	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+}
+
+function firstPositive(...values: unknown[]): number | undefined {
+	for (const value of values) {
+		const number = positiveFinite(value);
+		if (number !== undefined) return number;
+	}
+
+	return undefined;
+}
+
+function firstNumber(...values: unknown[]): number | undefined {
+	for (const value of values) {
+		const candidate = typeof value === "string" ? Number(value) : value;
+		const positive = positiveFinite(candidate);
+		if (positive !== undefined) return Math.floor(positive);
+	}
+
+	return undefined;
 }
 
 export function readEndpointModelMetadata(
@@ -196,17 +216,19 @@ export function readEndpointModelMetadata(
 	};
 }
 
-function positiveFinite(value: unknown): number | undefined {
-	return typeof value === "number" && Number.isFinite(value) && value > 0 ? value : undefined;
+async function readModelsConfig(modelsPath: string): Promise<ModelsJsonFile | undefined> {
+	try {
+		const content = await readFile(modelsPath, "utf-8");
+		const parsed = JSON.parse(stripJsonComments(stripBom(content)));
+		return asRecord(parsed) ? (parsed as ModelsJsonFile) : {};
+	} catch (error) {
+		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+		return undefined;
+	}
 }
 
-function firstPositive(...values: unknown[]): number | undefined {
-	for (const value of values) {
-		const number = positiveFinite(value);
-		if (number !== undefined) return number;
-	}
-
-	return undefined;
+function writeModelsConfig(modelsPath: string, config: ModelsJsonFile): void {
+	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
 }
 
 export async function saveCustomProviderModels(
@@ -216,7 +238,7 @@ export async function saveCustomProviderModels(
 ): Promise<void> {
 	const config = (await readModelsConfig(modelsPath)) ?? {};
 	config.providers = { ...(config.providers ?? {}), [providerId]: definition };
-	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+	writeModelsConfig(modelsPath, config);
 }
 
 export async function deleteCustomProvider(
@@ -227,7 +249,7 @@ export async function deleteCustomProvider(
 	const providers = config?.providers;
 	if (!providers || !(providerId in providers)) return false;
 	delete providers[providerId];
-	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+	writeModelsConfig(modelsPath, config);
 	return true;
 }
 
@@ -241,7 +263,7 @@ export async function saveProviderBaseUrl(
 	const existing = asRecord(providers[providerId]) ?? {};
 	providers[providerId] = { ...existing, baseUrl };
 	config.providers = providers;
-	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+	writeModelsConfig(modelsPath, config);
 }
 
 export function normalizeBaseUrl(raw: string): string {
@@ -251,17 +273,6 @@ export function normalizeBaseUrl(raw: string): string {
 	value = value.replace(/\/+$/g, "");
 	value = value.replace(/\/models$/i, "");
 	return value;
-}
-
-async function readModelsConfig(modelsPath: string): Promise<ModelsJsonFile | undefined> {
-	try {
-		const content = await readFile(modelsPath, "utf-8");
-		const parsed = JSON.parse(stripJsonComments(stripBom(content)));
-		return asRecord(parsed) ? (parsed as ModelsJsonFile) : {};
-	} catch (error) {
-		if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-		return undefined;
-	}
 }
 
 export function deriveProviderId(baseUrl: string): string {
@@ -290,6 +301,15 @@ export async function saveModelOverride(
 	modelId: string,
 	override: Record<string, unknown>,
 ): Promise<void> {
+	for (const field of ["contextWindow", "maxTokens"] as const) {
+		const value = override[field];
+		if (
+			value !== undefined &&
+			(typeof value !== "number" || !Number.isSafeInteger(value) || value <= 0)
+		) {
+			throw new Error(`Invalid value: ${field}`);
+		}
+	}
 	const config = (await readModelsConfig(modelsPath)) ?? {};
 	const providers = { ...(config.providers ?? {}) };
 	const existing = asRecord(providers[providerId]) ?? {};
@@ -298,7 +318,7 @@ export async function saveModelOverride(
 	modelOverrides[modelId] = { ...existingOverride, ...override };
 	providers[providerId] = { ...existing, modelOverrides };
 	config.providers = providers;
-	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+	writeModelsConfig(modelsPath, config);
 }
 
 export function uniqueProviderId(base: string, existing: Iterable<string>): string {
@@ -308,16 +328,6 @@ export function uniqueProviderId(base: string, existing: Iterable<string>): stri
 		const candidate = `${base}-${suffix}`;
 		if (!taken.has(candidate)) return candidate;
 	}
-}
-
-function readTokenCost(record: Record<string, unknown> | undefined): ModelCost | undefined {
-	if (!record) return undefined;
-	return toModelCost({
-		input: readTokenRate(record.prompt ?? record.input_cost_per_token),
-		output: readTokenRate(record.completion ?? record.output_cost_per_token),
-		cacheRead: readTokenRate(record.input_cache_read ?? record.cache_read_input_token_cost),
-		cacheWrite: readTokenRate(record.input_cache_write ?? record.cache_creation_input_token_cost),
-	});
 }
 
 function entryId(entry: unknown): string | undefined {
@@ -342,18 +352,6 @@ function modelEntries(payload: unknown): unknown[] {
 	return [];
 }
 
-function firstNumber(...values: unknown[]): number | undefined {
-	for (const value of values) {
-		if (typeof value === "number" && Number.isFinite(value) && value > 0)
-			return Math.floor(value);
-		if (typeof value === "string" && value.trim() !== "") {
-			const parsed = Number(value);
-			if (Number.isFinite(parsed) && parsed > 0) return Math.floor(parsed);
-		}
-	}
-	return undefined;
-}
-
 export function parseModelsPayload(payload: unknown): EndpointModel[] {
 	const models: EndpointModel[] = [];
 	const seen = new Set<string>();
@@ -374,28 +372,18 @@ export function parseModelsPayload(payload: unknown): EndpointModel[] {
 	return models;
 }
 
+// Catalog fetch
 export async function fetchModelsDevCatalog(
 	options: FetchModelsOptions = {},
 ): Promise<ModelsDevCatalog | undefined> {
-	const fetchImpl = options.fetchImpl ?? fetch;
-	const controller = new AbortController();
-	const onAbort = () => controller.abort();
-	options.signal?.addEventListener("abort", onAbort, { once: true });
-	const timeout = setTimeout(() => controller.abort(), MODELS_DEV_TIMEOUT_MS);
-	try {
-		const response = await fetchImpl(MODELS_DEV_URL, { signal: controller.signal });
-		if (!response.ok) return undefined;
-		const length = Number(response.headers.get("content-length") ?? "");
-		if (Number.isFinite(length) && length > MODELS_DEV_MAX_BYTES) return undefined;
-		const text = await response.text();
-		if (text.length > MODELS_DEV_MAX_BYTES) return undefined;
-		return JSON.parse(text);
-	} catch {
-		return undefined;
-	} finally {
-		clearTimeout(timeout);
-		options.signal?.removeEventListener("abort", onAbort);
+	if (options.fetchImpl) {
+		return fetchModelsDevCatalogFromApi({
+			fetchImpl: options.fetchImpl,
+			signal: options.signal,
+			timeoutMs: options.timeoutMs,
+		});
 	}
+	return getModelsDevCatalog({ signal: options.signal });
 }
 
 export async function rememberCustomProviderModel(
@@ -423,7 +411,7 @@ export async function rememberCustomProviderModel(
 	const cost =
 		model.cost && typeof model.cost === "object" && !Array.isArray(model.cost)
 			? { ...model.cost }
-			: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+			: { ...NO_PRICE };
 	models.push({
 		id: model.id,
 		name: model.name.trim() || model.id,
@@ -439,7 +427,7 @@ export async function rememberCustomProviderModel(
 	});
 	providers[model.provider] = { ...existing, models };
 	config.providers = providers;
-	writeFileAtomicSync(modelsPath, `${JSON.stringify(config, null, 2)}\n`);
+	writeModelsConfig(modelsPath, config);
 	return "added";
 }
 
@@ -449,7 +437,7 @@ export async function fetchEndpointModels(
 	options: FetchModelsOptions = {},
 ): Promise<EndpointModel[]> {
 	const normalized = normalizeBaseUrl(baseUrl);
-	if (!normalized) throw new Error("Enter a base URL.");
+	if (!normalized) throw new Error("Base URL required");
 	const fetchImpl = options.fetchImpl ?? fetch;
 	const timeoutMs = options.timeoutMs ?? DEFAULT_ENDPOINT_TIMEOUT_MS;
 	let signal = options.signal;
@@ -481,40 +469,37 @@ export async function fetchEndpointModels(
 			if (options.signal?.aborted) throw error;
 			lastError = new Error(
 				signal?.aborted && timeoutMs > 0
-					? `${url} timed out after ${timeoutMs} ms`
-					: `Could not reach ${url}: ${error instanceof Error ? error.message : String(error)}`,
+					? `Timed out: ${url}`
+					: `Unreachable: ${url}`,
 			);
 			continue;
 		}
 		if (!response.ok) {
 			const detail = (await response.text().catch(() => "")).trim().slice(0, 200);
-			lastError = new Error(
-				`${url} returned HTTP ${response.status}` +
-					`${response.statusText ? ` ${response.statusText}` : ""}` +
-					`${detail ? `: ${detail}` : ""}`,
-			);
+			lastError = new Error(`HTTP ${response.status}${detail ? `: ${detail}` : ""}`);
 			continue;
 		}
 		let payload: unknown;
 		try {
 			payload = await response.json();
 		} catch {
-			lastError = new Error(`${url} did not return JSON.`);
+			lastError = new Error(`Invalid JSON: ${url}`);
 			continue;
 		}
 		const models = parseModelsPayload(payload);
 		if (models.length > 0) return models;
 
-		lastError = new Error(`${url} returned no models.`);
+		lastError = new Error(`No models: ${url}`);
 	}
 
-	throw lastError ?? new Error("Could not fetch models from this endpoint.");
+	throw lastError ?? new Error("Model fetch failed");
 }
 
 export function resolveModels(
 	models: readonly EndpointModel[],
 	builtinModels: readonly Model<any>[] = [],
 	modelsDev?: ModelsDevCatalog,
+	providerId?: string,
 ): ResolvedModel[] {
 	const builtinById = new Map<string, Model<any>>();
 	for (const model of builtinModels) {
@@ -530,7 +515,11 @@ export function resolveModels(
 	}
 	return models.map((model) => {
 		const builtin = builtinById.get(model.id.toLowerCase());
-		const dev = devById.get(normalizeModelId(model.id)) ?? devById.get(model.id.toLowerCase());
+		// Scoped lookup
+		const dev =
+			(providerId ? findModelsDevModel(modelsDev, providerId, model.id) : undefined) ??
+			devById.get(normalizeModelId(model.id)) ??
+			devById.get(model.id.toLowerCase());
 		const cache = modelsDevCacheHint(modelsDev, model.id);
 		const cost = knownCost(model.cost) ?? knownCost(builtin?.cost) ?? readDevCost(dev);
 		const contextWindow =

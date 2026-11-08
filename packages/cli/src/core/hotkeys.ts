@@ -4,7 +4,7 @@ import {
 	type KeybindingsConfig,
 	type KeyId,
 	TUI_KEYBINDINGS,
-	KeybindingsManager as TuiKeybindingsManager,
+	Keymap as TuiKeybindingsManager,
 } from "@huranth/gama-tui";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
@@ -63,14 +63,21 @@ declare module "@huranth/gama-tui" {
 	interface Keybindings extends AppKeybindings {}
 }
 
+const IS_WINDOWS = process.platform === "win32";
+
 const windowsKeybindings = useWindowsKeybindings();
+
+function defaultUndoKey(): KeyId {
+	if (IS_WINDOWS) return "ctrl+z";
+	if (windowsKeybindings) return "alt+z";
+	return "ctrl+-";
+}
 
 export const KEYBINDINGS = {
 	...TUI_KEYBINDINGS,
 	"tui.editor.undo": {
 		...TUI_KEYBINDINGS["tui.editor.undo"],
-		defaultKeys:
-			process.platform === "win32" ? "ctrl+z" : windowsKeybindings ? "alt+z" : "ctrl+-",
+		defaultKeys: defaultUndoKey(),
 	},
 	"tui.altScreen.previousPrompt": {
 		...TUI_KEYBINDINGS["tui.altScreen.previousPrompt"],
@@ -88,7 +95,7 @@ export const KEYBINDINGS = {
 	"app.clear": { defaultKeys: "ctrl+c", description: "Copy selection or clear editor" },
 	"app.exit": { defaultKeys: "ctrl+d", description: "Exit when editor is empty" },
 	"app.suspend": {
-		defaultKeys: process.platform === "win32" ? [] : "ctrl+z",
+		defaultKeys: IS_WINDOWS ? [] : "ctrl+z",
 		description: "Suspend to background",
 	},
 	"app.thinking.cycle": {
@@ -254,10 +261,12 @@ function toKeybindingsConfig(value: Record<string, unknown>): KeybindingsConfig 
 			config[key] = binding as KeyId;
 			continue;
 		}
+
 		if (Array.isArray(binding) && binding.every((entry) => typeof entry === "string")) {
 			config[key] = binding as KeyId[];
 		}
 	}
+
 	return config;
 }
 
@@ -273,10 +282,12 @@ export function migrateKeybindingsConfig(rawConfig: Record<string, unknown>): {
 		if (nextKey !== key) {
 			migrated = true;
 		}
+
 		if (key !== nextKey && Object.hasOwn(rawConfig, nextKey)) {
 			migrated = true;
 			continue;
 		}
+
 		config[nextKey] = value;
 	}
 
@@ -312,7 +323,7 @@ function loadRawConfig(path: string): Record<string, unknown> | undefined {
 	}
 }
 
-export class KeybindingsManager extends TuiKeybindingsManager {
+export class Keymap extends TuiKeybindingsManager {
 	private configPath: string | undefined;
 
 	constructor(userBindings: KeybindingsConfig = {}, configPath?: string) {
@@ -320,15 +331,15 @@ export class KeybindingsManager extends TuiKeybindingsManager {
 		this.configPath = configPath;
 	}
 
-	static create(agentDir: string = getAgentDir()): KeybindingsManager {
+	static create(agentDir: string = getAgentDir()): Keymap {
 		const configPath = join(agentDir, "keybindings.json");
-		const userBindings = KeybindingsManager.loadFromFile(configPath);
-		return new KeybindingsManager(userBindings, configPath);
+		const userBindings = Keymap.loadFromFile(configPath);
+		return new Keymap(userBindings, configPath);
 	}
 
 	reload(): void {
 		if (!this.configPath) return;
-		this.setUserBindings(KeybindingsManager.loadFromFile(this.configPath));
+		this.setUserBindings(Keymap.loadFromFile(this.configPath));
 	}
 
 	getEffectiveConfig(): KeybindingsConfig {

@@ -1,12 +1,12 @@
-import type { SettingsManager } from "./settings-manager.ts";
+import type { SettingsStore } from "./settings.ts";
 
-function isTruthyEnvFlag(value: string | undefined): boolean {
+export function isTruthyEnvFlag(value: string | undefined): boolean {
 	if (!value) return false;
 	return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
 }
 
 export function isInstallTelemetryEnabled(
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 	telemetryEnv: string | undefined = process.env.GAMA_TELEMETRY,
 ): boolean {
 	return telemetryEnv !== undefined

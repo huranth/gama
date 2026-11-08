@@ -1,19 +1,19 @@
 export {
-	AgentSession,
+	RunSession,
 	type AgentSessionConfig,
-	type AgentSessionEvent,
+	type SessionEvent,
 	type AgentSessionEventListener,
 	type ModelCycleResult,
 	type PromptOptions,
 	type SessionStats,
-} from "./agent-session.ts";
+} from "./session/session.ts";
 
 export {
-	AgentSessionRuntime,
+	SessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	type CreateAgentSessionRuntimeResult,
 	createAgentSessionRuntime,
-} from "./agent-session-runtime.ts";
+} from "./session/runtime.ts";
 
 export {
 	type AgentSessionRuntimeDiagnostic,
@@ -22,7 +22,7 @@ export {
 	type CreateAgentSessionServicesOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
-} from "./agent-session-services.ts";
+} from "./session/services.ts";
 
 export {
 	type BashExecutorOptions,
@@ -72,7 +72,7 @@ export {
 	type ExtensionFactory,
 	type ExtensionFlag,
 	type ExtensionHandler,
-	ExtensionRunner,
+	PluginHost,
 	type ExtensionShortcut,
 	type ExtensionUIContext,
 	type InlineExtension,
@@ -100,4 +100,4 @@ export {
 	type WorkingIndicatorOptions,
 } from "./ext/index.ts";
 
-export { createSyntheticSourceInfo } from "./source-info.ts";
+export { createSyntheticSourceInfo } from "./origin.ts";

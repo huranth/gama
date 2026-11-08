@@ -1,10 +1,13 @@
 import type { Api, Model, ProviderHeaders } from "@huranth/gama-ai";
-import type { SettingsManager } from "./settings-manager.ts";
-import { isInstallTelemetryEnabled } from "./telemetry.ts";
+import type { SettingsStore } from "./settings.ts";
+import { isInstallTelemetryEnabled } from "./ping.ts";
 
 const OPENROUTER_HOST = "openrouter.ai";
+
 const NVIDIA_NIM_HOST = "integrate.api.nvidia.com";
+
 const CLOUDFLARE_API_HOST = "api.cloudflare.com";
+
 const CLOUDFLARE_AI_GATEWAY_HOST = "gateway.ai.cloudflare.com";
 
 function matchesHost(baseUrl: string, expectedHost: string): boolean {
@@ -34,7 +37,7 @@ function isCloudflareModel(model: Model<Api>): boolean {
 
 function getDefaultAttributionHeaders(
 	model: Model<Api>,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 ): Record<string, string> | undefined {
 	if (!isInstallTelemetryEnabled(settingsManager)) {
 		return undefined;
@@ -65,7 +68,7 @@ function getDefaultAttributionHeaders(
 
 export function mergeProviderAttributionHeaders(
 	model: Model<Api>,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 	...headerSources: Array<ProviderHeaders | undefined>
 ): ProviderHeaders | undefined {
 	const merged: ProviderHeaders = {

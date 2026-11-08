@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import {
-	Agent,
+	Runner,
 	type AgentMessage,
 	type StreamFn,
 	setDefaultStreamFn,
@@ -15,7 +15,7 @@ import {
 } from "@huranth/gama-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
-import { AgentSession } from "./agent-session.ts";
+import { RunSession } from "./session/session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import {
 	fingerprintPrompt,
@@ -25,19 +25,26 @@ import {
 import { CacheWarmer } from "./cache/warmer.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type {
-	ExtensionRunner,
+	PluginHost,
 	LoadExtensionsResult,
 	SessionStartEvent,
 	ToolDefinition,
 } from "./ext/index.ts";
-import { convertToLlm } from "./messages.ts";
-import { findInitialModel } from "./model-resolver.ts";
-import { ModelRuntime } from "./model-runtime.ts";
+import {
+	createHandsTool,
+	HAND_KINDS,
+	HAND_SYSTEM_PROMPT,
+	HANDS_TOOL_NAME,
+	type HandsEvent,
+} from "./hands.ts";
+import { convertToLlm } from "./msg.ts";
+import { findInitialModel } from "./pick.ts";
+import { ModelHub } from "./model-run.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
-import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
-import { DEFAULT_TOOL_NAMES, SettingsManager } from "./settings-manager.ts";
+import { getDefaultSessionDir, SessionStore } from "./sessions.ts";
+import { DEFAULT_TOOL_NAMES, SettingsStore } from "./settings.ts";
 import { time } from "./timings.ts";
 import {
 	createBashTool,
@@ -49,10 +56,11 @@ import {
 	createPowerShellTool,
 	createReadOnlyTools,
 	createReadTool,
+	createWebFetchTool,
 	createWriteTool,
 	withFileMutationQueue,
 } from "./tools/index.ts";
-import { getBranchSelection } from "./virtual-models.ts";
+import { getBranchSelection } from "./fake-models.ts";
 
 export type {
 	ExtensionAPI,
@@ -66,14 +74,16 @@ export type {
 } from "./ext/index.ts";
 
 export type { PromptTemplate } from "./prompt-templates.ts";
+
 export type { Skill } from "./skills.ts";
+
 export type { Tool } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
 	cwd?: string;
 	agentDir?: string;
 
-	modelRuntime?: ModelRuntime;
+	modelRuntime?: ModelHub;
 
 	model?: Model<any>;
 	thinkingLevel?: ThinkingLevel;
@@ -83,30 +93,33 @@ export interface CreateAgentSessionOptions {
 	tools?: string[];
 	excludeTools?: string[];
 	customTools?: ToolDefinition[];
+	enableHands?: boolean;
+	appendSystemPrompt?: string;
 
 	resourceLoader?: ResourceLoader;
 
-	sessionManager?: SessionManager;
+	sessionManager?: SessionStore;
 
-	settingsManager?: SettingsManager;
+	settingsManager?: SettingsStore;
 	sessionStartEvent?: SessionStartEvent;
 }
 
 export interface CreateAgentSessionResult {
-	session: AgentSession;
+	session: RunSession;
 	extensionsResult: LoadExtensionsResult;
 	modelFallbackMessage?: string;
 }
 
 setDefaultStreamFn(streamSimple);
 
-export * from "./agent-session-runtime.ts";
+export * from "./session/runtime.ts";
 
 export {
 	withFileMutationQueue,
 	createCodingTools,
 	createReadOnlyTools,
 	createReadTool,
+	createWebFetchTool,
 	createBashTool,
 	createEditTool,
 	createWriteTool,
@@ -116,15 +129,13 @@ export {
 	createPowerShellTool,
 };
 
-type SessionView = ReturnType<SessionManager["buildSessionContext"]>;
+type SessionView = ReturnType<SessionStore["buildSessionContext"]>;
 
-type RunnerRef = { current?: ExtensionRunner };
+type RunnerRef = { current?: PluginHost };
 
 const DISABLED_IMAGE_TEXT = "Image reading is disabled.";
 
-function getDefaultAgentDir(): string {
-	return getAgentDir();
-}
+const MAX_IDLE_TIMEOUT_MS = 2_147_483_647;
 
 function withFallbackMessage(
 	previous: string | undefined,
@@ -135,7 +146,7 @@ function withFallbackMessage(
 }
 
 function createConvertToLlm(
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 ): (messages: AgentMessage[]) => Message[] {
 	return (messages) => {
 		const converted = convertToLlm(messages);
@@ -144,20 +155,19 @@ function createConvertToLlm(
 	};
 }
 
-function createAgent(input: {
+function createRunner(input: {
 	model: Model<any> | undefined;
 	thinkingLevel: ThinkingLevel;
 	messages: AgentMessage[];
 	sessionId: string;
-	settingsManager: SettingsManager;
+	settingsManager: SettingsStore;
 	runnerRef: RunnerRef;
-	cacheWarmer: CacheWarmer;
 	streamFn: StreamFn;
-}): Agent {
+}): Runner {
 	const { model, thinkingLevel, messages, sessionId, settingsManager, runnerRef } = input;
 	const hooks = createProviderHooks(runnerRef);
 
-	return new Agent({
+	return new Runner({
 		initialState: { systemPrompt: "", model, thinkingLevel, tools: [], messages },
 		convertToLlm: createConvertToLlm(settingsManager),
 		streamFn: input.streamFn,
@@ -172,13 +182,14 @@ function createAgent(input: {
 		},
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
+		coalesceQueuedMessages: true,
 		transport: settingsManager.getTransport(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
 	});
 }
 
-function cacheContextIsCurrent(source: Agent, requestModel: Model<any>): () => boolean {
+function cacheContextIsCurrent(source: Runner, requestModel: Model<any>): () => boolean {
 	const messages = source.state.messages.slice();
 	return () => {
 		const model = source.state.model;
@@ -230,14 +241,14 @@ function createProviderHooks(runnerRef: RunnerRef) {
 }
 
 function buildRequestOptions(
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 	runnerRef: RunnerRef,
 	requestModel: Model<any>,
 	options: ModelsSimpleStreamOptions = {},
 ): ModelsSimpleStreamOptions {
 	const retry = settingsManager.getProviderRetrySettings();
 	const idleTimeout = settingsManager.getHttpIdleTimeoutMs();
-	const defaultTimeout = idleTimeout === 0 ? 2147483647 : idleTimeout;
+	const defaultTimeout = idleTimeout === 0 ? MAX_IDLE_TIMEOUT_MS : idleTimeout;
 	const timeoutMs = options.timeoutMs ?? retry.timeoutMs ?? defaultTimeout;
 
 	return {
@@ -272,7 +283,7 @@ interface ToolLoadout {
 
 function resolveToolLoadout(
 	options: CreateAgentSessionOptions,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 	existingSession: SessionView,
 ): ToolLoadout {
 	const hasExistingSession = existingSession.messages.length > 0;
@@ -327,7 +338,7 @@ function withoutImages(message: Message): Message {
 
 function resolveThinkingLevel(
 	options: CreateAgentSessionOptions,
-	settingsManager: SettingsManager,
+	settingsManager: SettingsStore,
 	model: Model<any> | undefined,
 	existingSession: SessionView,
 	hasThinkingEntry: boolean,
@@ -358,15 +369,15 @@ export async function createAgentSession(
 	options: CreateAgentSessionOptions = {},
 ): Promise<CreateAgentSessionResult> {
 	const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
-	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
+	const agentDir = options.agentDir ? resolvePath(options.agentDir) : getAgentDir();
 
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
 	const modelRuntime =
-		options.modelRuntime ?? (await ModelRuntime.create({ authPath, modelsPath }));
-	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
+		options.modelRuntime ?? (await ModelHub.create({ authPath, modelsPath }));
+	const settingsManager = options.settingsManager ?? SettingsStore.create(cwd, agentDir);
 	const sessionManager =
-		options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
+		options.sessionManager ?? SessionStore.create(cwd, getDefaultSessionDir(cwd, agentDir));
 
 	let resourceLoader = options.resourceLoader;
 	if (!resourceLoader) {
@@ -410,14 +421,13 @@ export async function createAgentSession(
 		}),
 	);
 
-	const agent = createAgent({
+	const agent = createRunner({
 		model,
 		thinkingLevel,
 		messages: existingSession.messages,
 		sessionId: sessionManager.getSessionId(),
 		settingsManager,
 		runnerRef,
-		cacheWarmer,
 		streamFn: async (requestModel, context, requestOptions) => {
 			const built = buildRequestOptions(
 				settingsManager,
@@ -437,6 +447,7 @@ export async function createAgentSession(
 					messages: context.messages,
 					prior: priorPromptCacheOf(sessionManager.getBranch()),
 				}),
+				requestModel,
 			);
 		},
 	});
@@ -448,14 +459,57 @@ export async function createAgentSession(
 		sessionManager.appendThinkingLevelChange(thinkingLevel);
 	}
 
-	const session = new AgentSession({
+	let publishHandsEvent: (event: HandsEvent) => void = () => {};
+	let wakeParent: (text: string, handId: string) => void = () => {};
+	let cancelWakeParent: (handId: string) => boolean = () => false;
+	let parentSession: RunSession | undefined;
+	const handsTool =
+		options.enableHands !== true
+			? undefined
+			: createHandsTool({
+					emit: (event) => publishHandsEvent(event),
+					wake: (text, handId) => wakeParent(text, handId),
+					cancelWake: (handId) => cancelWakeParent(handId),
+					recordUsage: (provider, model, usage) => {
+						sessionManager.appendUsage("hands", provider, model, usage);
+					},
+					createSession: async (_index, kind) => {
+						const hand = HAND_KINDS[kind];
+						const handModel = parentSession?.model ?? model;
+						const handThinkingLevel = parentSession?.thinkingLevel ?? thinkingLevel;
+						const created = await createAgentSession({
+							cwd,
+							agentDir: options.agentDir,
+							modelRuntime,
+							settingsManager,
+							resourceLoader,
+							model: handModel,
+							thinkingLevel: handThinkingLevel,
+							sessionManager: SessionStore.inMemory(cwd),
+							tools: hand.tools ? [...hand.tools] : undefined,
+							excludeTools: [
+								...new Set([...(options.excludeTools ?? []), HANDS_TOOL_NAME]),
+							],
+							appendSystemPrompt: `${HAND_SYSTEM_PROMPT}\n\n${hand.prompt}`,
+							enableHands: false,
+						});
+						return created.session;
+					},
+				});
+	const customTools: ToolDefinition[] = [
+		...(options.customTools ?? []).filter((tool) => tool.name !== HANDS_TOOL_NAME),
+		...(handsTool ? [handsTool as unknown as ToolDefinition] : []),
+	];
+
+	const session = new RunSession({
 		agent,
 		sessionManager,
 		settingsManager,
 		cwd,
 		scopedModels: options.scopedModels,
 		resourceLoader,
-		customTools: options.customTools,
+		appendSystemPrompt: options.appendSystemPrompt,
+		customTools,
 		modelRuntime,
 		cacheWarmer,
 		initialActiveToolNames: loadout.active,
@@ -464,8 +518,46 @@ export async function createAgentSession(
 		allowedToolNames: loadout.allowed,
 		excludedToolNames: loadout.excluded,
 		extensionRunnerRef: runnerRef,
-		sessionStartEvent: options.sessionStartEvent,
-	});
+		sessionStartEvent: options.sessionStartEvent,		});
+	parentSession = session;
+	publishHandsEvent = (event) => session.publishHandsEvent(event);
+	let wakeQueue: Promise<void> = Promise.resolve();
+	const canceledWakes = new Set<string>();
+	const scheduledWakes = new Set<string>();
+	wakeParent = (text, handId) => {
+		if (canceledWakes.has(handId)) return;
+		scheduledWakes.add(handId);
+		wakeQueue = wakeQueue
+			.then(async () => {
+				if (canceledWakes.has(handId)) return;
+				scheduledWakes.delete(handId);
+				try {
+					await session.sendCustomMessage(
+						{
+							customType: "hands",
+							content: [{ type: "text", text }],
+							display: true,
+							details: { handId },
+						},
+						{ triggerTurn: true, deliverAs: "followUp" },
+					);
+				} catch {}
+			})
+			.catch(() => undefined)
+			.finally(() => {
+				scheduledWakes.delete(handId);
+			});
+	};
+	cancelWakeParent = (handId) => {
+		const wasScheduled = scheduledWakes.has(handId);
+		canceledWakes.add(handId);
+		const removed = session.removeCustomMessages(
+			(message) =>
+				message.customType === "hands" &&
+				(message.details as { handId?: unknown } | undefined)?.handId === handId,
+		);
+		return wasScheduled || removed > 0;
+	};
 
 	const extensionsResult = resourceLoader.getExtensions();
 
@@ -474,9 +566,9 @@ export async function createAgentSession(
 
 async function resolveModel(
 	options: CreateAgentSessionOptions,
-	modelRuntime: ModelRuntime,
-	settingsManager: SettingsManager,
-	sessionManager: SessionManager,
+	modelRuntime: ModelHub,
+	settingsManager: SettingsStore,
+	sessionManager: SessionStore,
 	existingSession: SessionView,
 ): Promise<{ model: Model<any> | undefined; fallbackMessage: string | undefined }> {
 	let model = options.model;
