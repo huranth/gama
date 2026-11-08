@@ -2,8 +2,8 @@ import { visibleWidth } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { beforeAll, describe, expect, it } from "vitest";
 import { DEFAULT_MAX_BYTES, truncateTail } from "../src/core/tools/truncate.ts";
-import { BashExecutionComponent } from "../src/modes/tui/parts/bash-execution.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+import { BashExecutionComponent } from "../src/term/parts/bash-execution.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 function createTuiStub(columns: number): { columns: number; stub: any } {
@@ -29,7 +29,7 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 		initTheme(undefined, false);
 	});
 
-	it("collapsed preview lines respect render-time width, " + "not construction-time width", () => {
+	it("collapsed preview lines respect render-time width, not construction-time width", () => {
 		const wideWidth = 200;
 		const narrowWidth = 80;
 
@@ -114,9 +114,10 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 			const text = stripAnsi(lines.join("\n"));
 			expect(text).toContain("$ echo failure");
 			expect(text).toContain("failed output");
-			expect(text).toContain("Failed");
+			expect(text).toContain("Command failed");
+			expect(text).not.toContain("Command failed with exit");
 			expect(text.replace(/\s+/g, "")).toContain(
-				"Outputtruncated,fulloutputat/tmp/full-output.log",
+				"Outputtruncated:/tmp/full-output.log",
 			);
 			for (const line of lines) {
 				expect(visibleWidth(line)).toBeLessThanOrEqual(24);

@@ -2,7 +2,7 @@ import { truncateToWidth, visibleWidth } from "@huranth/gama-tui";
 import { describe, expect, it } from "vitest";
 
 describe("truncateToWidth", () => {
-	it("should truncate messages with Unicode characters correctly", () => {
+	it("truncate messages with Unicode characters correctly", () => {
 		const message = '✔ script to run › dev $ concurrently "vite" "node --import tsx ./';
 		const width = 67;
 		const maxMsgWidth = width - 2;
@@ -13,7 +13,7 @@ describe("truncateToWidth", () => {
 		expect(truncatedWidth).toBeLessThanOrEqual(maxMsgWidth);
 	});
 
-	it("should handle emoji characters", () => {
+	it("handle emoji characters", () => {
 		const message = "🎉 Celebration! 🚀 Launch 📦 Package ready for deployment now";
 		const width = 40;
 		const maxMsgWidth = width - 2;
@@ -24,7 +24,7 @@ describe("truncateToWidth", () => {
 		expect(truncatedWidth).toBeLessThanOrEqual(maxMsgWidth);
 	});
 
-	it("should handle mixed ASCII and wide characters", () => {
+	it("handle mixed ASCII and wide characters", () => {
 		const message = "Hello 世界 Test 你好 More text here that is long";
 		const width = 30;
 		const maxMsgWidth = width - 2;
@@ -35,7 +35,7 @@ describe("truncateToWidth", () => {
 		expect(truncatedWidth).toBeLessThanOrEqual(maxMsgWidth);
 	});
 
-	it("should not truncate messages that fit", () => {
+	it("not truncate messages that fit", () => {
 		const message = "Short message";
 		const width = 50;
 		const maxMsgWidth = width - 2;
@@ -46,7 +46,7 @@ describe("truncateToWidth", () => {
 		expect(visibleWidth(truncated)).toBeLessThanOrEqual(maxMsgWidth);
 	});
 
-	it("should add ellipsis when truncating", () => {
+	it("add ellipsis when truncating", () => {
 		const message = "This is a very long message that needs to be truncated";
 		const width = 30;
 		const maxMsgWidth = width - 2;
@@ -57,7 +57,7 @@ describe("truncateToWidth", () => {
 		expect(visibleWidth(truncated)).toBeLessThanOrEqual(maxMsgWidth);
 	});
 
-	it("should handle the exact crash case from issue report", () => {
+	it("handle the exact crash case from issue report", () => {
 		const message = '✔ script to run › dev $ concurrently "vite" "node --import tsx ./server.ts"';
 		const terminalWidth = 67;
 		const cursorWidth = 2;

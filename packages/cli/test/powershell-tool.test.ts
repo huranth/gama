@@ -29,6 +29,8 @@ describe("powershell tool", () => {
 			const tool = createPowerShellTool(process.cwd());
 			const result = await tool.execute("powershell-test", {
 				command: "Write-Output 'héllo €'; Get-ExecutionPolicy -Scope Process",
+				// Short command
+				timeout: 30,
 			});
 			const output = getTextOutput(result);
 

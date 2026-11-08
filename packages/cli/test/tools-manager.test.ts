@@ -1,7 +1,18 @@
 import type * as ChildProcess from "node:child_process";
+import { createHash } from "node:crypto";
 import type * as Fs from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ensureTool, getLatestVersion, type ToolStatus } from "../src/utils/tools-manager.ts";
+import {
+	downloadFile,
+	ensureTool,
+	getLatestVersion,
+	resolveExpectedDigest,
+	type ToolStatus,
+	verifyAssetDigest,
+} from "../src/utils/tools-manager.ts";
 
 const originalOffline = process.env.GAMA_OFFLINE;
 
@@ -86,7 +97,7 @@ describe("getLatestVersion", () => {
 		);
 
 		await expect(getLatestVersion("sharkdp/fd")).rejects.toThrow(
-			"Failed to resolve latest sharkdp/fd release: HTTP 404 without redirect",
+			"Release lookup failed: sharkdp/fd",
 		);
 	});
 
@@ -97,7 +108,7 @@ describe("getLatestVersion", () => {
 		);
 
 		await expect(getLatestVersion("sharkdp/fd")).rejects.toThrow(
-			"Failed to resolve latest sharkdp/fd release: unexpected redirect to https://github.com/login",
+			"Release redirect failed: sharkdp/fd",
 		);
 	});
 });
@@ -136,11 +147,88 @@ describe("ensureTool", () => {
 
 		expect(result).toBeUndefined();
 		expect(statuses).toEqual([
-			{ type: "info", message: "fd not found. Downloading..." },
+			{ type: "info", message: "Downloading: fd" },
 			{
 				type: "warning",
-				message: "Failed to download fd: fetch failed: connect ETIMEDOUT 140.82.113.3:443",
+				message: expect.stringContaining("Download failed: fd"),
 			},
 		]);
+	});
+});
+
+describe("download failures", () => {
+	it("cancels the response body when a download fails", async () => {
+		const response = new Response("missing", { status: 404 });
+		vi.stubGlobal("fetch", vi.fn(async () => response));
+
+		await expect(
+			downloadFile("https://example.test/fd.zip", join(tmpdir(), `fd-${Date.now()}.zip`)),
+		).rejects.toThrow("Download failed: 404");
+		expect(response.bodyUsed).toBe(true);
+	});
+});
+
+describe("asset checksums", () => {
+	it("uses a valid sidecar digest without calling the release API", async () => {
+		const digest = "a".repeat(64);
+		const fetchMock = vi.fn(
+			async (_input: string | URL | Request) => new Response(`${digest}  fd.zip\n`, { status: 200 }),
+		);
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			resolveExpectedDigest("https://example.test/fd.zip", "sharkdp/fd", "v10.4.2", "fd.zip"),
+		).resolves.toBe(digest);
+		expect(fetchMock).toHaveBeenCalledTimes(1);
+		expect(fetchMock.mock.calls[0]?.[0]).toBe("https://example.test/fd.zip.sha256");
+	});
+
+	it("falls back to the release API when the sidecar is missing", async () => {
+		const digest = "b".repeat(64);
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			if (String(input).endsWith(".sha256")) return new Response("missing", { status: 404 });
+			return new Response(
+				JSON.stringify({ assets: [{ name: "fd.zip", digest: `sha256:${digest}` }] }),
+				{ status: 200 },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			resolveExpectedDigest("https://example.test/fd.zip", "sharkdp/fd", "v10.4.2", "fd.zip"),
+		).resolves.toBe(digest);
+		expect(fetchMock).toHaveBeenCalledTimes(2);
+	});
+
+	it("ignores a malformed sidecar", async () => {
+		const digest = "c".repeat(64);
+		const fetchMock = vi.fn(async (input: string | URL | Request) => {
+			if (String(input).endsWith(".sha256")) return new Response("not-a-digest", { status: 200 });
+			return new Response(
+				JSON.stringify({ assets: [{ name: "fd.zip", digest: `sha256:${digest}` }] }),
+				{ status: 200 },
+			);
+		});
+		vi.stubGlobal("fetch", fetchMock);
+
+		await expect(
+			resolveExpectedDigest("https://example.test/fd.zip", "sharkdp/fd", "v10.4.2", "fd.zip"),
+		).resolves.toBe(digest);
+	});
+
+	it("rejects a mismatch and accepts the matching digest", async () => {
+		const dir = mkdtempSync(join(tmpdir(), "gama-digest-"));
+		try {
+			const path = join(dir, "fd.zip");
+			writeFileSync(path, "archive");
+			const digest = createHash("sha256").update("archive").digest("hex");
+
+			await expect(verifyAssetDigest(path, digest, "fd.zip")).resolves.toBeUndefined();
+			await expect(verifyAssetDigest(path, "0".repeat(64), "fd.zip")).rejects.toThrow(
+				"Checksum mismatch: fd.zip",
+			);
+		} finally {
+			rmSync(dir, { recursive: true, force: true });
+		}
 	});
 });

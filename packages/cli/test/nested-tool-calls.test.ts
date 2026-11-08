@@ -8,7 +8,7 @@ import {
 	type NestedToolCallHost,
 	NestedToolCallRunner,
 	type NestedToolExecutionEvent,
-} from "../src/core/nested-tool-calls.ts";
+} from "../src/core/nested.ts";
 
 function usage(input: number, cost: number): Usage {
 	return {
@@ -54,7 +54,9 @@ function createRunner(tools: AgentTool[], options: { sequential?: boolean } = {}
 }
 
 describe("NestedToolCallRunner", () => {
-	it("assigns ids below the caller, emits events with the parent id, and records the calls", async () => {
+	it(
+		"assigns ids below the caller, emits events with the parent id, and records the calls",
+		async () => {
 		const echo: AgentTool = {
 			name: "echo",
 			label: "Echo",

@@ -107,6 +107,42 @@ describe("read before write", () => {
 		expect(await readFile(join(dir, "b.txt"), "utf8")).toBe("new");
 	});
 
+	it("does not unlock a file after a partial read", async () => {
+		await writeFile(join(dir, "partial.txt"), "one\ntwo\nthree\n");
+		const tracker = createFileReadTracker();
+		const read = createReadToolDefinition(dir, { tracker });
+		const write = createWriteToolDefinition(dir, { tracker });
+
+		await read.execute(
+			"read",
+			{ path: "partial.txt", limit: 1 },
+			undefined,
+			undefined,
+			ctx,
+		);
+		await expect(
+			write.execute(
+				"write",
+				{ path: "partial.txt", content: "new" },
+				undefined,
+				undefined,
+				ctx,
+			),
+		).rejects.toThrow(READ_BEFORE_CHANGE_MESSAGE);
+		expect(await readFile(join(dir, "partial.txt"), "utf8")).toBe("one\ntwo\nthree\n");
+
+		await read.execute("read", { path: "partial.txt" }, undefined, undefined, ctx);
+		await expect(
+			write.execute(
+				"write",
+				{ path: "partial.txt", content: "new" },
+				undefined,
+				undefined,
+				ctx,
+			),
+		).resolves.toBeDefined();
+	});
+
 	it("does not unlock other files that were not read", async () => {
 		await writeFile(join(dir, "a.txt"), "a");
 		await writeFile(join(dir, "b.txt"), "b");
@@ -209,7 +245,7 @@ describe("edit shares the tracker in the full tool bundle", () => {
 	});
 });
 
-describe("read before write through AgentSession", () => {
+describe("read before write through RunSession", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {

@@ -23,7 +23,7 @@ afterEach(() => {
 	try {
 		unlinkSync(file);
 	} catch {
-		// Never written.
+		// Never written
 	}
 });
 

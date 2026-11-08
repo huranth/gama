@@ -1,11 +1,10 @@
-import { access, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises";
+import { access, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { createEditTool } from "../src/core/tools/edit.ts";
 import { withFileMutationQueue } from "../src/core/tools/file-mutation-queue.ts";
 import { createWriteTool } from "../src/core/tools/write.ts";
-import { canCreateFileSymlinks } from "./symlink-support.ts";
 
 function delay(ms: number): Promise<void> {
 	return new Promise((resolve) => setTimeout(resolve, ms));
@@ -77,28 +76,41 @@ describe("withFileMutationQueue", () => {
 		expect(order.indexOf("b:start")).toBeLessThan(order.indexOf("a:end"));
 	});
 
-	it.skipIf(!canCreateFileSymlinks)("uses the same queue for symlink aliases", async () => {
+	it.runIf(process.platform === "win32")("folds case when a file does not exist yet", async () => {
 		const dir = await createTempDir();
-		const targetPath = join(dir, "target.txt");
-		const symlinkPath = join(dir, "alias.txt");
-		await writeFile(targetPath, "hello\n", "utf8");
-		await symlink(targetPath, symlinkPath);
-
+		const lowerPath = join(dir, "new-file.txt");
+		const upperPath = join(dir, "NEW-FILE.TXT");
 		const order: string[] = [];
+
 		await Promise.all([
-			withFileMutationQueue(targetPath, async () => {
-				order.push("target:start");
+			withFileMutationQueue(lowerPath, async () => {
+				order.push("lower:start");
 				await delay(30);
-				order.push("target:end");
+				order.push("lower:end");
 			}),
-			withFileMutationQueue(symlinkPath, async () => {
-				order.push("alias:start");
-				order.push("alias:end");
+			withFileMutationQueue(upperPath, async () => {
+				order.push("upper:start");
+				order.push("upper:end");
 			}),
 		]);
 
-		expect(order).toEqual(["target:start", "target:end", "alias:start", "alias:end"]);
+		expect(order).toEqual(["lower:start", "lower:end", "upper:start", "upper:end"]);
 	});
+
+	it("does not deadlock when a nested call mutates the same file", async () => {
+		const path = "/tmp/file-mutation-queue-reentrant";
+		let nestedRan = false;
+
+		const outer = withFileMutationQueue(path, async () => {
+			await withFileMutationQueue(path, async () => {
+				nestedRan = true;
+			});
+		});
+
+		expect(await resolvesWithin(outer, 500)).toBe(true);
+		expect(nestedRan).toBe(true);
+	});
+
 });
 
 describe("built-in edit and write tools", () => {
@@ -231,7 +243,7 @@ describe("built-in edit and write tools", () => {
 		expect(content).toBe("second\n");
 	});
 
-	it("keeps edit queue locked while a write is " + "still in flight", async () => {
+	it("keeps edit queue locked while a write is still in flight", async () => {
 		const dir = await createTempDir();
 		const filePath = join(dir, "abort-edit.txt");
 		await writeFile(filePath, "alpha\nbeta\n", "utf8");

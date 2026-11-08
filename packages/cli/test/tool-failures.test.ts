@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type AgentTool, runToolCall } from "@huranth/gama-agent-core";
 import { beforeAll, describe, expect, it } from "vitest";
-import { createBashTool } from "../src/core/tools/bash.ts";
+import { type BashOperations, createBashTool } from "../src/core/tools/bash.ts";
 import { createEditTool } from "../src/core/tools/edit.ts";
 import {
 	createFileReadTracker,
@@ -14,8 +14,8 @@ import { createGrepTool } from "../src/core/tools/grep.ts";
 import { createLsTool } from "../src/core/tools/ls.ts";
 import { createReadTool } from "../src/core/tools/read.ts";
 import { createWriteTool } from "../src/core/tools/write.ts";
-import { formatActivityLine } from "../src/modes/tui/parts/activity.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+import { formatActivityLine } from "../src/term/parts/activity.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 
 type FailureCase = {
 	name: string;
@@ -53,61 +53,61 @@ function cases(): FailureCase[] {
 			name: "read missing file",
 			tool: createReadTool,
 			args: { path: "missing.ts" },
-			message: "the file does not exist",
+			message: "File missing",
 		},
 		{
 			name: "read directory",
 			tool: createReadTool,
 			args: { path: "." },
-			message: "it is a directory",
+			message: "Not a file",
 		},
 		{
 			name: "read past the end",
 			tool: createReadTool,
 			args: { path: "a.ts", offset: 99 },
-			message: "is past the end of the file",
+			message: "Offset too big",
 		},
 		{
 			name: "bash non zero exit",
 			tool: createBashTool,
-			args: { command: "exit 2" },
-			message: "Command failed with exit 2",
+			args: { command: "exit 2", timeout: 10 },
+			message: "Command failed",
 		},
 		{
 			name: "bash bad timeout",
 			tool: createBashTool,
 			args: { command: "echo hi", timeout: 0 },
-			message: "Timeout must be a positive number of seconds",
+			message: "Bad timeout",
 		},
 		{
 			name: "bash missing cwd",
 			tool: (dir) => createBashTool(join(dir, "nope")),
-			args: { command: "echo hi" },
-			message: "the working directory",
+			args: { command: "echo hi", timeout: 10 },
+			message: "Cwd missing",
 		},
 		{
 			name: "edit missing file",
 			tool: createEditTool,
 			args: { path: "missing.ts", edits: [{ oldText: "a", newText: "b" }] },
-			message: "the file does not exist",
+			message: "File missing",
 		},
 		{
 			name: "edit without a match",
 			tool: createEditTool,
 			args: { path: "a.ts", edits: [{ oldText: "absent", newText: "b" }] },
-			message: "Could not find that text",
+			message: "Text missing",
 		},
 		{
 			name: "edit duplicate match",
 			tool: createEditTool,
 			args: { path: "a.ts", edits: [{ oldText: "const value = 1;", newText: "x" }] },
-			message: "Found 2 copies",
+			message: "Duplicate text",
 		},
 		{
 			name: "edit no changes",
 			tool: createEditTool,
 			args: { path: "a.ts", edits: [] },
-			message: "needs at least one change in edits",
+			message: "No edits",
 		},
 		{
 			name: "edit unread file",
@@ -125,55 +125,55 @@ function cases(): FailureCase[] {
 			name: "edit a directory",
 			tool: createEditTool,
 			args: { path: ".", edits: [{ oldText: "a", newText: "b" }] },
-			message: "Could not edit ., it is a directory",
+			message: "Not a file",
 		},
 		{
 			name: "write over a directory",
 			tool: createWriteTool,
 			args: { path: ".", content: "x" },
-			message: "Could not write ., it is a directory",
+			message: "Is directory",
 		},
 		{
 			name: "write under a file",
 			tool: createWriteTool,
 			args: { path: "a.ts/child.txt", content: "x" },
-			message: "a parent path is not a directory",
+			message: "Bad parent",
 		},
 		{
 			name: "grep missing path",
 			tool: createGrepTool,
 			args: { pattern: "x", path: "nope" },
-			message: "Could not find",
+			message: "Path missing",
 		},
 		{
 			name: "grep invalid pattern",
 			tool: createGrepTool,
 			args: { pattern: "(" },
-			message: "Could not search",
+			message: "Search failed",
 		},
 		{
 			name: "find missing path",
 			tool: createFindTool,
 			args: { pattern: "*.ts", path: "nope" },
-			message: "Could not find",
+			message: "Path missing",
 		},
 		{
 			name: "ls missing path",
 			tool: createLsTool,
 			args: { path: "nope" },
-			message: "Could not find",
+			message: "Path missing",
 		},
 		{
 			name: "ls a file",
 			tool: createLsTool,
 			args: { path: "a.ts" },
-			message: "is not a directory",
+			message: "Not a directory",
 		},
 		{
 			name: "read broken image",
 			tool: createReadTool,
 			args: { path: "broken.png" },
-			message: "Could not read the image",
+			message: "Image omitted",
 		},
 	];
 }
@@ -216,5 +216,36 @@ describe("tool failures", () => {
 			);
 			expect(row, failure.name).toContain("failed");
 		}
+	});
+
+	it("explains a failed git command", async () => {
+		const operations: BashOperations = {
+			exec: async (_command, _cwd, { onData }) => {
+				onData(
+					Buffer.from(
+						"fatal: not a git repository (or any of the parent directories): .git\n",
+						"utf-8",
+					),
+				);
+				return { exitCode: 128 };
+			},
+		};
+		const result = await createBashTool(cwd, { operations }).execute("test-git", {
+			command: "git status",
+			timeout: 10, // Mocked
+		});
+		const text = (result.content ?? [])
+			.filter((part) => part.type === "text")
+			.map((part) => part.text)
+			.join("\n");
+
+		expect(result.isError).toBe(true);
+		expect(text).toContain("Reason: No git");
+		expect(text).toContain("Next: Git init");
+		expect(result.structuredContent).toMatchObject({
+			error: "No git",
+			hint: "Git init",
+			exit_code: 128,
+		});
 	});
 });

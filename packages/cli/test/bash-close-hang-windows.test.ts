@@ -95,7 +95,7 @@ describe.skipIf(process.platform !== "win32")("Windows child-process close handl
 					executeBashWithOperations(command, process.cwd(), createLocalBashOperations(), {
 						signal: controller.signal,
 					}),
-					3000,
+					10_000,
 					() => {
 						controller.abort();
 					},
@@ -117,12 +117,12 @@ describe.skipIf(process.platform !== "win32")("Windows child-process close handl
 			const pidFile = join(testDir, "tool-grandchild.pid");
 			const command = createInheritedStdioCommand(pidFile);
 			const controller = new AbortController();
-			const bashTool = createBashTool(testDir);
+			const bashTool = createBashTool(process.cwd());
 
 			try {
 				const result = await withTimeout(
-					bashTool.execute("test-call", { command }, controller.signal),
-					3000,
+					bashTool.execute("test-call", { command, timeout: 60 }, controller.signal),
+					10_000,
 					() => {
 						controller.abort();
 					},

@@ -6,13 +6,27 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import type { ToolDefinition } from "../src/core/ext/types.ts";
 import { createToolHtmlRenderer } from "../src/core/html/tool-renderer.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
 import { withBuiltInRenderers } from "../src/core/tools/ui/index.ts";
-import { initTheme, theme } from "../src/modes/tui/theme/theme.ts";
+import { initTheme, theme } from "../src/term/theme/theme.ts";
 
 const examplesDir = join(import.meta.dirname, "../examples/extensions");
+
+function renderEditTool(definition: ToolDefinition, cwd: string): string | undefined {
+	const renderer = createToolHtmlRenderer({
+		getToolRenderers: (name) => withBuiltInRenderers(name, definition),
+		theme,
+		cwd,
+		width: 40,
+	});
+	return renderer.renderCall("edit-shell-test", "edit", {
+		path: "notes.txt",
+		oldText: "before",
+		newText: "after",
+	});
+}
 
 describe("tool renderer examples", () => {
 	let tempDir: string;
@@ -38,7 +52,7 @@ describe("tool renderer examples", () => {
 	});
 
 	async function getSessionState(extensionPath: string | undefined, tools: string[]) {
-		const settingsManager = SettingsManager.inMemory();
+		const settingsManager = SettingsStore.inMemory();
 		const resourceLoader = new DefaultResourceLoader({
 			cwd: tempDir,
 			agentDir,
@@ -57,7 +71,7 @@ describe("tool renderer examples", () => {
 			agentDir,
 			model: getModel("anthropic", "claude-sonnet-4-5"),
 			settingsManager,
-			sessionManager: SessionManager.inMemory(tempDir),
+			sessionManager: SessionStore.inMemory(tempDir),
 			resourceLoader,
 			tools,
 		});
@@ -103,17 +117,3 @@ describe("tool renderer examples", () => {
 		);
 	});
 });
-
-function renderEditTool(definition: ToolDefinition, cwd: string): string | undefined {
-	const renderer = createToolHtmlRenderer({
-		getToolRenderers: (name) => withBuiltInRenderers(name, definition),
-		theme,
-		cwd,
-		width: 40,
-	});
-	return renderer.renderCall("edit-shell-test", "edit", {
-		path: "notes.txt",
-		oldText: "before",
-		newText: "after",
-	});
-}
