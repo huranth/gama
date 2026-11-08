@@ -4,7 +4,7 @@ import {
 	DefaultResourceLoader,
 	getAgentDir,
 	type PromptTemplate,
-	SessionManager,
+	SessionStore,
 } from "@huranth/gama-harness";
 
 const deployTemplate: PromptTemplate = {
@@ -37,7 +37,7 @@ for (const template of discovered) {
 
 const { session } = await createAgentSession({
 	resourceLoader: loader,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 console.log(`Session created with ${discovered.length + 1} prompt templates`);
 session.dispose();

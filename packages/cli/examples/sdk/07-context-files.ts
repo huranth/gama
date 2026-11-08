@@ -2,7 +2,7 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
-	SessionManager,
+	SessionStore,
 } from "@huranth/gama-harness";
 
 const loader = new DefaultResourceLoader({
@@ -33,7 +33,7 @@ for (const file of discovered) {
 
 const { session } = await createAgentSession({
 	resourceLoader: loader,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 console.log(`Session created with ${discovered.length + 1} context files`);
 session.dispose();

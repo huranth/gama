@@ -1,14 +1,14 @@
-import { createAgentSession, SessionManager, SettingsManager } from "@huranth/gama-harness";
+import { createAgentSession, SessionStore, SettingsStore } from "@huranth/gama-harness";
 
 const cwd = process.cwd();
 
-const settingsManagerFromDisk = SettingsManager.create(cwd);
+const settingsManagerFromDisk = SettingsStore.create(cwd);
 console.log(
 	"Current settings:",
 	JSON.stringify(settingsManagerFromDisk.getGlobalSettings(), null, 2),
 );
 
-const settingsManager = SettingsManager.create(cwd);
+const settingsManager = SettingsStore.create(cwd);
 settingsManager.applyOverrides({
 	compaction: { enabled: false },
 	retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
@@ -16,7 +16,7 @@ settingsManager.applyOverrides({
 
 const { session: customSettingsSession } = await createAgentSession({
 	settingsManager,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 console.log("Session created with custom settings");
 customSettingsSession.dispose();
@@ -31,14 +31,14 @@ if (settingsErrors.length > 0) {
 	}
 }
 
-const inMemorySettings = SettingsManager.inMemory({
+const inMemorySettings = SettingsStore.inMemory({
 	compaction: { enabled: false },
 	retry: { enabled: false },
 });
 
 const { session: testSession } = await createAgentSession({
 	settingsManager: inMemorySettings,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 console.log("Test session created with in-memory settings");
 testSession.dispose();

@@ -4,7 +4,7 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 	getAgentDir,
-	SessionManager,
+	SessionStore,
 } from "@huranth/gama-harness";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({
@@ -26,7 +26,7 @@ const createRuntime: CreateAgentSessionRuntimeFactory = async ({
 const runtime = await createAgentSessionRuntime(createRuntime, {
 	cwd: process.cwd(),
 	agentDir: getAgentDir(),
-	sessionManager: SessionManager.create(process.cwd()),
+	sessionManager: SessionStore.create(process.cwd()),
 });
 
 let unsubscribe: (() => void) | undefined;

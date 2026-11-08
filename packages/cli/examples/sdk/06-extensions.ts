@@ -2,7 +2,7 @@ import {
 	createAgentSession,
 	DefaultResourceLoader,
 	getAgentDir,
-	SessionManager,
+	SessionStore,
 } from "@huranth/gama-harness";
 
 const resourceLoader = new DefaultResourceLoader({
@@ -21,7 +21,7 @@ await resourceLoader.reload();
 
 const { session } = await createAgentSession({
 	resourceLoader,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 
 try {

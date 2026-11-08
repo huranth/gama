@@ -3,7 +3,7 @@ import {
 	createSyntheticSourceInfo,
 	DefaultResourceLoader,
 	getAgentDir,
-	SessionManager,
+	SessionStore,
 	type Skill,
 } from "@huranth/gama-harness";
 
@@ -42,7 +42,7 @@ if (diagnostics.length > 0) {
 
 const { session } = await createAgentSession({
 	resourceLoader: loader,
-	sessionManager: SessionManager.inMemory(),
+	sessionManager: SessionStore.inMemory(),
 });
 console.log("Session created with filtered skills");
 session.dispose();

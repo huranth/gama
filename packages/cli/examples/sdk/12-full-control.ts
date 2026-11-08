@@ -2,13 +2,13 @@ import { getModel } from "@huranth/gama-ai/compat";
 import {
 	createAgentSession,
 	createExtensionRuntime,
-	ModelRuntime,
+	ModelHub,
 	type ResourceLoader,
-	SessionManager,
-	SettingsManager,
+	SessionStore,
+	SettingsStore,
 } from "@huranth/gama-harness";
 
-const modelRuntime = await ModelRuntime.create({
+const modelRuntime = await ModelHub.create({
 	authPath: "/tmp/my-agent/auth.json",
 	modelsPath: "/tmp/my-agent/models.json",
 });
@@ -19,7 +19,7 @@ if (process.env.MY_ANTHROPIC_KEY) {
 const model = getModel("anthropic", "claude-sonnet-4-5");
 if (!model) throw new Error("Model not found");
 
-const settingsManager = SettingsManager.inMemory({
+const settingsManager = SettingsStore.inMemory({
 	compaction: { enabled: false },
 	retry: { enabled: true, maxRetries: 2 },
 });
@@ -49,7 +49,7 @@ const { session } = await createAgentSession({
 	modelRuntime,
 	resourceLoader,
 	tools: ["read", "bash"],
-	sessionManager: SessionManager.inMemory(cwd),
+	sessionManager: SessionStore.inMemory(cwd),
 	settingsManager,
 });
 

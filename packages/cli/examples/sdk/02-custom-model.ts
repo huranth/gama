@@ -1,6 +1,6 @@
-import { createAgentSession, ModelRuntime } from "@huranth/gama-harness";
+import { createAgentSession, ModelHub } from "@huranth/gama-harness";
 
-const modelRuntime = await ModelRuntime.create();
+const modelRuntime = await ModelHub.create();
 
 const opus = modelRuntime.getModel("anthropic", "claude-opus-4-5");
 if (opus) {
