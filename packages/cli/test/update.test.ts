@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runUpdateCommand } from "../src/cli/update-command.ts";
+import { runUpdateCommand } from "../src/start/update.ts";
 import type { SelfUpdateCommand } from "../src/config.ts";
 
 const npmCommand: SelfUpdateCommand = {
@@ -90,7 +90,7 @@ describe("update command", () => {
 		});
 
 		expect(exitCode).toBe(1);
-		expect(errorSpy).toHaveBeenCalledWith("Update check returned an invalid version: latest");
+		expect(errorSpy).toHaveBeenCalledWith("Invalid version: latest");
 		expect(run).not.toHaveBeenCalled();
 	});
 
@@ -154,7 +154,7 @@ describe("update command", () => {
 		});
 
 		expect(exitCode).toBe(1);
-		expect(errorSpy).toHaveBeenCalledWith("Could not check for updates");
+		expect(errorSpy).toHaveBeenCalledWith("Update check failed");
 		expect(run).not.toHaveBeenCalled();
 	});
 
@@ -172,7 +172,7 @@ describe("update command", () => {
 		});
 
 		expect(exitCode).toBe(1);
-		expect(errorSpy).toHaveBeenCalledWith("Could not check for updates: bad payload");
+		expect(errorSpy).toHaveBeenCalledWith("Update check failed: bad payload");
 		expect(run).not.toHaveBeenCalled();
 	});
 

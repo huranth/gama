@@ -27,8 +27,8 @@ vi.mock("cross-spawn", () => ({
 	}),
 }));
 
-import { InteractiveMode } from "../src/modes/tui/interactive-mode.ts";
-import { getMarkdownTheme, initTheme } from "../src/modes/tui/theme/theme.ts";
+import { TermApp } from "../src/term/app.ts";
+import { getMarkdownTheme, initTheme } from "../src/term/theme/theme.ts";
 
 function render(container: Container): string {
 	const text = container.children.flatMap((child) => child.render(120)).join("\n");
@@ -51,7 +51,7 @@ describe("update install", () => {
 			showWarning: vi.fn(),
 		};
 
-		await (InteractiveMode.prototype as any).installRelease.call(context, {
+		await (TermApp.prototype as any).installRelease.call(context, {
 			version: "9.9.9",
 		});
 
@@ -89,12 +89,12 @@ describe("update install", () => {
 			showWarning: vi.fn(),
 		};
 
-		const ok = await (InteractiveMode.prototype as any).installRelease.call(context, {
+		const ok = await (TermApp.prototype as any).installRelease.call(context, {
 			version: "9.9.9",
 		});
 
 		expect(ok).toBe(false);
-		expect(render(chatContainer)).toContain("Update failed (exit 2)");
+		expect(render(chatContainer)).toContain("Update failed: 2");
 		expect(context.updateInProgress).toBe(false);
 		expect(context.availableRelease).toEqual({ version: "9.9.9" });
 		expect(context.updateNoticeVersion).toBeUndefined();
@@ -113,7 +113,7 @@ describe("update install", () => {
 			ui: { requestRender: vi.fn() },
 		};
 
-		const ok = await (InteractiveMode.prototype as any).installRelease.call(context, {
+		const ok = await (TermApp.prototype as any).installRelease.call(context, {
 			version: "9.9.9",
 		});
 

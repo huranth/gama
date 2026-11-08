@@ -36,6 +36,13 @@ describe("changelog", () => {
 		expect(findChangelogEntry(entries, "1.1.2")).toBeUndefined();
 	});
 
+	it("does not resolve a four-part version to a three-part entry", () => {
+		const entries = parseChangelogContent("## 1.2.3\n\n- Patch release.\n");
+
+		expect(findChangelogEntry(entries, "1.2.3")?.content).toContain("Patch release");
+		expect(findChangelogEntry(entries, "1.2.3.4")).toBeUndefined();
+	});
+
 	it("fetches release notes from the published package", async () => {
 		const fetchMock = vi.fn(async () => new Response(markdown, { status: 200 }));
 		vi.stubGlobal("fetch", fetchMock);
@@ -49,16 +56,19 @@ describe("changelog", () => {
 		);
 	});
 
-	it("falls back to the second host", async () => {
+	it("falls back to the second host and cancels the failed body", async () => {
+		const missing = new Response("missing", { status: 404 });
+		const cancel = vi.spyOn(missing.body!, "cancel");
 		const fetchMock = vi
 			.fn()
-			.mockResolvedValueOnce(new Response("missing", { status: 404 }))
+			.mockResolvedValueOnce(missing)
 			.mockResolvedValueOnce(new Response(markdown, { status: 200 }));
 		vi.stubGlobal("fetch", fetchMock);
 
 		const notes = await fetchChangelogForVersion("@huranth/gama-harness", "1.1.1");
 
 		expect(notes).toContain("one dim line");
+		expect(cancel).toHaveBeenCalled();
 		expect(fetchMock).toHaveBeenCalledTimes(2);
 		expect(fetchMock).toHaveBeenLastCalledWith(
 			"https://cdn.jsdelivr.net/npm/@huranth/gama-harness@1.1.1/CHANGELOG.md",

@@ -1,7 +1,7 @@
 import { Container } from "@huranth/gama-tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
-import { InteractiveMode } from "../src/modes/tui/interactive-mode.ts";
-import { getMarkdownTheme, initTheme } from "../src/modes/tui/theme/theme.ts";
+import { TermApp } from "../src/term/app.ts";
+import { getMarkdownTheme, initTheme } from "../src/term/theme/theme.ts";
 
 function render(container: Container): string {
 	const text = container.children.flatMap((child) => child.render(120)).join("\n");
@@ -19,7 +19,7 @@ describe("update notice", () => {
 			getMarkdownThemeWithSettings: () => getMarkdownTheme(),
 		};
 
-		(InteractiveMode.prototype as any).showNewVersionNotification.call(context, {
+		(TermApp.prototype as any).showNewVersionNotification.call(context, {
 			version: "1.1.4",
 		});
 
@@ -40,7 +40,7 @@ describe("update notice", () => {
 			getMarkdownThemeWithSettings: () => getMarkdownTheme(),
 		};
 
-		(InteractiveMode.prototype as any).showNewVersionNotification.call(context, {
+		(TermApp.prototype as any).showNewVersionNotification.call(context, {
 			version: "1.1.4",
 			note: "Fixed the updater.",
 		});
@@ -50,7 +50,7 @@ describe("update notice", () => {
 
 	it("marks the card installed once the version matches", () => {
 		const chatContainer = new Container();
-		const prototype = InteractiveMode.prototype as any;
+		const prototype = TermApp.prototype as any;
 		const context = {
 			availableRelease: { version: "9.9.9" },
 			chatContainer,
@@ -70,7 +70,7 @@ describe("update notice", () => {
 
 	it("prints no startup changelog when it is hidden", () => {
 		const chatContainer = new Container();
-		const prototype = InteractiveMode.prototype as any;
+		const prototype = TermApp.prototype as any;
 		const context = {
 			startupNoticesShown: false,
 			changelogMarkdown: "## 1.2.0\n\n- New thing.",
@@ -88,7 +88,7 @@ describe("update notice", () => {
 
 	it("prints the startup changelog when it is shown", () => {
 		const chatContainer = new Container();
-		const prototype = InteractiveMode.prototype as any;
+		const prototype = TermApp.prototype as any;
 		const context = {
 			startupNoticesShown: false,
 			changelogMarkdown: "## 1.2.0\n\n- New thing.",
@@ -105,7 +105,7 @@ describe("update notice", () => {
 
 	it("shows release notes for the available update", async () => {
 		const chatContainer = new Container();
-		const prototype = InteractiveMode.prototype as any;
+		const prototype = TermApp.prototype as any;
 		const context = {
 			availableRelease: { version: "1.1.1", note: "Update notice is a single dim line." },
 			chatContainer,

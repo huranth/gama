@@ -6,11 +6,11 @@ import { getModel } from "@huranth/gama-ai/compat";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { defineTool } from "../src/core/ext/types.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { exportSessionForShare } from "../src/modes/tui/session-share.ts";
-import { assistantMsg, userMsg } from "./utilities.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
+import { exportSessionForShare } from "../src/term/share.ts";
+import { assistantMsg, userMsg } from "./test-helpers.ts";
 
 describe("JSONL share export", () => {
 	const tempDirs: string[] = [];
@@ -24,12 +24,12 @@ describe("JSONL share export", () => {
 	it("adds presentation data without changing conversation IDs or links", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "gama-jsonl-share-"));
 		tempDirs.push(tempDir);
-		const sessionManager = SessionManager.inMemory(tempDir);
+		const sessionManager = SessionStore.inMemory(tempDir);
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: join(tempDir, "agent"),
 			model: getModel("anthropic", "claude-sonnet-4-5")!,
-			settingsManager: SettingsManager.inMemory(),
+			settingsManager: SettingsStore.inMemory(),
 			sessionManager,
 			tools: ["share_tool"],
 			customTools: [
@@ -124,7 +124,7 @@ describe("JSONL share export", () => {
 			expect(shareEntry.data).not.toHaveProperty("theme");
 			expect(shareEntry.data).not.toHaveProperty("version");
 
-			const imported = SessionManager.open(sharePath);
+			const imported = SessionStore.open(sharePath);
 			expect(imported.getLeafId()).toBe(shareEntry.id);
 			expect(imported.buildSessionContext().messages.map((message) => message.role)).toEqual([
 				"user",

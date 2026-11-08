@@ -118,7 +118,7 @@ describe("version checks", () => {
 			),
 		);
 
-		await expect(getLatestGamaRelease("1.2.3")).rejects.toThrow("different package");
+		await expect(getLatestGamaRelease("1.2.3")).rejects.toThrow("Update package mismatch");
 		await expect(checkForNewGamaVersion("1.2.3")).resolves.toBeUndefined();
 	});
 

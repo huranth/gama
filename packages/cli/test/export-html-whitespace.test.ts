@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { ToolDefinition } from "../src/core/ext/types.ts";
 import { ansiLinesToHtml } from "../src/core/html/ansi-to-html.ts";
 import { createToolHtmlRenderer } from "../src/core/html/tool-renderer.ts";
-import type { Theme } from "../src/modes/tui/theme/theme.ts";
+import type { Theme } from "../src/term/theme/theme.ts";
 
 describe("export HTML tool output whitespace", () => {
 	it(
@@ -17,7 +17,10 @@ describe("export HTML tool output whitespace", () => {
 			);
 
 			expect(css).toMatch(
-				/\.output-preview > div:not\(\.expand-hint\),\s*\.output-full > div:not\(\.expand-hint\) \{[\s\S]*?white-space:\s*pre-wrap;/,
+				new RegExp(
+					"\\.output-preview > div:not\\(\\.expand-hint\\),\\s*" +
+						"\\.output-full > div:not\\(\\.expand-hint\\) \\{[\\s\\S]*?white-space:\\s*pre-wrap;",
+				),
 			);
 			expect(css).toMatch(/\.ansi-line\s*\{[\s\S]*?white-space:\s*pre;/);
 			expect(css).not.toMatch(
