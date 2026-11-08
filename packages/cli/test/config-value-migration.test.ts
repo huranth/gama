@@ -3,10 +3,10 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { runMigrations } from "../src/migrations.ts";
 
-import { createModelRegistry } from "./model-runtime-test-utils.ts";
+import { createModelRegistry } from "./model-run-test-utils.ts";
 
 describe("config value env var syntax migration", () => {
 	const tempDirs: string[] = [];

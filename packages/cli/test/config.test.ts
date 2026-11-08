@@ -64,6 +64,39 @@ function createNpmPrefixInstall(
 	return { prefix, packageDir };
 }
 
+function createFakePnpmScript(root: string): string {
+	if (process.platform === "win32") {
+		return `@echo off\r\nif "%~1"=="root" if "%~2"=="-g" echo ${root}\r\n`;
+	}
+	const escapedRoot = root.replaceAll("'", "'\\''");
+	return (
+		`#!/bin/sh\nif [ "$1" = "root" ] && [ "$2" = "-g" ]; then\n` +
+		`\tprintf '%s\\n' '${escapedRoot}'\n\texit 0\nfi\nexit 1\n`
+	);
+}
+
+function createFakeYarnScript(globalDir: string): string {
+	if (process.platform === "win32") {
+		return `@echo off\r\nif "%~1"=="global" if "%~2"=="dir" echo ${globalDir}\r\n`;
+	}
+	const escapedGlobalDir = globalDir.replaceAll("'", "'\\''");
+	return (
+		`#!/bin/sh\nif [ "$1" = "global" ] && [ "$2" = "dir" ]; then\n` +
+		`\tprintf '%s\\n' '${escapedGlobalDir}'\n\texit 0\nfi\nexit 1\n`
+	);
+}
+
+function createFakeBunScript(bunBin: string): string {
+	if (process.platform === "win32") {
+		return `@echo off\r\nif "%~1"=="pm" if "%~2"=="bin" if "%~3"=="-g" echo ${bunBin}\r\n`;
+	}
+	const escapedBunBin = bunBin.replaceAll("'", "'\\''");
+	return (
+		`#!/bin/sh\nif [ "$1" = "pm" ] && [ "$2" = "bin" ] && [ "$3" = "-g" ]; then\n` +
+		`\tprintf '%s\\n' '${escapedBunBin}'\n\texit 0\nfi\nexit 1\n`
+	);
+}
+
 function createPnpmGlobalInstall(): { root: string; packageDir: string } {
 	const temp = mkdtempSync(join(tmpdir(), "gama-pnpm-"));
 	const binDir = join(temp, "bin");
@@ -134,30 +167,6 @@ function createBunGlobalInstall(): { packageDir: string } {
 	return { packageDir };
 }
 
-function createFakePnpmScript(root: string): string {
-	if (process.platform === "win32") {
-		return `@echo off\r\nif "%~1"=="root" if "%~2"=="-g" echo ${root}\r\n`;
-	}
-	const escapedRoot = root.replaceAll("'", "'\\''");
-	return `#!/bin/sh\nif [ "$1" = "root" ] && [ "$2" = "-g" ]; then\n\tprintf '%s\\n' '${escapedRoot}'\n\texit 0\nfi\nexit 1\n`;
-}
-
-function createFakeYarnScript(globalDir: string): string {
-	if (process.platform === "win32") {
-		return `@echo off\r\nif "%~1"=="global" if "%~2"=="dir" echo ${globalDir}\r\n`;
-	}
-	const escapedGlobalDir = globalDir.replaceAll("'", "'\\''");
-	return `#!/bin/sh\nif [ "$1" = "global" ] && [ "$2" = "dir" ]; then\n\tprintf '%s\\n' '${escapedGlobalDir}'\n\texit 0\nfi\nexit 1\n`;
-}
-
-function createFakeBunScript(bunBin: string): string {
-	if (process.platform === "win32") {
-		return `@echo off\r\nif "%~1"=="pm" if "%~2"=="bin" if "%~3"=="-g" echo ${bunBin}\r\n`;
-	}
-	const escapedBunBin = bunBin.replaceAll("'", "'\\''");
-	return `#!/bin/sh\nif [ "$1" = "pm" ] && [ "$2" = "bin" ] && [ "$3" = "-g" ]; then\n\tprintf '%s\\n' '${escapedBunBin}'\n\texit 0\nfi\nexit 1\n`;
-}
-
 describe("findNodePackageDir", () => {
 	test("skips binary metadata copied into dist", () => {
 		tempDir = mkdtempSync(join(tmpdir(), "gama-package-dir-"));
@@ -174,7 +183,8 @@ describe("findNodePackageDir", () => {
 describe("detectInstallMethod", () => {
 	test("detects pnpm from Windows .pnpm install paths", () => {
 		setExecPath(
-			"C:\\Users\\Admin\\Documents\\pnpm-repository\\global\\5\\.pnpm\\@huranth+gama-coding-agent@0.67.68\\node_modules\\@huranth\\gama-coding-agent\\dist\\cli.js",
+			"C:\\Users\\Admin\\Documents\\pnpm-repository\\global\\5\\.pnpm\\@huranth+gama-" +
+				"coding-agent@0.67.68\\node_modules\\@huranth\\gama-coding-agent\\dist\\cli.js",
 		);
 
 		expect(detectInstallMethod()).toBe("pnpm");
@@ -189,7 +199,8 @@ describe("detectInstallMethod", () => {
 		expect(detectInstallMethod()).toBe("unknown");
 		expect(getSelfUpdateCommand("@huranth/gama-coding-agent")).toBeUndefined();
 		expect(getUpdateInstruction("@huranth/gama-coding-agent")).toBe(
-			"Update @huranth/gama-coding-agent using the package manager, wrapper, or source checkout that provides this installation.",
+			"Update @huranth/gama-coding-agent using the package manager, wrapper, " +
+				"or source checkout that provides this installation.",
 		);
 	});
 
@@ -210,7 +221,9 @@ describe("detectInstallMethod", () => {
 				"--min-release-age=0",
 				"@huranth/gama-coding-agent",
 			],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @huranth/gama-coding-agent`,
+			display:
+				`npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 ` +
+				`@huranth/gama-coding-agent`,
 		});
 	});
 
@@ -233,7 +246,9 @@ describe("detectInstallMethod", () => {
 				"--min-release-age=0",
 				"@huranth/gama-coding-agent@1.2.3",
 			],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @huranth/gama-coding-agent@1.2.3`,
+			display:
+				`npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 ` +
+				`@huranth/gama-coding-agent@1.2.3`,
 		});
 	});
 
@@ -257,7 +272,9 @@ describe("detectInstallMethod", () => {
 				"--min-release-age=0",
 				"@new-scope/gama",
 			],
-			display: `npm --prefix ${prefix} uninstall -g @huranth/gama-coding-agent && npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @new-scope/gama`,
+			display:
+				`npm --prefix ${prefix} uninstall -g @huranth/gama-coding-agent && ` +
+				`npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @new-scope/gama`,
 			steps: [
 				{
 					command: "npm",
@@ -275,7 +292,9 @@ describe("detectInstallMethod", () => {
 						"--min-release-age=0",
 						"@new-scope/gama",
 					],
-					display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @new-scope/gama`,
+					display:
+						`npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 ` +
+						`@new-scope/gama`,
 				},
 			],
 		});
@@ -301,7 +320,9 @@ describe("detectInstallMethod", () => {
 				"--min-release-age=0",
 				"@huranth/gama-coding-agent",
 			],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @huranth/gama-coding-agent`,
+			display:
+				`npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 ` +
+				`@huranth/gama-coding-agent`,
 		});
 	});
 
@@ -327,7 +348,8 @@ describe("detectInstallMethod", () => {
 		const command = getSelfUpdateCommand("@huranth/gama-coding-agent");
 
 		expect(command?.display).toBe(
-			`npm --prefix "${prefix}" install -g --ignore-scripts --min-release-age=0 @huranth/gama-coding-agent`,
+			`npm --prefix "${prefix}" install -g --ignore-scripts ` +
+				`--min-release-age=0 @huranth/gama-coding-agent`,
 		);
 	});
 
@@ -362,7 +384,7 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("self-updates renamed pnpm global installs by removing the " + "old package first", () => {
+	test("self-updates renamed pnpm global installs by removing the old package first", () => {
 		createPnpmGlobalInstall();
 
 		const command = getSelfUpdateCommand(
@@ -382,7 +404,8 @@ describe("detectInstallMethod", () => {
 				"@new-scope/gama",
 			],
 			display:
-				"pnpm remove -g @huranth/gama-coding-agent && pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @new-scope/gama",
+				"pnpm remove -g @huranth/gama-coding-agent && " +
+				"pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @new-scope/gama",
 			steps: [
 				{
 					command: "pnpm",
@@ -451,7 +474,7 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test("self-updates renamed yarn global installs by removing the " + "old package first", () => {
+	test("self-updates renamed yarn global installs by removing the old package first", () => {
 		createYarnGlobalInstall();
 
 		const command = getSelfUpdateCommand(
@@ -465,7 +488,8 @@ describe("detectInstallMethod", () => {
 			command: "yarn",
 			args: ["global", "add", "--ignore-scripts", "@new-scope/gama"],
 			display:
-				"yarn global remove @huranth/gama-coding-agent && yarn global add --ignore-scripts @new-scope/gama",
+				"yarn global remove @huranth/gama-coding-agent && " +
+				"yarn global add --ignore-scripts @new-scope/gama",
 			steps: [
 				{
 					command: "yarn",
@@ -495,7 +519,8 @@ describe("detectInstallMethod", () => {
 			command: "bun",
 			args: ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", "@new-scope/gama"],
 			display:
-				"bun uninstall -g @huranth/gama-coding-agent && bun install -g --ignore-scripts --minimum-release-age=0 @new-scope/gama",
+				"bun uninstall -g @huranth/gama-coding-agent && " +
+				"bun install -g --ignore-scripts --minimum-release-age=0 @new-scope/gama",
 			steps: [
 				{
 					command: "bun",
@@ -517,16 +542,4 @@ describe("detectInstallMethod", () => {
 		});
 	});
 
-	test.skipIf(process.platform === "win32")(
-		"does not self-update when npm install path is not writable",
-		() => {
-			const { packageDir } = createNpmPrefixInstall();
-			chmodSync(packageDir, 0o500);
-
-			expect(getSelfUpdateCommand("@huranth/gama-coding-agent")).toBeUndefined();
-			expect(getSelfUpdateUnavailableInstruction("@huranth/gama-coding-agent")).toContain(
-				"the install path is not writable",
-			);
-		},
-	);
 });

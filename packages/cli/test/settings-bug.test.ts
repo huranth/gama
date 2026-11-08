@@ -1,10 +1,11 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { SettingsManager } from "../src/core/settings-manager.ts";
+import { SettingsStore } from "../src/core/settings.ts";
 
-describe("SettingsManager - External Edit Preservation", () => {
-	const testDir = join(process.cwd(), "test-settings-bug-tmp");
+describe("SettingsStore - External Edit Preservation", () => {
+	const testDir = join(tmpdir(), `gama-settings-bug-${process.pid}-${Date.now()}`);
 	const agentDir = join(testDir, "agent");
 	const projectDir = join(testDir, "project");
 
@@ -23,7 +24,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 	});
 
 	it(
-		"should preserve file changes to packages array when " + "changing unrelated setting",
+		"preserveeserve file changes to packages array when " + "changing unrelated setting",
 		async () => {
 			const settingsPath = join(agentDir, "settings.json");
 
@@ -35,7 +36,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 				}),
 			);
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsStore.create(projectDir, agentDir);
 
 			expect(manager.getPackages()).toEqual(["npm:gama-mcp-adapter"]);
 
@@ -56,7 +57,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 	);
 
 	it(
-		"should preserve file changes to extensions array when " + "changing unrelated setting",
+		"preserveeserve file changes to extensions array when " + "changing unrelated setting",
 		async () => {
 			const settingsPath = join(agentDir, "settings.json");
 
@@ -68,7 +69,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 				}),
 			);
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsStore.create(projectDir, agentDir);
 
 			const currentSettings = JSON.parse(readFileSync(settingsPath, "utf-8"));
 			currentSettings.extensions = ["/new/extension.ts"];
@@ -84,7 +85,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 	);
 
 	it(
-		"should preserve external project settings changes when " +
+		"preserveeserve external project settings changes when " +
 			"updating unrelated project field",
 		async () => {
 			const projectSettingsPath = join(projectDir, ".gama", "settings.json");
@@ -96,7 +97,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 				}),
 			);
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsStore.create(projectDir, agentDir);
 
 			const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 			currentProjectSettings.prompts = ["./new-prompt.md"];
@@ -112,7 +113,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 	);
 
 	it(
-		"should let in-memory project changes override external " +
+		"lett in-memory project changes override external " +
 			"changes for the same project field",
 		async () => {
 			const projectSettingsPath = join(projectDir, ".gama", "settings.json");
@@ -123,7 +124,7 @@ describe("SettingsManager - External Edit Preservation", () => {
 				}),
 			);
 
-			const manager = SettingsManager.create(projectDir, agentDir);
+			const manager = SettingsStore.create(projectDir, agentDir);
 
 			const currentProjectSettings = JSON.parse(readFileSync(projectSettingsPath, "utf-8"));
 			currentProjectSettings.extensions = ["./external-extension.ts"];

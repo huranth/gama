@@ -1,21 +1,22 @@
 import { type SettingsList, setKeybindings } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
+import { Keymap } from "../src/core/hotkeys.ts";
 import {
 	type SettingsCallbacks,
 	type SettingsConfig,
 	SettingsSelectorComponent,
-} from "../src/modes/tui/parts/settings-selector.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+} from "../src/term/parts/settings-selector.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 describe("SettingsSelectorComponent", () => {
 	let harness: Harness | undefined;
+
 	beforeAll(() => {
 		initTheme("dark");
-		setKeybindings(new KeybindingsManager());
+		setKeybindings(new Keymap());
 	});
 
 	beforeEach(() => {
@@ -29,7 +30,7 @@ describe("SettingsSelectorComponent", () => {
 		harness = undefined;
 	});
 
-	// Highlight helper.
+	// Highlight helper
 	function getSelectedLabel(list: SettingsList): string {
 		const highlighted = list
 			.render(120)

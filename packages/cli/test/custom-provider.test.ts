@@ -142,7 +142,7 @@ describe("custom provider connection", () => {
 		).rejects.toThrow(/403/);
 	});
 
-	it("merges a provider into models.json without dropping " + "existing providers", async () => {
+	it("merges a provider into models.json without dropping existing providers", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "gama-custom-provider-"));
 		cleanupDirs.push(dir);
 		const modelsPath = join(dir, "models.json");

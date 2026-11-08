@@ -1,6 +1,6 @@
 import type { CredentialStore } from "@huranth/gama-ai";
 import { describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { RuntimeCredentials } from "../src/core/runtime-credentials.ts";
 
 describe("RuntimeCredentials", () => {

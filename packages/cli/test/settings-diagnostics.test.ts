@@ -5,8 +5,8 @@ import { describe, expect, it } from "vitest";
 import {
 	collectSettingsDiagnostics,
 	deduplicateDiagnostics,
-} from "../src/core/settings-diagnostics.ts";
-import { SettingsManager, type SettingsStorage } from "../src/core/settings-manager.ts";
+} from "../src/core/settings-err.ts";
+import { SettingsStore, type SettingsStorage } from "../src/core/settings.ts";
 
 describe("settings diagnostics", () => {
 	it("includes the settings file path for file-backed storage", () => {
@@ -17,7 +17,7 @@ describe("settings diagnostics", () => {
 		writeFileSync(settingsPath, "{");
 
 		try {
-			const diagnostics = collectSettingsDiagnostics(SettingsManager.create(tempDir, agentDir));
+			const diagnostics = collectSettingsDiagnostics(SettingsStore.create(tempDir, agentDir));
 
 			expect(diagnostics).toHaveLength(1);
 			expect(diagnostics[0]?.type).toBe("warning");
@@ -34,7 +34,7 @@ describe("settings diagnostics", () => {
 				fn(undefined);
 			},
 		};
-		const diagnostics = collectSettingsDiagnostics(SettingsManager.fromStorage(storage));
+		const diagnostics = collectSettingsDiagnostics(SettingsStore.fromStorage(storage));
 
 		expect(diagnostics).toEqual([
 			{ type: "warning", message: "Invalid global settings: backend failed" },

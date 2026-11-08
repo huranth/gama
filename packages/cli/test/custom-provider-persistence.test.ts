@@ -3,7 +3,7 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	CUSTOM_PROVIDER_API,
 	rememberCustomProviderModel,
@@ -12,7 +12,7 @@ import {
 	saveModelOverride,
 	saveProviderBaseUrl,
 } from "../src/core/custom-provider.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 
 const cleanupDirs: string[] = [];
 
@@ -57,7 +57,7 @@ describe("custom provider persistence", () => {
 		const auth = AuthStorage.create(authPath);
 		await auth.modify("tokenharbor", async () => ({ type: "api_key", key: "sk-test" }));
 
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: auth,
 			modelsPath,
 			refreshOnCreate: false,
@@ -110,21 +110,21 @@ describe("custom provider persistence", () => {
 		const auth = AuthStorage.create(authPath);
 		await auth.modify("tokenharbor", async () => ({ type: "api_key", key: "sk-test" }));
 
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: auth,
 			modelsPath,
 			refreshOnCreate: false,
 		});
 		await runtime.refresh({ allowNetwork: false, providers: ["tokenharbor"] });
 
-		// Reload.
+		// Reload
 		expect(runtime.getModel("tokenharbor", "deepseek-v4")?.baseUrl).toBe(
 			"https://proxy.example.com/v1",
 		);
 		expect(runtime.getModel("tokenharbor", "deepseek-v4")?.contextWindow).toBe(200_000);
 	});
 
-	it("persists a per-model contextWindow override and " + "reapplies it on reload", async () => {
+	it("persists a per-model contextWindow override and reapplies it on reload", async () => {
 		const dir = mkdtempSync(join(tmpdir(), "gama-custom-override-"));
 		cleanupDirs.push(dir);
 		const modelsPath = join(dir, "models.json");
@@ -149,7 +149,7 @@ describe("custom provider persistence", () => {
 		const auth = AuthStorage.create(authPath);
 		await auth.modify("tokenharbor", async () => ({ type: "api_key", key: "sk-test" }));
 
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: auth,
 			modelsPath,
 			refreshOnCreate: false,
@@ -224,7 +224,7 @@ describe("custom provider persistence", () => {
 				"claude-haiku-5.5:free",
 			]);
 
-			const runtime = await ModelRuntime.create({
+			const runtime = await ModelHub.create({
 				credentials: auth,
 				modelsPath,
 				refreshOnCreate: false,

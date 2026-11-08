@@ -56,4 +56,39 @@ describe("migrateAuthToAuthJson", () => {
 		});
 		expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({ theme: "dark" });
 	});
+
+	it("is idempotent and preserves keys already in auth.json", () => {
+		const settingsPath = join(dir, "settings.json");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({ apiKeys: { anthropic: "new-key", legacy: "legacy-key" } }),
+		);
+		writeFileSync(
+			join(dir, "auth.json"),
+			JSON.stringify({ anthropic: { type: "api_key", key: "existing-key" } }),
+		);
+
+		expect(migrateAuthToAuthJson()).toEqual(["legacy"]);
+		expect(JSON.parse(readFileSync(join(dir, "auth.json"), "utf-8"))).toEqual({
+			anthropic: { type: "api_key", key: "existing-key" },
+			legacy: { type: "api_key", key: "legacy-key" },
+		});
+		expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({});
+
+		expect(migrateAuthToAuthJson()).toEqual([]);
+		expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({});
+	});
+
+	it("keeps non-string apiKeys entries in settings.json", () => {
+		const settingsPath = join(dir, "settings.json");
+		writeFileSync(
+			settingsPath,
+			JSON.stringify({ apiKeys: { anthropic: "k", malformed: { nested: true } } }),
+		);
+
+		expect(migrateAuthToAuthJson()).toEqual(["anthropic"]);
+		expect(JSON.parse(readFileSync(settingsPath, "utf-8"))).toEqual({
+			apiKeys: { malformed: { nested: true } },
+		});
+	});
 });
