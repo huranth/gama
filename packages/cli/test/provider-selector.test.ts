@@ -1,8 +1,8 @@
 import { setKeybindings } from "@huranth/gama-tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
-import { ProviderSelectorComponent } from "../src/modes/tui/parts/provider-selector.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+import { Keymap } from "../src/core/hotkeys.ts";
+import { ProviderSelectorComponent } from "../src/term/parts/provider-selector.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
 const WIDTH = 100;
@@ -17,7 +17,7 @@ describe("provider selector", () => {
 	});
 
 	beforeEach(() => {
-		setKeybindings(new KeybindingsManager());
+		setKeybindings(new Keymap());
 	});
 
 	it("lists each configured provider with its base URL and auth source", () => {
@@ -49,6 +49,27 @@ describe("provider selector", () => {
 		selector.handleInput("\n");
 
 		expect(onSelect).toHaveBeenCalledWith("beta");
+	});
+
+	it("asks once before deleting and confirms with d, without the key hint", () => {
+		const onDelete = vi.fn();
+		const selector = new ProviderSelectorComponent({
+			providers: [{ id: "alpha" }],
+			onSelect: () => {},
+			onDelete,
+			onCancel: () => {},
+		});
+
+		selector.handleInput("d");
+		const prompt = render(selector);
+		expect(prompt).toContain('Delete provider "alpha"?');
+		expect(prompt).not.toContain("Enter to confirm");
+
+		selector.handleInput("\n");
+		expect(onDelete).not.toHaveBeenCalled();
+
+		selector.handleInput("d");
+		expect(onDelete).toHaveBeenCalledWith("alpha");
 	});
 
 	it("cancels and never walks past the ends of the list", () => {

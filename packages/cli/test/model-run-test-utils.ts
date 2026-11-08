@@ -1,6 +1,6 @@
 import type { CredentialStore, Model } from "@huranth/gama-ai";
-import { ModelRegistry } from "../src/core/model-registry.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { ModelRegistry } from "../src/core/roster.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 import { InMemoryCodingAgentModelsStore } from "../src/core/models-store.ts";
 
 export const testAnthropicModel: Model<"anthropic-messages"> = {
@@ -16,7 +16,9 @@ export const testAnthropicModel: Model<"anthropic-messages"> = {
 	maxTokens: 8192,
 };
 
-// Provider.
+const runtimes = new WeakMap<ModelRegistry, ModelHub>();
+
+// Provider
 export function registerTestAnthropicProvider(registry: ModelRegistry): void {
 	registry.registerProvider("anthropic", {
 		baseUrl: "https://api.anthropic.com",
@@ -36,12 +38,18 @@ export function registerTestAnthropicProvider(registry: ModelRegistry): void {
 	});
 }
 
+function wrap(runtime: ModelHub): ModelRegistry {
+	const registry = new ModelRegistry(runtime);
+	runtimes.set(registry, runtime);
+	return registry;
+}
+
 export async function createModelRegistry(
 	credentials: CredentialStore,
 	modelsPath?: string,
 ): Promise<ModelRegistry> {
 	return wrap(
-		await ModelRuntime.create({
+		await ModelHub.create({
 			credentials,
 			modelsPath,
 			modelsStore: new InMemoryCodingAgentModelsStore(),
@@ -55,7 +63,7 @@ export async function createInMemoryModelRegistry(
 	credentials: CredentialStore,
 ): Promise<ModelRegistry> {
 	return wrap(
-		await ModelRuntime.create({
+		await ModelHub.create({
 			credentials,
 			modelsPath: null,
 			allowModelNetwork: false,
@@ -64,16 +72,8 @@ export async function createInMemoryModelRegistry(
 	);
 }
 
-export function getModelRuntime(modelRegistry: ModelRegistry): ModelRuntime {
+export function getModelRuntime(modelRegistry: ModelRegistry): ModelHub {
 	const runtime = runtimes.get(modelRegistry);
 	if (!runtime) throw new Error("ModelRegistry was not created by the test helper");
 	return runtime;
-}
-
-const runtimes = new WeakMap<ModelRegistry, ModelRuntime>();
-
-function wrap(runtime: ModelRuntime): ModelRegistry {
-	const registry = new ModelRegistry(runtime);
-	runtimes.set(registry, runtime);
-	return registry;
 }

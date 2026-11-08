@@ -2,10 +2,10 @@ import type { Model } from "@huranth/gama-ai";
 import { setKeybindings, type TUI } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
-import type { ModelRuntime } from "../src/core/model-runtime.ts";
-import { ModelSelectorComponent } from "../src/modes/tui/parts/model-selector.ts";
-import { initTheme, theme } from "../src/modes/tui/theme/theme.ts";
+import { Keymap } from "../src/core/hotkeys.ts";
+import type { ModelHub } from "../src/core/model-run.ts";
+import { ModelSelectorComponent } from "../src/term/parts/model-selector.ts";
+import { initTheme, theme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
@@ -21,7 +21,7 @@ describe("model selector", () => {
 	});
 
 	beforeEach(() => {
-		setKeybindings(new KeybindingsManager());
+		setKeybindings(new Keymap());
 	});
 
 	afterEach(() => {
@@ -81,7 +81,7 @@ describe("model selector", () => {
 			getAvailableSnapshot: () => models,
 			getModel: (provider: string, id: string) =>
 				models.find((model) => model.provider === provider && model.id === id),
-		} as unknown as ModelRuntime;
+		} as unknown as ModelHub;
 
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
@@ -110,7 +110,7 @@ describe("model selector", () => {
 		selector.dispose();
 	});
 
-	it("renders one heading per provider when the current model is in a later provider", () => {
+	it("renders only provider/id rows with no provider headings in any provider order", () => {
 		const models = [
 			{ provider: "alpha", id: "a1", name: "Alpha One" },
 			{ provider: "zeta", id: "current", name: "Zeta Current" },
@@ -122,7 +122,7 @@ describe("model selector", () => {
 			getAvailableSnapshot: () => models,
 			getModel: (provider: string, id: string) =>
 				models.find((model) => model.provider === provider && model.id === id),
-		} as unknown as ModelRuntime;
+		} as unknown as ModelHub;
 
 		const selector = new ModelSelectorComponent(
 			createFakeTui(),
@@ -140,28 +140,22 @@ describe("model selector", () => {
 		);
 
 		const lines = selector.render(120).map((line) => stripAnsi(line));
-		const providerHeaders = lines
-			.map((line) => line.trim())
-			.filter((line) => line === "alpha" || line === "zeta");
-		expect(providerHeaders).toEqual(["zeta", "alpha"]);
+		expect(lines.some((line) => line.trim() === "alpha")).toBe(false);
+		expect(lines.some((line) => line.trim() === "zeta")).toBe(false);
 
-		const headerIndex = (provider: string) => lines.findIndex((line) => line.trim() === provider);
-		const rowIndex = (provider: string, id: string) =>
-			lines.findIndex((line) => line.trim() === `${provider}/${id}`);
-
-		const zetaHeader = headerIndex("zeta");
-		const alphaHeader = headerIndex("alpha");
-		expect(rowIndex("zeta", "current")).toBeGreaterThan(zetaHeader);
-		expect(rowIndex("zeta", "z2")).toBeGreaterThan(zetaHeader);
-		expect(rowIndex("zeta", "z2")).toBeLessThan(alphaHeader);
-		expect(rowIndex("alpha", "a1")).toBeGreaterThan(alphaHeader);
-		expect(rowIndex("alpha", "a2")).toBeGreaterThan(rowIndex("alpha", "a1"));
+		const modelRows = lines.filter((line) => /^[a-z]+\/[^\s]+$/.test(line.trim()));
+		expect(modelRows.map((line) => line.trim())).toEqual([
+			"zeta/current",
+			"zeta/z2",
+			"alpha/a1",
+			"alpha/a2",
+		]);
 
 		selector.dispose();
 	});
 
 	it("uses the configured save binding", async () => {
-		setKeybindings(new KeybindingsManager({ "app.models.save": "ctrl+r" }));
+		setKeybindings(new Keymap({ "app.models.save": "ctrl+r" }));
 		harness = await createHarness();
 		const currentModel = harness.getModel()!;
 		const saveDefault = vi.fn();

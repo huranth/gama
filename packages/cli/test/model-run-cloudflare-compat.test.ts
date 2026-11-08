@@ -1,9 +1,9 @@
 import { createProvider, type Model } from "@huranth/gama-ai";
 import { complete, getApiProvider, resetApiProviders } from "@huranth/gama-ai/compat";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRegistry } from "../src/core/model-registry.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { ModelRegistry } from "../src/core/roster.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 
 interface CapturedRequest {
 	url: string;
@@ -51,7 +51,7 @@ function cloudflareGatewayModel(): Model<"openai-completions"> {
 }
 
 async function createCloudflareRuntime(): Promise<{
-	modelRuntime: ModelRuntime;
+	modelRuntime: ModelHub;
 	modelRegistry: ModelRegistry;
 }> {
 	const authStorage = AuthStorage.inMemory();
@@ -61,7 +61,7 @@ async function createCloudflareRuntime(): Promise<{
 	}));
 	const streams = getApiProvider("openai-completions");
 	if (!streams) throw new Error("openai-completions API provider is not registered.");
-	const modelRuntime = await ModelRuntime.create({
+	const modelRuntime = await ModelHub.create({
 		credentials: authStorage,
 		modelsPath: null,
 		includeBuiltinProviders: true,
@@ -96,7 +96,7 @@ async function createCloudflareRuntime(): Promise<{
 }
 
 describe("ModelRegistry Cloudflare compat streaming", () => {
-	it("materializes the Cloudflare endpoint through ModelRuntime streaming", async () => {
+	it("materializes the Cloudflare endpoint through ModelHub streaming", async () => {
 		const { modelRuntime } = await createCloudflareRuntime();
 		const model = modelRuntime.getModel(
 			"cloudflare-ai-gateway",

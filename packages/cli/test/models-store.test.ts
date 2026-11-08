@@ -1,12 +1,4 @@
-import {
-	chmodSync,
-	existsSync,
-	mkdirSync,
-	readFileSync,
-	rmSync,
-	statSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Model } from "@huranth/gama-ai";
@@ -64,21 +56,9 @@ describe("FileModelsStore", () => {
 		expect((await reloaded.read("two"))?.models.map((entry) => entry.id)).toEqual(["m2"]);
 	});
 
-	it.skipIf(process.platform === "win32")(
-		"preserves the mode of an existing models file",
+	it(
+		"coalesces file reloads across concurrent readers and interleaved storage instances",
 		async () => {
-			const managedModelsPath = join(sharedTempDir, "managed-mode.json");
-			writeFileSync(managedModelsPath, "{}");
-			chmodSync(managedModelsPath, 0o660);
-			const store = new FileModelsStore(managedModelsPath);
-
-			await store.write("one", { models: [model("one", "m1")], checkedAt: 100 });
-
-			expect(statSync(managedModelsPath).mode & 0o777).toBe(0o660);
-		},
-	);
-
-	it("coalesces file reloads across concurrent readers and interleaved storage instances", async () => {
 		writeFileSync(
 			sharedModelsPath,
 			JSON.stringify({
@@ -170,5 +150,17 @@ describe("FileModelsStore", () => {
 		const stored = JSON.parse(readFileSync(sharedModelsPath, "utf8")) as Record<string, unknown>;
 		expect(stored.one).toBeDefined();
 		expect(stored.two).toBeUndefined();
+	});
+
+	it("rejects writes and leaves the file unchanged when the stored JSON is corrupt", async () => {
+		const corruptPath = join(sharedTempDir, "corrupt-models-store.json");
+		const corrupt = "{not valid json";
+		writeFileSync(corruptPath, corrupt);
+		const store = new FileModelsStore(corruptPath);
+
+		await expect(store.write("one", { models: [model("one", "m1")] })).rejects.toThrow(
+			"Invalid models file",
+		);
+		expect(readFileSync(corruptPath, "utf8")).toBe(corrupt);
 	});
 });

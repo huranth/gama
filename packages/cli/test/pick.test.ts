@@ -1,23 +1,23 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import type { Model } from "@huranth/gama-ai";
 import { streamSimple } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { AgentSession } from "../src/core/agent-session.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { RunSession } from "../src/core/session/session.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	findInitialModel,
 	parseModelPattern,
 	resolveCliModel,
 	resolveModelScope,
 	resolveModelScopeWithDiagnostics,
-} from "../src/core/model-resolver.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
-import { createTestResourceLoader } from "./utilities.ts";
+} from "../src/core/pick.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
+import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
+import { createTestResourceLoader } from "./test-helpers.ts";
 
 const mockModels: Model<"anthropic-messages">[] = [
 	{
@@ -218,7 +218,9 @@ describe("parseModelPattern", () => {
 });
 
 describe("resolveModelScopeWithDiagnostics", () => {
-	test("returns scoped models and structured diagnostics without writing console warnings", async () => {
+	test(
+		"returns scoped models and structured diagnostics without writing console warnings",
+		async () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const registry = {
@@ -440,7 +442,7 @@ describe("resolveCliModel", () => {
 		});
 
 		expect(result.model).toBeUndefined();
-		expect(result.error).toContain("No models available");
+		expect(result.error).toContain("No models");
 	});
 
 	test("prefers the sole authenticated provider for an ambiguous bare exact model id", () => {
@@ -545,7 +547,9 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("glm-5");
 	});
 
-	test("prefers an authenticated exact raw model id over an unauthenticated inferred provider", () => {
+	test(
+		"prefers an authenticated exact raw model id over an unauthenticated inferred provider",
+		() => {
 		const commandcodeModel: Model<"anthropic-messages"> = {
 			id: "xiaomi/mimo-v2.5-pro",
 			name: "Xiaomi MiMo via Commandcode",
@@ -914,7 +918,7 @@ describe("default model selection", () => {
 			mkdirSync(tempDir, { recursive: true });
 			tempDirs.push(tempDir);
 
-			const settingsManager = SettingsManager.create(tempDir, tempDir);
+			const settingsManager = SettingsStore.create(tempDir, tempDir);
 			if (options.persistedScope) {
 				settingsManager.setEnabledModels(options.persistedScope);
 			}
@@ -937,7 +941,7 @@ describe("default model selection", () => {
 				}),
 			);
 			const modelRuntime = getModelRuntime(await createModelRegistry(authStorage, modelsPath));
-			const agent = new Agent({
+			const agent = new Runner({
 				initialState: {
 					model: sonnet,
 					systemPrompt: "test",
@@ -945,9 +949,9 @@ describe("default model selection", () => {
 				},
 				streamFn: streamSimple,
 			});
-			const session = new AgentSession({
+			const session = new RunSession({
 				agent,
-				sessionManager: SessionManager.inMemory(tempDir),
+				sessionManager: SessionStore.inMemory(tempDir),
 				settingsManager,
 				cwd: tempDir,
 				modelRuntime,

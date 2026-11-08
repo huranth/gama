@@ -10,19 +10,19 @@ import {
 	type Model,
 } from "@huranth/gama-ai";
 import { afterEach, beforeEach, describe, expect, it, onTestFinished } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { ModelHub } from "../src/core/model-run.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
 import {
 	getBranchSelection,
 	type ModelRouteRequest,
 	type VirtualModelDefinition,
-} from "../src/core/virtual-models.ts";
-import { createTestResourceLoader } from "./utilities.ts";
+} from "../src/core/fake-models.ts";
+import { createTestResourceLoader } from "./test-helpers.ts";
 
 async function createRuntime(requests: ModelRouteRequest[] = []) {
-	const runtime = await ModelRuntime.create({
+	const runtime = await ModelHub.create({
 		credentials: AuthStorage.inMemory(),
 		modelsStore: new InMemoryModelsStore(),
 		modelsPath: null,
@@ -70,8 +70,8 @@ function assistantFrom(model: Model<string>, text: string): AssistantMessage {
 }
 
 describe("getBranchSelection", () => {
-	function select(build: (sessionManager: SessionManager) => void, runtime: ModelRuntime) {
-		const sessionManager = SessionManager.inMemory();
+	function select(build: (sessionManager: SessionStore) => void, runtime: ModelHub) {
+		const sessionManager = SessionStore.inMemory();
 		build(sessionManager);
 		const lookups: string[] = [];
 		const selection = getBranchSelection(sessionManager.getBranch(), (provider, modelId) => {
@@ -133,7 +133,7 @@ describe("getBranchSelection", () => {
 	});
 });
 
-describe("ModelRuntime virtual models", () => {
+describe("ModelHub virtual models", () => {
 	it(
 		"lists a virtual model and routes it to a physical model " + "with a clamped thinking level",
 		async () => {
@@ -247,7 +247,7 @@ describe("ModelRuntime virtual models", () => {
 
 		expect(() =>
 			runtime.registerVirtualModel({ ...definition, provider: "faux", id: "large" }),
-		).toThrow("conflicts with a physical model");
+		).toThrow("Virtual model conflict: faux/large");
 		runtime.unregisterVirtualModel("faux", "fast");
 		runtime.unregisterVirtualModel("router", "auto");
 		expect(runtime.getModels("faux").map((model) => model.id)).toEqual([
@@ -269,7 +269,7 @@ describe("ModelRuntime virtual models", () => {
 			});
 			await expect(
 				runtime.resolveModel(virtual, [], { reason: "user", thinkingLevel: "low" }),
-			).rejects.toThrow("which is not a physical model");
+			).rejects.toThrow("Not physical model");
 		}
 	});
 
@@ -326,7 +326,7 @@ describe("ModelRuntime virtual models", () => {
 		});
 
 		expect(message.stopReason).toBe("error");
-		expect(message.errorMessage).toContain("must be routed before streaming");
+		expect(message.errorMessage).toContain("Virtual model unrouted");
 	});
 });
 
@@ -341,8 +341,8 @@ describe("createAgentSession with virtual models", () => {
 		rmSync(tempDir, { recursive: true, force: true });
 	});
 
-	async function resume(runtime: ModelRuntime, model?: Model<string>) {
-		const sessionManager = SessionManager.inMemory(tempDir);
+	async function resume(runtime: ModelHub, model?: Model<string>) {
+		const sessionManager = SessionStore.inMemory(tempDir);
 		sessionManager.appendModelChange("router", "auto");
 		sessionManager.appendMessage({ role: "user", content: "hi", timestamp: 1 });
 		sessionManager.appendMessage(assistantFrom(runtime.getModel("faux", "large")!, "hello"));
@@ -372,7 +372,7 @@ describe("createAgentSession with virtual models", () => {
 	it("restores a virtual selection registered right before the session opens", async () => {
 		const { runtime, definition } = await createRuntime();
 		runtime.registerVirtualModel({ ...definition, provider: "late" });
-		const sessionManager = SessionManager.inMemory(tempDir);
+		const sessionManager = SessionStore.inMemory(tempDir);
 		sessionManager.appendModelChange("late", "auto");
 		sessionManager.appendMessage({ role: "user", content: "hi", timestamp: 1 });
 		sessionManager.appendMessage(assistantFrom(runtime.getModel("faux", "large")!, "hello"));
@@ -405,7 +405,7 @@ describe("createAgentSession with virtual models", () => {
 			"transcript ends with a routing failure",
 		async () => {
 			const { runtime, virtual } = await createRuntime();
-			const sessionManager = SessionManager.inMemory(tempDir);
+			const sessionManager = SessionStore.inMemory(tempDir);
 			sessionManager.appendModelChange("router", "auto");
 			sessionManager.appendMessage({ role: "user", content: "hi", timestamp: 1 });
 			sessionManager.appendMessage(assistantFrom(runtime.getModel("faux", "large")!, "hello"));
@@ -438,7 +438,7 @@ describe("createAgentSession with virtual models", () => {
 			const { runtime, faux, virtual } = await createRuntime();
 			faux.setResponses(Array.from({ length: 6 }, () => fauxAssistantMessage("ok")));
 			const large = runtime.getModel("faux", "large")!;
-			const open = async (sessionManager: SessionManager, model?: Model<string>) => {
+			const open = async (sessionManager: SessionStore, model?: Model<string>) => {
 				const resourceLoader = createTestResourceLoader();
 				const options = {
 					cwd: tempDir,
@@ -455,7 +455,7 @@ describe("createAgentSession with virtual models", () => {
 				[virtual, large],
 				[large, virtual],
 			]) {
-				const sessionManager = SessionManager.inMemory(tempDir);
+				const sessionManager = SessionStore.inMemory(tempDir);
 				const session = await open(sessionManager, before);
 				await session.prompt("one");
 				const firstAnswer = sessionManager.getLeafId()!;
@@ -478,7 +478,7 @@ describe("createAgentSession with virtual models", () => {
 			const { runtime, faux } = await createRuntime();
 			faux.setResponses([fauxAssistantMessage("ok"), fauxAssistantMessage("ok")]);
 			const small = runtime.getModel("faux", "small")!;
-			const sessionManager = SessionManager.inMemory(tempDir);
+			const sessionManager = SessionStore.inMemory(tempDir);
 			const { session } = await createAgentSession({
 				cwd: tempDir,
 				agentDir: tempDir,

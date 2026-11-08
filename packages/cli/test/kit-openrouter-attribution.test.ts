@@ -4,18 +4,18 @@ import { join } from "node:path";
 import {
 	type Api,
 	type AssistantMessage,
-	createAssistantMessageEventStream,
+	createReplyStream,
 	type Model,
 	normalizeContext,
 	type ProviderHeaders,
 	type SimpleStreamOptions,
 } from "@huranth/gama-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
+import { createInMemoryModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 describe("createAgentSession provider attribution headers", () => {
 	let tempDir: string;
@@ -67,7 +67,7 @@ describe("createAgentSession provider attribution headers", () => {
 	}
 
 	function createDoneStream() {
-		const stream = createAssistantMessageEventStream();
+		const stream = createReplyStream();
 		const message: AssistantMessage = {
 			role: "assistant",
 			content: [{ type: "text", text: "ok" }],
@@ -98,7 +98,7 @@ describe("createAgentSession provider attribution headers", () => {
 			sessionId?: string;
 		} = {},
 	): Promise<ProviderHeaders | undefined> {
-		const settingsManager = SettingsManager.create(cwd, agentDir);
+		const settingsManager = SettingsStore.create(cwd, agentDir);
 		if (options.telemetryEnabled === false) {
 			settingsManager.setEnableInstallTelemetry(false);
 		}
@@ -119,7 +119,7 @@ describe("createAgentSession provider attribution headers", () => {
 		});
 
 		const modelRuntime = getModelRuntime(modelRegistry);
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionStore.inMemory(cwd);
 		if (options.sessionId) {
 			sessionManager.newSession({ id: options.sessionId });
 		}
@@ -171,7 +171,7 @@ describe("createAgentSession provider attribution headers", () => {
 		expect(headers?.["X-OpenRouter-Categories"]).toBeUndefined();
 	});
 
-	it("adds attribution headers for custom providers routed " + "through OpenRouter", async () => {
+	it("adds attribution headers for custom providers routed through OpenRouter", async () => {
 		const headers = await captureHeaders(
 			createModel("custom-openrouter", "https://openrouter.ai/api/v1"),
 		);
@@ -222,7 +222,7 @@ describe("createAgentSession provider attribution headers", () => {
 		expect(headers?.["X-BILLING-INVOKE-ORIGIN"]).toBe("Gama");
 	});
 
-	it("does not add NVIDIA NIM attribution headers when " + "telemetry is disabled", async () => {
+	it("does not add NVIDIA NIM attribution headers when telemetry is disabled", async () => {
 		const headers = await captureHeaders(
 			createModel("nvidia", "https://integrate.api.nvidia.com/v1"),
 			{

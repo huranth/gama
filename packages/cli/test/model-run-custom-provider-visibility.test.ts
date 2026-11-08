@@ -1,7 +1,7 @@
 import type { Model, Provider } from "@huranth/gama-ai";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 import type { ProviderModelConfig } from "../src/core/provider-composer.ts";
 
 const MODEL_ID = "glm-5.3";
@@ -65,13 +65,13 @@ function nativeProvider(
 	};
 }
 
-function availableProviders(runtime: ModelRuntime): Set<string> {
+function availableProviders(runtime: ModelHub): Set<string> {
 	return new Set(runtime.getAvailableSnapshot().map((model) => model.provider));
 }
 
 describe("model runtime custom provider visibility", () => {
 	it("keeps authenticated models when a catalog refresh fails", async () => {
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: AuthStorage.inMemory({
 				tokenharbor: { type: "api_key", key: "sk-test" },
 			}),
@@ -97,7 +97,7 @@ describe("model runtime custom provider visibility", () => {
 
 		expect(availableProviders(runtime).has("tokenharbor")).toBe(true);
 		expect(runtime.getAvailableSnapshot().some((model) => model.id === MODEL_ID)).toBe(true);
-		// Separate failures.
+		// Separate failures
 		expect(runtime.getError() ?? "").not.toContain("unreachable");
 	});
 
@@ -107,7 +107,7 @@ describe("model runtime custom provider visibility", () => {
 		});
 		let authValid = true;
 		const provider = nativeProvider("aetherapi", { authValid: () => authValid });
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials,
 			modelsPath: null,
 			allowModelNetwork: false,
@@ -121,7 +121,7 @@ describe("model runtime custom provider visibility", () => {
 		await runtime.refresh({ allowNetwork: false });
 		expect(availableProviders(runtime).has("aetherapi")).toBe(false);
 
-		// Credentials unconfirmed.
+		// Credentials unconfirmed
 		runtime.registerNativeProvider(provider);
 		expect(availableProviders(runtime).has("aetherapi")).toBe(false);
 

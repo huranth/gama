@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 import { CUSTOM_PROVIDER_API } from "../src/core/custom-provider.ts";
-import { InteractiveMode } from "../src/modes/tui/interactive-mode.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+import { TermApp } from "../src/term/app.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 
 type SaveEndpoint = (
 	this: unknown,
@@ -15,11 +15,11 @@ type SaveEndpoint = (
 type ConfiguredProviders = (this: unknown) => Array<{ id: string; baseUrl?: string }>;
 
 const saveProviderEndpoint = (
-	InteractiveMode as unknown as { prototype: { saveProviderEndpoint: SaveEndpoint } }
+	TermApp as unknown as { prototype: { saveProviderEndpoint: SaveEndpoint } }
 ).prototype.saveProviderEndpoint;
 
 const configuredProviders = (
-	InteractiveMode as unknown as { prototype: { configuredProviders: ConfiguredProviders } }
+	TermApp as unknown as { prototype: { configuredProviders: ConfiguredProviders } }
 ).prototype.configuredProviders;
 
 const cleanupDirs: string[] = [];
@@ -112,7 +112,7 @@ describe("editing a configured provider", () => {
 		expect(models.providers.localhost.baseUrl).toBe("http://localhost:9000/v1");
 		expect(readJson(dir, "auth.json").tokenharbor.key).toBe("sk-new");
 
-		// Live.
+		// Live
 		expect(fakeThis._refresh).toHaveBeenCalledWith({
 			allowNetwork: false,
 			providers: ["tokenharbor"],

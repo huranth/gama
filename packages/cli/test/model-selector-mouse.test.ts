@@ -1,9 +1,9 @@
 import { setKeybindings, type TUI, type TuiMouseEvent } from "@huranth/gama-tui";
 import chalk from "chalk";
 import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import { KeybindingsManager } from "../src/core/keybindings.ts";
-import { ModelSelectorComponent } from "../src/modes/tui/parts/model-selector.ts";
-import { initTheme, theme } from "../src/modes/tui/theme/theme.ts";
+import { Keymap } from "../src/core/hotkeys.ts";
+import { ModelSelectorComponent } from "../src/term/parts/model-selector.ts";
+import { initTheme, theme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
@@ -21,7 +21,7 @@ describe("model selector mouse", () => {
 	});
 
 	beforeEach(() => {
-		setKeybindings(new KeybindingsManager());
+		setKeybindings(new Keymap());
 	});
 
 	afterEach(() => {

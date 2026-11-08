@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createExtensionRuntime } from "../src/core/ext/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { createSyntheticSourceInfo } from "../src/core/origin.ts";
 
 describe("createAgentSession skills option", () => {
 	let tempDir: string;
@@ -40,11 +40,11 @@ This is a test skill.
 		}
 	});
 
-	it("should discover skills by default and expose them on session.skills", async () => {
+	it("discover skills by default and expose them on session.skills", async () => {
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionStore.inMemory(),
 		});
 
 		expect(session.resourceLoader.getSkills().skills.length).toBeGreaterThan(0);
@@ -53,7 +53,7 @@ This is a test skill.
 		);
 	});
 
-	it("should have empty skills when resource loader returns " + "none (--no-skills)", async () => {
+	it("save empty skills when resource loader returns none (--no-skills)", async () => {
 		const resourceLoader: ResourceLoader = {
 			getExtensions: () => ({ extensions: [], errors: [], runtime: createExtensionRuntime() }),
 			getSkills: () => ({ skills: [], diagnostics: [] }),
@@ -71,7 +71,7 @@ This is a test skill.
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionStore.inMemory(),
 			resourceLoader,
 		});
 
@@ -79,7 +79,7 @@ This is a test skill.
 		expect(session.resourceLoader.getSkills().diagnostics).toEqual([]);
 	});
 
-	it("should use provided skills when resource loader supplies them", async () => {
+	it("use provided skills when resource loader supplies them", async () => {
 		const customSkill = {
 			name: "custom-skill",
 			description: "A custom skill",
@@ -106,7 +106,7 @@ This is a test skill.
 		const { session } = await createAgentSession({
 			cwd: tempDir,
 			agentDir: tempDir,
-			sessionManager: SessionManager.inMemory(),
+			sessionManager: SessionStore.inMemory(),
 			resourceLoader,
 		});
 

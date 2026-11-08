@@ -4,7 +4,7 @@ import { join } from "node:path";
 import {
 	type Api,
 	type AssistantMessage,
-	createAssistantMessageEventStream,
+	createReplyStream,
 	getCurrentSystemMessage,
 	getCurrentTools,
 	getSystemMessageText,
@@ -14,13 +14,13 @@ import {
 } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import type { ExtensionFactory } from "../src/core/ext/types.ts";
 import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { type Settings, SettingsManager } from "../src/core/settings-manager.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { type Settings, SettingsStore } from "../src/core/settings.ts";
+import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 describe("createAgentSession stream options", () => {
 	let tempDir: string;
@@ -78,7 +78,7 @@ describe("createAgentSession stream options", () => {
 	}
 
 	function createDoneStream(api: Api, promptTokens = 0) {
-		const stream = createAssistantMessageEventStream();
+		const stream = createReplyStream();
 		stream.end(createDoneMessage(api, promptTokens));
 		return stream;
 	}
@@ -91,7 +91,7 @@ describe("createAgentSession stream options", () => {
 		providerEvent?: unknown,
 	): Promise<SimpleStreamOptions | undefined> {
 		const model = createModel(api);
-		const settingsManager = SettingsManager.inMemory(settings);
+		const settingsManager = SettingsStore.inMemory(settings);
 		const resourceLoader = new DefaultResourceLoader({
 			cwd,
 			agentDir,
@@ -115,7 +115,7 @@ describe("createAgentSession stream options", () => {
 				capturedOptions = providerOptions;
 				if (providerEvent === undefined) return createDoneStream(api);
 
-				const stream = createAssistantMessageEventStream();
+				const stream = createReplyStream();
 				void (async () => {
 					await providerOptions?.onProviderStreamEvent?.(providerEvent, requestModel);
 					stream.end(createDoneMessage(api));
@@ -125,7 +125,7 @@ describe("createAgentSession stream options", () => {
 		});
 
 		const modelRuntime = getModelRuntime(modelRegistry);
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionStore.inMemory(cwd);
 		const { session } = await createAgentSession({
 			cwd,
 			agentDir,
@@ -265,7 +265,7 @@ describe("createAgentSession stream options", () => {
 		"restores the recorded tool loadout on resume without " + "reactivating extension defaults",
 		async () => {
 			const model = createModel("openai-completions");
-			const settingsManager = SettingsManager.inMemory({ defaultTools: ["read", "bash"] });
+			const settingsManager = SettingsStore.inMemory({ defaultTools: ["read", "bash"] });
 			const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
 			await authStorage.modify(model.provider, async () => ({
 				type: "api_key",
@@ -305,7 +305,7 @@ describe("createAgentSession stream options", () => {
 				await loader.reload();
 				return loader;
 			};
-			const sessionManager = SessionManager.create(cwd, join(tempDir, "sessions"));
+			const sessionManager = SessionStore.create(cwd, join(tempDir, "sessions"));
 			const baseOptions = {
 				cwd,
 				agentDir,
@@ -332,7 +332,7 @@ describe("createAgentSession stream options", () => {
 
 				const sessionFile = sessionManager.getSessionFile();
 				if (!sessionFile) throw new Error("Expected a saved session");
-				const resumedManager = SessionManager.open(sessionFile);
+				const resumedManager = SessionStore.open(sessionFile);
 				const { session: resumed } = await createAgentSession({
 					...baseOptions,
 					sessionManager: resumedManager,
@@ -352,7 +352,7 @@ describe("createAgentSession stream options", () => {
 
 				const { session: empty } = await createAgentSession({
 					...baseOptions,
-					sessionManager: SessionManager.open(sessionFile),
+					sessionManager: SessionStore.open(sessionFile),
 					resourceLoader: await loadResources(),
 				});
 				try {
@@ -363,7 +363,7 @@ describe("createAgentSession stream options", () => {
 
 				const { session: overridden } = await createAgentSession({
 					...baseOptions,
-					sessionManager: SessionManager.open(sessionFile),
+					sessionManager: SessionStore.open(sessionFile),
 					resourceLoader: await loadResources(),
 					tools: ["bash"],
 				});
@@ -375,7 +375,7 @@ describe("createAgentSession stream options", () => {
 
 				const { session: extensionOnly } = await createAgentSession({
 					...baseOptions,
-					sessionManager: SessionManager.open(sessionFile),
+					sessionManager: SessionStore.open(sessionFile),
 					resourceLoader: await loadResources(),
 					noTools: "builtin",
 				});

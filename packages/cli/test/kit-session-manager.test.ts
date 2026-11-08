@@ -1,10 +1,10 @@
-import { existsSync, mkdirSync, realpathSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { createAgentSession } from "../src/core/sdk.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { testAnthropicModel } from "./model-runtime-test-utils.ts";
+import { createAgentSession } from "../src/core/kit.ts";
+import { CURRENT_SESSION_VERSION, SessionStore } from "../src/core/sessions.ts";
+import { testAnthropicModel } from "./model-run-test-utils.ts";
 
 describe("createAgentSession session manager defaults", () => {
 	let tempDir: string;
@@ -53,7 +53,7 @@ describe("createAgentSession session manager defaults", () => {
 		const model = testAnthropicModel;
 		expect(model).toBeTruthy();
 
-		const sessionManager = SessionManager.inMemory(cwd);
+		const sessionManager = SessionStore.inMemory(cwd);
 		const { session } = await createAgentSession({
 			cwd,
 			agentDir,
@@ -73,7 +73,7 @@ describe("createAgentSession session manager defaults", () => {
 
 		const sessionCwd = join(tempDir, "session-project");
 		mkdirSync(sessionCwd, { recursive: true });
-		const sessionManager = SessionManager.inMemory(sessionCwd);
+		const sessionManager = SessionStore.inMemory(sessionCwd);
 		const { session } = await createAgentSession({
 			agentDir,
 			model: model!,
@@ -116,7 +116,8 @@ describe("createAgentSession session manager defaults", () => {
 		const bashTool = session.agent.state.tools.find((tool) => tool.name === "bash");
 		expect(bashTool).toBeTruthy();
 		const result = await bashTool!.execute("test", {
-			command: `printf '%s\\n' "$GAMA_SESSION_ID" "$GAMA_SESSION_FILE" "$GAMA_PROVIDER" "$GAMA_MODEL" "$GAMA_REASONING_LEVEL"`,
+			command: `printf '%s\\n' "$GAMA_SESSION_ID" "$GAMA_SESSION_FILE" "$GAMA_PROVIDER" "$GAMA_MODEL` +
+				`" "$GAMA_REASONING_LEVEL"`,
 		});
 		const output = result.content
 			.filter((item): item is { type: "text"; text: string } => item.type === "text")

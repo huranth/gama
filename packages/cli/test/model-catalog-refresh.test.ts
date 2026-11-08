@@ -1,6 +1,6 @@
 import type { ModelsRefreshOptions, ModelsRefreshResult } from "@huranth/gama-ai";
 import { describe, expect, it, vi } from "vitest";
-import { refreshModelCatalogs } from "../src/modes/tui/model-catalog-refresh.ts";
+import { refreshModelCatalogs } from "../src/term/catalog.ts";
 
 interface Deferred<T> {
 	promise: Promise<T>;

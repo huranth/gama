@@ -1,7 +1,7 @@
 import type { Model, Provider } from "@huranth/gama-ai";
 import { describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { CredentialSynchronizationError, ModelRuntime } from "../src/core/model-runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { CredentialSynchronizationError, ModelHub } from "../src/core/model-run.ts";
 
 function model(provider: string): Model<"openai-completions"> {
 	return {
@@ -51,8 +51,8 @@ function provider(
 async function runtimeWithProvider(
 	registered: Provider,
 	credentials: AuthStorage = AuthStorage.inMemory(),
-): Promise<ModelRuntime> {
-	const runtime = await ModelRuntime.create({
+): Promise<ModelHub> {
+	const runtime = await ModelHub.create({
 		credentials,
 		modelsPath: null,
 		allowModelNetwork: false,
@@ -62,8 +62,10 @@ async function runtimeWithProvider(
 	return runtime;
 }
 
-describe("ModelRuntime credential synchronization", () => {
-	it("publishes locally consistent availability when a runtime API key is set and removed", async () => {
+describe("ModelHub credential synchronization", () => {
+	it(
+		"publishes locally consistent availability when a runtime API key is set and removed",
+		async () => {
 		const credentials = AuthStorage.inMemory();
 		const runtime = await runtimeWithProvider(provider("dynamic"), credentials);
 
@@ -81,7 +83,7 @@ describe("ModelRuntime credential synchronization", () => {
 	});
 
 	it("allows different providers to run credential flows concurrently", async () => {
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: AuthStorage.inMemory(),
 			modelsPath: null,
 		});
@@ -99,7 +101,7 @@ describe("ModelRuntime credential synchronization", () => {
 
 	it("does not wait for unrelated provider availability during local synchronization", async () => {
 		let stallUnrelated = false;
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: AuthStorage.inMemory(),
 			modelsPath: null,
 		});
@@ -180,7 +182,7 @@ describe("ModelRuntime credential synchronization", () => {
 		const blocked = new Promise<void>((resolve) => {
 			finish = resolve;
 		});
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: AuthStorage.inMemory(),
 			modelsPath: null,
 		});

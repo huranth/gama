@@ -1,7 +1,7 @@
 import { type ClassifierModel, createProvider, InMemoryModelsStore } from "@huranth/gama-ai";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 
 const context = {
 	state: { text: "Looks good" },
@@ -28,9 +28,9 @@ function jevModel(): ClassifierModel<"typesafe-system-one"> {
 	};
 }
 
-describe("ModelRuntime classifiers", () => {
+describe("ModelHub classifiers", () => {
 	it("lists Jev separately and classifies with runtime-resolved auth", async () => {
-		const runtime = await ModelRuntime.create({
+		const runtime = await ModelHub.create({
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath: null,

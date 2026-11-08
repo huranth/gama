@@ -10,14 +10,14 @@ import type {
 } from "@huranth/gama-ai/compat";
 import { getApiProvider, getSupportedThinkingLevels } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import type { ModelsJsonModel, ModelsJsonProvider } from "../src/core/model-config.ts";
 import {
 	clearApiKeyCache,
 	type ModelRegistry,
 	type ProviderConfigInput,
-} from "../src/core/model-registry.ts";
-import { createModelRegistry } from "./model-runtime-test-utils.ts";
+} from "../src/core/roster.ts";
+import { createModelRegistry } from "./model-run-test-utils.ts";
 
 describe("ModelRegistry", () => {
 	let tempDir: string;
@@ -1507,7 +1507,7 @@ describe("ModelRegistry", () => {
 						throw new Error("should not run");
 					}) as any,
 				}),
-			).toThrow('Provider broken-provider: "api" is required when registering streamSimple.');
+			).toThrow("Missing API: broken-provider");
 
 			await expect(registry.refresh()).resolves.toMatchObject({ aborted: false });
 		});
@@ -1550,7 +1550,7 @@ describe("ModelRegistry", () => {
 						},
 					],
 				}),
-			).toThrow('Provider demo-provider, model broken-model: no "api" specified.');
+			).toThrow("Missing API: demo-provider/broken-model");
 
 			expect(registry.find("demo-provider", "demo-model")).toBeDefined();
 			await expect(registry.refresh()).resolves.toMatchObject({ aborted: false });
@@ -1661,7 +1661,9 @@ describe("ModelRegistry", () => {
 				);
 			});
 
-			test("models plus baseUrl override replaces registered provider models after refresh", async () => {
+			test(
+				"models plus baseUrl override replaces registered provider models after refresh",
+				async () => {
 				const registry = await createModelRegistry(authStorage, modelsJsonPath);
 
 				registry.registerProvider("anthropic", {
@@ -2002,7 +2004,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}"; echo "key-value"'`;
+				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -2021,7 +2024,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}"; echo "key-value"'`;
+				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -2056,7 +2060,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}"; exit 1'`;
+				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+					`"; exit 1'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -2234,7 +2239,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}"; echo "key-value"'`;
+				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
 				});
@@ -2287,7 +2293,8 @@ describe("ModelRegistry", () => {
 				writeRawModelsJson({
 					"custom-provider": {
 						...providerWithApiKey(
-							`!sh -c 'count=$(cat "${counterPath}"); count=$((count + 1)); echo "$count" > "${counterPath}"; echo "token-$count"'`,
+							`!sh -c 'count=$(cat "${counterPath}"); count=$((count + 1)); echo "$count" > "` +
+								`${counterPath}"; echo "token-$count"'`,
 						),
 						authHeader: true,
 					},
@@ -2362,9 +2369,7 @@ describe("ModelRegistry", () => {
 				const auth = await registry.getApiKeyAndHeaders(model!);
 				expect(auth.ok).toBe(false);
 				if (!auth.ok) {
-					expect(auth.error).toContain(
-						'Failed to resolve API key for provider "custom-provider"',
-					);
+					expect(auth.error).toContain('Command failed: API key for provider "custom-provider"');
 				}
 			});
 		});

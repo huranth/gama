@@ -14,8 +14,8 @@ import {
 	type Model,
 } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { ModelRuntime } from "../src/core/model-runtime.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 
 function imageModel(provider: string, id: string): ImageModel<"test-images"> {
 	return {
@@ -95,7 +95,7 @@ function okImageResult(model: ImageModel<string>): AssistantImages {
 	};
 }
 
-describe("ModelRuntime image generation", () => {
+describe("ModelHub image generation", () => {
 	const tempDirs: string[] = [];
 	afterEach(() => {
 		for (const dir of tempDirs.splice(0)) {
@@ -103,7 +103,7 @@ describe("ModelRuntime image generation", () => {
 		}
 	});
 
-	async function createRuntime(modelsJson?: object): Promise<ModelRuntime> {
+	async function createRuntime(modelsJson?: object): Promise<ModelHub> {
 		let modelsPath: string | null = null;
 		if (modelsJson) {
 			const dir = mkdtempSync(join(tmpdir(), "gama-images-"));
@@ -111,7 +111,7 @@ describe("ModelRuntime image generation", () => {
 			modelsPath = join(dir, "models.json");
 			writeFileSync(modelsPath, JSON.stringify(modelsJson));
 		}
-		return ModelRuntime.create({
+		return ModelHub.create({
 			credentials: AuthStorage.inMemory(),
 			modelsStore: new InMemoryModelsStore(),
 			modelsPath,
@@ -366,7 +366,9 @@ describe("ModelRuntime image generation", () => {
 		expect(chatDispatches).toBe(0);
 	});
 
-	it("keeps image generation on a registered provider composed with models.json overrides", async () => {
+	it(
+		"keeps image generation on a registered provider composed with models.json overrides",
+		async () => {
 		const runtime = await createRuntime({
 			providers: {
 				openrouter: {

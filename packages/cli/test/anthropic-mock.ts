@@ -3,7 +3,7 @@ import type { AddressInfo } from "node:net";
 
 export interface AnthropicMockServer {
 	baseUrl: string;
-	// Requests.
+	// Requests
 	requests: unknown[];
 	close: () => Promise<void>;
 }
