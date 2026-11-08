@@ -57,13 +57,19 @@ const eagerLanguages = {
 	lua,
 };
 
+const spanClose = "</span>";
+
+const highlightClassPrefix = "hljs-";
+
+const spanOpenLength = "<span".length;
+
+const spanNameEndChars = new Set([">", " ", "\t", "\n", "\r"]);
+
+const scopeSeparators = [".", "-"];
+
 for (const [name, language] of Object.entries(eagerLanguages)) {
 	hljs.registerLanguage(name, language);
 }
-
-const SPAN_CLOSE = "</span>";
-
-const HIGHLIGHT_CLASS_PREFIX = "hljs-";
 
 let allLanguagesPromise: Promise<void> | undefined;
 
@@ -80,6 +86,21 @@ export function loadAllHighlightLanguages(): Promise<void> {
 	return allLanguagesPromise;
 }
 
+export function supportsLanguage(name: string): boolean {
+	return hljs.getLanguage(name) !== undefined;
+}
+
+export function highlight(code: string, options: HighlightOptions = {}): string {
+	const html = options.language
+		? hljs.highlight(code, {
+				language: options.language,
+				ignoreIllegals: options.ignoreIllegals,
+			}).value
+		: hljs.highlightAuto(code, options.languageSubset).value;
+
+	return renderHighlightedHtml(html, options.theme);
+}
+
 function getScopeFromSpanTag(tag: string): string | undefined {
 	const match = /\sclass\s*=\s*(?:"([^"]*)"|'([^']*)')/.exec(tag);
 	const classValue = match?.[1] ?? match?.[2];
@@ -88,8 +109,8 @@ function getScopeFromSpanTag(tag: string): string | undefined {
 	}
 
 	for (const className of classValue.split(/\s+/)) {
-		if (className.startsWith(HIGHLIGHT_CLASS_PREFIX)) {
-			return className.slice(HIGHLIGHT_CLASS_PREFIX.length);
+		if (className.startsWith(highlightClassPrefix)) {
+			return className.slice(highlightClassPrefix.length);
 		}
 	}
 
@@ -102,17 +123,11 @@ function getScopeFormatter(scope: string, theme: HighlightTheme): HighlightForma
 		return exact;
 	}
 
-	const dotIndex = scope.indexOf(".");
-	if (dotIndex !== -1) {
-		const prefixFormatter = theme[scope.slice(0, dotIndex)];
-		if (prefixFormatter) {
-			return prefixFormatter;
-		}
-	}
+	for (const separator of scopeSeparators) {
+		const separatorIndex = scope.indexOf(separator);
+		if (separatorIndex === -1) continue;
 
-	const dashIndex = scope.indexOf("-");
-	if (dashIndex !== -1) {
-		const prefixFormatter = theme[scope.slice(0, dashIndex)];
+		const prefixFormatter = theme[scope.slice(0, separatorIndex)];
 		if (prefixFormatter) {
 			return prefixFormatter;
 		}
@@ -130,11 +145,13 @@ function getActiveFormatter(
 		if (!scope) {
 			continue;
 		}
+
 		const formatter = getScopeFormatter(scope, theme);
 		if (formatter) {
 			return formatter;
 		}
 	}
+
 	return theme.default;
 }
 
@@ -142,14 +159,9 @@ function isSpanOpenTagStart(html: string, index: number): boolean {
 	if (!html.startsWith("<span", index)) {
 		return false;
 	}
-	const nextChar = html[index + "<span".length];
-	return (
-		nextChar === ">" ||
-		nextChar === " " ||
-		nextChar === "\t" ||
-		nextChar === "\n" ||
-		nextChar === "\r"
-	);
+
+	const nextChar = html[index + spanOpenLength];
+	return nextChar !== undefined && spanNameEndChars.has(nextChar);
 }
 
 export function renderHighlightedHtml(html: string, theme: HighlightTheme = {}): string {
@@ -161,6 +173,7 @@ export function renderHighlightedHtml(html: string, theme: HighlightTheme = {}):
 		if (!textBuffer) {
 			return;
 		}
+
 		const formatter = getActiveFormatter(scopes, theme);
 		output += formatter ? formatter(textBuffer) : textBuffer;
 		textBuffer = "";
@@ -169,23 +182,26 @@ export function renderHighlightedHtml(html: string, theme: HighlightTheme = {}):
 	let index = 0;
 	while (index < html.length) {
 		if (isSpanOpenTagStart(html, index)) {
-			const tagEndIndex = html.indexOf(">", index + 5);
+			const tagEndIndex = html.indexOf(">", index + spanOpenLength);
 			if (tagEndIndex !== -1) {
 				flushText();
+
 				const tag = html.slice(index, tagEndIndex + 1);
 				const scope = getScopeFromSpanTag(tag);
 				scopes.push(scope);
+
 				index = tagEndIndex + 1;
 				continue;
 			}
 		}
 
-		if (html.startsWith(SPAN_CLOSE, index)) {
+		if (html.startsWith(spanClose, index)) {
 			flushText();
 			if (scopes.length > 0) {
 				scopes.pop();
 			}
-			index += SPAN_CLOSE.length;
+
+			index += spanClose.length;
 			continue;
 		}
 
@@ -204,18 +220,4 @@ export function renderHighlightedHtml(html: string, theme: HighlightTheme = {}):
 
 	flushText();
 	return output;
-}
-
-export function highlight(code: string, options: HighlightOptions = {}): string {
-	const html = options.language
-		? hljs.highlight(code, {
-				language: options.language,
-				ignoreIllegals: options.ignoreIllegals,
-			}).value
-		: hljs.highlightAuto(code, options.languageSubset).value;
-	return renderHighlightedHtml(html, options.theme);
-}
-
-export function supportsLanguage(name: string): boolean {
-	return hljs.getLanguage(name) !== undefined;
 }

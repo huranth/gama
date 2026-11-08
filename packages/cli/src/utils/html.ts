@@ -1,30 +1,23 @@
-function decodeCodePoint(codePoint: number): string | undefined {
-	if (!Number.isInteger(codePoint)) return undefined;
-
-	const inRange = codePoint >= 0 && codePoint <= 0x10ffff;
-	if (!inRange) return undefined;
-
-	return String.fromCodePoint(codePoint);
-}
-
 export interface DecodedHtmlEntity {
 	text: string;
 	length: number;
 }
 
+const maxEntityLength = 16;
+
+const maxCodePoint = 0x10ffff;
+
+const namedEntities = new Map([
+	["amp", "&"],
+	["lt", "<"],
+	["gt", ">"],
+	["quot", '"'],
+	["apos", "'"],
+]);
+
 export function decodeHtmlEntity(entity: string): string | undefined {
-	switch (entity) {
-		case "amp":
-			return "&";
-		case "lt":
-			return "<";
-		case "gt":
-			return ">";
-		case "quot":
-			return '"';
-		case "apos":
-			return "'";
-	}
+	const named = namedEntities.get(entity);
+	if (named !== undefined) return named;
 
 	if (entity.startsWith("#x") || entity.startsWith("#X")) {
 		return decodeCodePoint(Number.parseInt(entity.slice(2), 16));
@@ -41,12 +34,22 @@ export function decodeHtmlEntityAt(html: string, index: number): DecodedHtmlEnti
 	const semicolonIndex = html.indexOf(";", index + 1);
 	if (semicolonIndex === -1) return undefined;
 
+	// Longest entity
 	const entityLength = semicolonIndex - index;
-	if (entityLength > 16) return undefined;
+	if (entityLength > maxEntityLength) return undefined;
 
 	const entity = html.slice(index + 1, semicolonIndex);
 	const decoded = decodeHtmlEntity(entity);
 	if (decoded === undefined) return undefined;
 
 	return { text: decoded, length: entityLength + 1 };
+}
+
+function decodeCodePoint(codePoint: number): string | undefined {
+	if (!Number.isInteger(codePoint)) return undefined;
+
+	const inRange = codePoint >= 0 && codePoint <= maxCodePoint;
+	if (!inRange) return undefined;
+
+	return String.fromCodePoint(codePoint);
 }
