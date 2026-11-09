@@ -10,6 +10,7 @@ import { getPublicWorkspacePackages } from "./release-packages.mjs";
 const codingAgentName = "@huranth/gama-harness";
 
 const PACKAGE_MANAGERS = new Set(["npm", "pnpm", "yarn", "bun"]);
+
 function needsShell(command) {
 	return process.platform === "win32" && PACKAGE_MANAGERS.has(command);
 }
@@ -96,15 +97,20 @@ export function smokeTestCodingAgentConsumer(directory, runtime = process.execPa
 	}
 	try {
 		writeFileSync(entry, `import assert from "node:assert/strict";
-import { createAgentSession, SessionManager, ModelRuntime } from "${codingAgentName}";
+
+import { createAgentSession, SessionStore, ModelHub } from "${codingAgentName}";
 assert.equal(typeof createAgentSession, "function");
-assert.equal(typeof SessionManager.inMemory, "function");
-assert.equal(typeof ModelRuntime.create, "function");
+assert.equal(typeof SessionStore.inMemory, "function");
+assert.equal(typeof ModelHub.create, "function");
 `);
 		run(runtime, [entry], { cwd: directory, env, timeout: 30_000 });
-		// The public release ships only the bundled bin, not the unbundled dist/cli.js.
+		// Bundled
 		const cli = manifest.bin.gama;
-		const output = run(runtime, [join(packageDir, cli), "--version"], { cwd: directory, env, timeout: 30_000 });
+		const output = run(
+			runtime,
+			[join(packageDir, cli), "--version"],
+			{ cwd: directory, env, timeout: 30_000 }
+		);
 		if (output.trim() !== manifest.version) {
 			throw new Error(`Unexpected version from ${cli}: ${output}`);
 		}
@@ -116,11 +122,10 @@ assert.equal(typeof ModelRuntime.create, "function");
 }
 
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
-	if (process.argv.length !== 2) throw new Error("Usage: node scripts/coding-agent-consumer.mjs");
+	if (process.argv.length !== 2) throw new Error("Usage: node scripts/cli-consumer.mjs");
 	const root = mkdtempSync(join(tmpdir(), "gama-package-consumer-"));
 	try {
-		// The dev package depends on private workspace packages; only the bundled
-		// public release is what gets published, so pack that when it was built.
+		// Public release
 		const packages = getPublicWorkspacePackages().map((pkg) => {
 			const release = join(pkg.directory, "dist", "public-release");
 			if (pkg.name !== codingAgentName || !existsSync(join(release, "package.json"))) return pkg;

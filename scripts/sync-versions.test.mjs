@@ -25,20 +25,20 @@ function runSyncVersions(root) {
 	});
 }
 
-test(
-	"synchronizes private dependencies without touching registry aliases, generated manifests, or published lockstep",
+test(		"synchronizes private dependencies without touching registry aliases, " +
+			"generated manifests, or published lockstep",
 	async () => {
 	const root = await mkdtemp(join(tmpdir(), "gama-sync-versions-"));
 	try {
-		await writeManifest(root, "packages/ai", {
+		await writeManifest(root, "packages/model", {
 			name: "@huranth/gama-ai",
 			version: "2.0.0",
 		});
-		await writeManifest(root, "packages/coding-agent", {
+		await writeManifest(root, "packages/cli", {
 			name: "@huranth/gama-coding-agent",
 			version: "2.0.0",
 		});
-		await writeManifest(root, "packages/evals", {
+		await writeManifest(root, "packages/bench", {
 			name: "@huranth/gama-evals",
 			version: "9.9.9",
 			private: true,
@@ -47,7 +47,7 @@ test(
 				"@huranth/gama-ai-legacy": "npm:@huranth/gama-ai@1.0.0",
 			},
 		});
-		await writeManifest(root, "packages/coding-agent/install-lock", {
+		await writeManifest(root, "packages/cli/install-lock", {
 			name: "generated-install-lock",
 			version: "0.0.0",
 			private: true,
@@ -59,13 +59,13 @@ test(
 		const result = runSyncVersions(root);
 		assert.equal(result.status, 0, result.stderr);
 
-		const evalsManifest = await readManifest(root, "packages/evals");
+		const evalsManifest = await readManifest(root, "packages/bench");
 		assert.equal(evalsManifest.dependencies["@huranth/gama-coding-agent"], "^2.0.0");
 		assert.equal(evalsManifest.dependencies["@huranth/gama-ai-legacy"], "npm:@huranth/gama-ai@1.0.0");
-		const generatedManifest = await readManifest(root, "packages/coding-agent/install-lock");
+		const generatedManifest = await readManifest(root, "packages/cli/install-lock");
 		assert.equal(generatedManifest.dependencies["@huranth/gama-coding-agent"], "^1.0.0");
 
-		await writeManifest(root, "packages/ai", {
+		await writeManifest(root, "packages/model", {
 			name: "@huranth/gama-ai",
 			version: "3.0.0",
 		});

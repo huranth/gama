@@ -7,27 +7,27 @@ import { fileURLToPath } from "node:url";
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 const WORKSPACE = {
-	"@huranth/chord": "packages/chord/src",
-	"@huranth/gama-ai": "packages/ai/src",
-	"@huranth/gama-durable": "packages/durable/src",
-	"@huranth/gama-agent-core": "packages/agent/src",
-	"@huranth/gama-codemode": "packages/codemode/src",
-	"@huranth/gama-telemetry": "packages/telemetry/src",
-	"@huranth/gama-tui": "packages/tui/src",
+	"@huranth/gama-bus": "packages/bus/src",
+	"@huranth/gama-ai": "packages/model/src",
+	"@huranth/gama-durable": "packages/store/src",
+	"@huranth/gama-agent-core": "packages/loop/src",
+	"@huranth/gama-codemode": "packages/script/src",
+	"@huranth/gama-telemetry": "packages/trace/src",
+	"@huranth/gama-tui": "packages/ui/src",
 };
 
 const BUDGETS = {
-	"packages/ai": {
+	"packages/model": {
 		"./models": {
 			maxFiles: 15,
 			forbid: ["providers/", "index.ts", "utils/validation.ts", "utils/typebox-helpers.ts"],
 		},
 		"./utils/*": { maxFiles: 3, forbid: ["providers/", "api/", "index.ts"] },
 	},
-	"packages/durable": {
+	"packages/store": {
 		".": {
 			maxFiles: 60,
-			forbid: ["packages/ai/src/index.ts", "packages/ai/src/utils/typebox-helpers.ts"],
+			forbid: ["packages/model/src/index.ts", "packages/model/src/utils/typebox-helpers.ts"],
 		},
 	},
 };

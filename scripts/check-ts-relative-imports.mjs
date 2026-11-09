@@ -13,6 +13,7 @@ import {
 import { API } from "typescript/unstable/sync";
 
 const ignoredDirectories = new Set([".git", "coverage", "dist", "node_modules"]);
+
 const files = [];
 
 function collectTypescriptFiles(directory) {
@@ -49,10 +50,12 @@ const failures = [];
 collectTypescriptFiles(".");
 
 const configPath = resolve("tsconfig.check-ts-relative-imports.json");
+
 const config = JSON.stringify({
 	compilerOptions: { noResolve: true, noLib: true, types: [] },
 	files: files.map((file) => resolve(file)),
 });
+
 const api = new API({
 	cwd: process.cwd(),
 	fs: {

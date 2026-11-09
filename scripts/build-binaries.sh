@@ -1,20 +1,7 @@
 #!/usr/bin/env bash
-#
-# Mirrors .github/workflows/build-binaries.yml
-#
-# Usage:
-#
-# Options:
-#                        windows-x64, windows-arm64
-#
-# Output:
-#   packages/coding-agent/binaries/
-#     gama-darwin-arm64.tar.gz
-#     gama-darwin-x64.tar.gz
-#     gama-linux-x64.tar.gz
-#     gama-linux-arm64.tar.gz
-#     gama-windows-x64.zip
-#     gama-windows-arm64.zip
+# Build binaries.
+# Usage flags.
+# Output: packages/cli/binaries/
 
 set -euo pipefail
 
@@ -69,36 +56,63 @@ if [[ -n "$PLATFORM" ]]; then
 fi
 
 if [[ -z "$OUTPUT_DIR" ]]; then
-    OUTPUT_DIR="packages/coding-agent/binaries"
+    OUTPUT_DIR="packages/cli/binaries"
 fi
 if [[ "$OUTPUT_DIR" != /* ]]; then
     OUTPUT_DIR="$(pwd)/$OUTPUT_DIR"
 fi
 
+# Path canonical.
+REPO_ROOT="$(pwd -P)"
+if [[ -d "$OUTPUT_DIR" ]]; then
+    OUTPUT_DIR="$(cd "$OUTPUT_DIR" && pwd -P)"
+else
+    OUTPUT_PARENT="$(dirname "$OUTPUT_DIR")"
+    OUTPUT_NAME="$(basename "$OUTPUT_DIR")"
+    if [[ ! -d "$OUTPUT_PARENT" ]]; then
+        echo "Output parent does not exist: $OUTPUT_PARENT" >&2
+        exit 1
+    fi
+    OUTPUT_DIR="$(cd "$OUTPUT_PARENT" && pwd -P)/$OUTPUT_NAME"
+fi
+
+# Protect repo.
+if [[ "$OUTPUT_DIR" == "/" || "$REPO_ROOT/" == "$OUTPUT_DIR/"* ]]; then
+    echo "Refusing to use $OUTPUT_DIR as output directory." >&2
+    exit 1
+fi
+if [[ -d "$OUTPUT_DIR" ]] &&
+   [[ -n "$(find "$OUTPUT_DIR" -mindepth 1 -maxdepth 1 -print -quit)" ]] &&
+   [[ ! -f "$OUTPUT_DIR/.gama-binaries" ]]; then
+    echo "Refusing to delete non-build directory: $OUTPUT_DIR" >&2
+    exit 1
+fi
+
 if [[ "$SKIP_INSTALL" == "false" ]]; then
-    echo "==> Installing dependencies..."
+    echo "Installing dependencies..."
     npm ci --ignore-scripts
 else
-    echo "==> Skipping npm ci (--skip-install)"
+    echo "Skipping npm ci (--skip-install)"
 fi
 
 if [[ "$SKIP_BUILD" == "false" ]]; then
     if [[ "$OFFLINE_MODEL_DATA" == "true" ]]; then
-        echo "==> Building all packages with bundled model data..."
+        echo "Building all packages with bundled model data..."
         npm run build:offline
     else
-        echo "==> Building all packages..."
+        echo "Building all packages..."
         npm run build
     fi
 else
-    echo "==> Skipping package build (--skip-build)"
+    echo "Skipping package build (--skip-build)"
 fi
 
-echo "==> Building binaries..."
-cd packages/coding-agent
+echo "Building binaries..."
+cd packages/cli
 
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"/{darwin-arm64,darwin-x64,linux-x64,linux-arm64,windows-x64,windows-arm64}
+touch "$OUTPUT_DIR/.gama-binaries"
 
 if [[ -n "$PLATFORM" ]]; then
     PLATFORMS=("$PLATFORM")
@@ -113,20 +127,19 @@ for platform in "${PLATFORMS[@]}"; do
         bun_target="${bun_target}-baseline"
     fi
 
-    #
     output_name="gama"
     if [[ "$platform" == windows-* ]]; then
         output_name="gama.exe"
     fi
     bun build --compile --no-compile-autoload-bunfig \
         --target="$bun_target" \
-        ./dist/bun/cli.js \
+        ./dist/bun/entry.js \
         ./src/utils/image-resize-worker.ts \
         ./src/ext/codemode/worker.ts \
         --outfile "$OUTPUT_DIR/$platform/$output_name"
 done
 
-echo "==> Creating release archives..."
+echo "Creating release archives..."
 
 for platform in "${PLATFORMS[@]}"; do
     cp package.json "$OUTPUT_DIR/$platform/"
@@ -134,14 +147,14 @@ for platform in "${PLATFORMS[@]}"; do
     cp CHANGELOG.md "$OUTPUT_DIR/$platform/"
     cp ../../node_modules/@silvia-odwyer/photon-node/photon_rs_bg.wasm "$OUTPUT_DIR/$platform/"
     mkdir -p "$OUTPUT_DIR/$platform/theme"
-    cp dist/modes/tui/theme/*.json "$OUTPUT_DIR/$platform/theme/"
+    cp dist/term/theme/*.json "$OUTPUT_DIR/$platform/theme/"
     cp -r dist/core/html "$OUTPUT_DIR/$platform/"
     cp -r examples "$OUTPUT_DIR/$platform/"
 
     native_platform="${platform/windows-/win32-}"
     native_path="native/${native_platform%-*}/prebuilds"
     mkdir -p "$OUTPUT_DIR/$platform/$native_path"
-    cp -R "../tui/$native_path/$native_platform" "$OUTPUT_DIR/$platform/$native_path/"
+    cp -R "../ui/$native_path/$native_platform" "$OUTPUT_DIR/$platform/$native_path/"
 done
 
 # Create archives
@@ -158,7 +171,7 @@ for platform in "${PLATFORMS[@]}"; do
     fi
 done
 
-echo "==> Extracting archives for testing..."
+echo "Extracting archives for testing..."
 for platform in "${PLATFORMS[@]}"; do
     rm -rf "$platform"
     if [[ "$platform" == windows-* ]]; then
@@ -169,7 +182,7 @@ for platform in "${PLATFORMS[@]}"; do
 done
 
 echo ""
-echo "==> Build complete!"
+echo "Build complete!"
 echo "Archives available in $OUTPUT_DIR/"
 ls -lh *.tar.gz *.zip 2>/dev/null || true
 echo ""

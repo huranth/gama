@@ -5,15 +5,25 @@ import { dirname, join, posix, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
+
 const repoRoot = resolve(scriptDir, "..");
-const codingAgentDir = join(repoRoot, "packages/coding-agent");
+
+const codingAgentDir = join(repoRoot, "packages/cli");
+
 const outputDir = join(codingAgentDir, "install-lock");
+
 const rootLockfilePath = join(repoRoot, "package-lock.json");
+
 const outputPackageJsonPath = join(outputDir, "package.json");
+
 const outputLockfilePath = join(outputDir, "package-lock.json");
+
 const internalPackagePrefix = "@huranth/gama-";
-const internalPackageNames = new Set(["@huranth/chord"]);
+
+const internalPackageNames = new Set(["@huranth/gama-bus"]);
+
 const installPackageName = "@huranth/gama-coding-agent-install";
+
 const allowedInstallScriptPackages = new Map([
 	["@google/genai@2.21.0", "preinstall is a no-op in the published package"],
 	["esbuild@0.28.2", "postinstall selects and verifies the platform-specific esbuild binary"],
@@ -21,6 +31,7 @@ const allowedInstallScriptPackages = new Map([
 ]);
 
 const args = new Set(process.argv.slice(2));
+
 const checkOnly = args.has("--check");
 
 for (const arg of args) {
@@ -284,7 +295,16 @@ function createRootLockEntry(installerPackageJson) {
 	return sortedPackageEntry(entry);
 }
 
-function validateGeneratedFiles(installerPackageJson, installLock, internalNames, internalVersions) {
+function countPlatformPackages(lockPackages) {
+	return Object.values(lockPackages).filter((entry) => entry.os || entry.cpu || entry.libc).length;
+}
+
+function validateGeneratedFiles(
+	installerPackageJson,
+	installLock,
+	internalNames,
+	internalVersions,
+) {
 	const errors = [];
 	const rootEntry = installLock.packages[""];
 	const includedPackageNames = new Set();
@@ -374,11 +394,7 @@ function validateGeneratedFiles(installerPackageJson, installLock, internalNames
 		}
 	}
 
-	const platformEntryCount = Object.values(installLock.packages);
-	const platformPackageCount = platformEntryCount.filter(
-		(entry) => entry.os || entry.cpu || entry.libc,
-	).length;
-	if (platformPackageCount === 0) {
+	if (countPlatformPackages(installLock.packages) === 0) {
 		errors.push("no platform-specific optional dependency entries found");
 	}
 
@@ -449,29 +465,26 @@ try {
 
 	if (checkOnly) {
 		if (!existsSync(outputPackageJsonPath) || !existsSync(outputLockfilePath)) {
-			console.error("packages/coding-agent/install-lock is missing generated files.");
-			console.error("Run: npm run install-lock:coding-agent");
+			console.error("packages/cli/install-lock is missing generated files.");
+			console.error("Run: npm run install-lock");
 			process.exit(1);
 		}
 		const currentPackageJson = readFileSync(outputPackageJsonPath, "utf8");
 		const currentLockfile = readFileSync(outputLockfilePath, "utf8");
 		if (currentPackageJson !== packageJsonContent || currentLockfile !== lockfileContent) {
-			console.error("packages/coding-agent/install-lock is out of date.");
-			console.error("Run: npm run install-lock:coding-agent");
+			console.error("packages/cli/install-lock is out of date.");
+			console.error("Run: npm run install-lock");
 			process.exit(1);
 		}
-		console.log("packages/coding-agent/install-lock is up to date.");
+		console.log("packages/cli/install-lock is up to date.");
 	} else {
 		mkdirSync(outputDir, { recursive: true });
 		writeFileSync(outputPackageJsonPath, packageJsonContent);
 		writeFileSync(outputLockfilePath, lockfileContent);
 		const packageCount = Object.keys(installLock.packages).length - 1;
-		const platformEntries = Object.values(installLock.packages);
-		const platformPackageCount = platformEntries.filter(
-			(entry) => entry.os || entry.cpu || entry.libc,
-		).length;
+		const platformPackageCount = countPlatformPackages(installLock.packages);
 		console.log(
-			`Wrote packages/coding-agent/install-lock/package.json and package-lock.json ` +
+			`Wrote packages/cli/install-lock/package.json and package-lock.json ` +
 				`(${packageCount} packages, ${platformPackageCount} platform-specific).`,
 		);
 	}

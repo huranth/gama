@@ -7,14 +7,14 @@ import {
 	installCodingAgentConsumer,
 	packReleasePackages,
 	smokeTestCodingAgentConsumer,
-} from "./coding-agent-consumer.mjs";
+} from "./cli-consumer.mjs";
 
 const codingAgentName = "@huranth/gama-harness";
 
 function createFixture(t) {
 	const root = mkdtempSync(join(tmpdir(), "gama-consumer-test-"));
 	t.after(() => rmSync(root, { recursive: true, force: true }));
-	const packages = [codingAgentName, "@huranth/chord"].map((name) => ({
+	const packages = [codingAgentName, "@huranth/gama-bus"].map((name) => ({
 		name,
 		directory: join(root, "packages", name.split("/")[1]),
 	}));
@@ -32,7 +32,7 @@ function createFixture(t) {
 			...(isAgent
 				? {
 						bin: { gama: "dist/bundle/cli.js" },
-						dependencies: { "@huranth/chord": "1.0.0" },
+						dependencies: { "@huranth/gama-bus": "1.0.0" },
 					}
 				: {}),
 		};
@@ -40,11 +40,15 @@ function createFixture(t) {
 			"package.json": JSON.stringify(manifest),
 			"dist/index.js": isAgent
 				? `
-import { marker } from "@huranth/chord";
+
+import { marker } from "@huranth/gama-bus";
 if (marker !== "local tarball") throw new Error("Wrong Chord artifact");
+
 export function createAgentSession() {}
-export class SessionManager { static inMemory() {} }
-export class ModelRuntime { static create() {} }
+
+export class SessionStore { static inMemory() {} }
+
+export class ModelHub { static create() {} }
 `
 				: 'export const marker = "local tarball";',
 			...(isAgent
@@ -72,7 +76,7 @@ test(
 	const manifest = JSON.parse(readFileSync(join(directory, "package.json"), "utf8"));
 	assert.deepEqual(Object.keys(manifest.dependencies), [codingAgentName]);
 	const overrides = Object.keys(manifest.overrides).sort();
-	assert.deepEqual(overrides, [codingAgentName, "@huranth/chord"].sort());
+	assert.deepEqual(overrides, [codingAgentName, "@huranth/gama-bus"].sort());
 	smokeTestCodingAgentConsumer(directory);
 });
 

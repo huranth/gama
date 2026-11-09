@@ -2,9 +2,14 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const dependencySections = ["dependencies", "devDependencies", "optionalDependencies"];
-const exactVersionPattern = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
+const exactVersionPattern =
+	/^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/;
+
 const ignoredDirectories = new Set([".git", "dist", "node_modules"]);
-const internalPackageNames = new Set(["@huranth/chord"]);
+
+const internalPackageNames = new Set(["@huranth/gama-bus"]);
+
 const packageJsonFiles = [];
 
 function collectPackageJsonFiles(directory) {
@@ -27,7 +32,8 @@ function isInternalWorkspaceDependency(name) {
 }
 
 function isNonRegistrySpecifier(specifier) {
-	return /^(?:workspace:|file:|link:|portal:|git\+|github:|git:|https?:|ssh:|git:\/\/)/.test(specifier);
+	return /^(?:workspace:|file:|link:|portal:|git\+|github:|git:|https?:|ssh:|git:\/\/)/
+		.test(specifier);
 }
 
 function getVersionSpecifier(specifier) {

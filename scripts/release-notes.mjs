@@ -6,11 +6,26 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 const DEFAULT_REPO = "huranth/gama";
-const DEFAULT_BASE_PATH = "packages/coding-agent";
-const DEFAULT_CHANGELOG = "packages/coding-agent/CHANGELOG.md";
+
+const DEFAULT_BASE_PATH = "packages/cli";
+
+const DEFAULT_CHANGELOG = "packages/cli/CHANGELOG.md";
+
 const DEFAULT_FIX_SINCE_TAG = "v0.74.0";
+
 const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
+
 const INLINE_MARKDOWN_LINK_RE = /(!?\[[^\]\n]+\]\()([^\s)]+)((?:\s+[^)]*)?\))/g;
+
+const OPTION_NAMES = new Set([
+	"--base-path",
+	"--changelog",
+	"--out",
+	"--repo",
+	"--since-tag",
+	"--tag",
+	"--version",
+]);
 
 function printUsage() {
 	console.log(`Usage: node scripts/release-notes.mjs <command> [options]
@@ -45,6 +60,7 @@ function run(command, args, options = {}) {
 		cwd: options.cwd,
 		encoding: "utf8",
 		maxBuffer: options.maxBuffer ?? 20 * 1024 * 1024,
+		shell: process.platform === "win32",
 		stdio: options.capture ? ["inherit", "pipe", "pipe"] : "inherit",
 	});
 
@@ -80,16 +96,7 @@ function parseOptions(args) {
 			continue;
 		}
 
-		const optionNames = new Set([
-			"--base-path",
-			"--changelog",
-			"--out",
-			"--repo",
-			"--since-tag",
-			"--tag",
-			"--version",
-		]);
-		if (!optionNames.has(arg)) {
+		if (!OPTION_NAMES.has(arg)) {
 			throw new Error(`Unknown option: ${arg}`);
 		}
 
@@ -121,18 +128,53 @@ function versionFromTag(tag) {
 	return tag.startsWith("v") ? tag.slice(1) : tag;
 }
 
-function compareVersions(a, b) {
-	const aParts = versionFromTag(a).split(".").map(Number);
-	const bParts = versionFromTag(b).split(".").map(Number);
+function parseVersion(value) {
+	const text = versionFromTag(value).split("+")[0];
+	const dash = text.indexOf("-");
+	const core = (dash === -1 ? text : text.slice(0, dash)).split(".").map(Number);
+	const pre = dash === -1 ? [] : text.slice(dash + 1).split(".");
 
-	for (let i = 0; i < 3; i++) {
-		const diff = (aParts[i] || 0) - (bParts[i] || 0);
-		if (diff !== 0) {
-			return diff;
+	return { core, pre };
+}
+
+function comparePrerelease(a, b) {
+	for (let i = 0; i < Math.max(a.length, b.length); i++) {
+		const left = a[i];
+		const right = b[i];
+		if (left === undefined) return -1;
+		if (right === undefined) return 1;
+
+		const leftNumber = /^\d+$/.test(left);
+		const rightNumber = /^\d+$/.test(right);
+		if (leftNumber && rightNumber) {
+			const diff = Number(left) - Number(right);
+			if (diff !== 0) return diff;
+			continue;
 		}
+		if (leftNumber) return -1;
+		if (rightNumber) return 1;
+
+		const diff = left.localeCompare(right);
+		if (diff !== 0) return diff;
 	}
 
 	return 0;
+}
+
+function compareVersions(a, b) {
+	const left = parseVersion(a);
+	const right = parseVersion(b);
+
+	for (let i = 0; i < 3; i++) {
+		const diff = (left.core[i] || 0) - (right.core[i] || 0);
+		if (diff !== 0) return diff;
+	}
+
+	if (left.pre.length === 0 && right.pre.length === 0) return 0;
+	if (left.pre.length === 0) return 1;
+	if (right.pre.length === 0) return -1;
+
+	return comparePrerelease(left.pre, right.pre);
 }
 
 function escapeRegExp(value) {
@@ -140,7 +182,9 @@ function escapeRegExp(value) {
 }
 
 function extractChangelogSection(changelog, version) {
-	const headingPattern = `^## \\[${escapeRegExp(version)}\\](?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?\\s*$`;
+	const escaped = escapeRegExp(version);
+	const headingPattern = `^##\\s+(?:\\[${escaped}\\]|${escaped})(?:\\s+-\\s+\\d{4}-\\d{2}-\\d{2})?` +
+		`\\s*$`;
 	const headingRe = new RegExp(headingPattern, "m");
 	const heading = headingRe.exec(changelog);
 
@@ -150,7 +194,7 @@ function extractChangelogSection(changelog, version) {
 
 	const sectionStart = heading.index + heading[0].length;
 	const rest = changelog.slice(sectionStart);
-	const nextHeading = rest.search(/^## \[/m);
+	const nextHeading = rest.search(/^##\s+/m);
 	const section = nextHeading === -1 ? rest : rest.slice(0, nextHeading);
 	return section.trim();
 }
@@ -194,13 +238,8 @@ function resolveRepositoryPath(targetPath, basePath) {
 	return joined;
 }
 
-function isDirectoryTarget(originalPath, repositoryPath) {
-	if (originalPath.endsWith("/")) {
-		return true;
-	}
-
-	const basename = path.posix.basename(repositoryPath);
-	return !basename.includes(".");
+function isDirectoryTarget(originalPath) {
+	return originalPath.endsWith("/");
 }
 
 function normalizeLinkTarget(target, options) {
@@ -232,9 +271,10 @@ function normalizeLinkTarget(target, options) {
 		return canonicalTarget;
 	}
 
-	const route = isDirectoryTarget(pathPart, repositoryPath) ? "tree" : "blob";
-	const encodedPath = encodeURI(repositoryPath);
-	return `https://github.com/${options.repo}/${route}/${options.tag}/${encodedPath}${query}${fragment}`;
+	const route = isDirectoryTarget(pathPart) ? "tree" : "blob";
+	const encodedPath = encodeURI(repositoryPath).replace(/%25([0-9A-Fa-f]{2})/g, "%$1");
+	const base = `https://github.com/${options.repo}/${route}`;
+	return `${base}/${options.tag}/${encodedPath}${query}${fragment}`;
 }
 
 function normalizeReleaseNoteLinks(markdown, options) {

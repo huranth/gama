@@ -1,9 +1,10 @@
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import { createProvider, envApiKeyAuth, type Model } from "@huranth/gama-ai";
-import { openAICompletionsApi } from "@huranth/gama-ai/api/openai-completions.lazy";
+import { openAICompletionsApi } from "@huranth/gama-ai/wire/openai-completions.lazy";
 import { createModels } from "@huranth/gama-ai/models";
 
 const baseUrl = "https://example.test/v1";
+
 const model: Model<"openai-completions"> = {
 	id: "smoke-model",
 	name: "smoke-model",
@@ -28,10 +29,11 @@ models.setProvider(
 		models: [model],
 	}),
 );
+
 const resolved = models.getModel("smoke", "smoke-model");
 if (!resolved) throw new Error("Smoke-test model not found");
 
-export const agent = new Agent({
+export const agent = new Runner({
 	initialState: { model: resolved },
 	streamFn: models.streamSimple.bind(models),
 });

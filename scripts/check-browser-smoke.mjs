@@ -4,7 +4,9 @@ import { join } from "node:path";
 import { build } from "esbuild";
 
 const durableOutputPath = join(tmpdir(), "gama-durable-browser-smoke.js");
+
 const agentTreeshakeOutputPath = join(tmpdir(), "gama-agent-treeshake-smoke.js");
+
 const errorLogPath = join(tmpdir(), "gama-browser-smoke-errors.log");
 
 function normalizePath(path) {
@@ -36,22 +38,22 @@ try {
 	});
 	const durableInputs = durableBuild.metafile.inputs;
 	for (const expectedInput of [
-		"packages/durable/src/index.ts",
-		"packages/durable/src/env/index.ts",
-		"packages/durable/src/storage/jsonl/index.ts",
-		"packages/durable/src/storage/jsonl/storage.ts",
-		"packages/durable/src/storage/memory.ts",
-		"packages/durable/src/storage/sqlite/index.ts",
-		"packages/durable/src/storage/sqlite/storage.ts",
+		"packages/store/src/index.ts",
+		"packages/store/src/system/index.ts",
+		"packages/store/src/backends/jsonl/index.ts",
+		"packages/store/src/backends/jsonl/storage.ts",
+		"packages/store/src/backends/memory.ts",
+		"packages/store/src/backends/sqlite/index.ts",
+		"packages/store/src/backends/sqlite/storage.ts",
 	]) {
 		if (!findInput(durableInputs, expectedInput)) {
 			throw new Error(`Durable browser bundle does not include ${expectedInput}`);
 		}
 	}
 	for (const forbiddenInput of [
-		"packages/durable/src/env/node.ts",
-		"packages/durable/src/storage/jsonl/node.ts",
-		"packages/durable/src/storage/sqlite/node.ts",
+		"packages/store/src/system/node.ts",
+		"packages/store/src/backends/jsonl/node.ts",
+		"packages/store/src/backends/sqlite/node.ts",
 	]) {
 		const nodeAdapter = findInput(durableInputs, forbiddenInput);
 		if (nodeAdapter) throw new Error(`Durable browser bundle unexpectedly includes ${nodeAdapter}`);
@@ -69,8 +71,8 @@ try {
 	});
 	const inputs = agentTreeshakeBuild.metafile.inputs;
 	for (const forbiddenInput of [
-		"packages/ai/src/compat.ts",
-		"packages/ai/src/providers/all.ts",
+		"packages/model/src/compat.ts",
+		"packages/model/src/catalog/all.ts",
 	]) {
 		const includedInput = findInput(inputs, forbiddenInput);
 		if (includedInput) {
@@ -86,7 +88,7 @@ try {
 		),
 	);
 	const catalogInputs = Array.from(contributingInputs).filter((input) =>
-		normalizePath(input).includes("packages/ai/src/providers/"),
+		normalizePath(input).includes("packages/model/src/catalog/"),
 	);
 	if (catalogInputs.length !== 0) {
 		const message =

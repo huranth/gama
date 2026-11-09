@@ -19,7 +19,9 @@ import { API } from "typescript/unstable/sync";
 import { getPublicWorkspacePackages } from "./release-packages.mjs";
 
 const fallbackConfigName = "tsconfig.runtime-deps-fallback.json";
+
 const fallbackConfig = JSON.stringify({ include: ["src/**/*"] });
+
 const failures = [];
 
 function checkSource(source, manifest) {
@@ -97,6 +99,7 @@ const packages = getPublicWorkspacePackages()
 const fallbackConfigs = new Set(
 	packages.map(({ configPath }) => configPath).filter((path) => path.endsWith(fallbackConfigName)),
 );
+
 const api = new API({
 	cwd: process.cwd(),
 	fs: {

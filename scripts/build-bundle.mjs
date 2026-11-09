@@ -16,16 +16,23 @@ import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 const scriptDir = dirname(fileURLToPath(import.meta.url));
+
 const repoRoot = resolve(scriptDir, "..");
-const codingAgentDir = join(repoRoot, "packages", "coding-agent");
-const aiDistDir = join(repoRoot, "packages", "ai", "dist");
-const codingAgentDistDir = join(codingAgentDir, "dist");
-const bundleDir = join(codingAgentDistDir, "bundle");
+
+const cliDir = join(repoRoot, "packages", "cli");
+
+const modelDistDir = join(repoRoot, "packages", "model", "dist");
+
+const cliDistDir = join(cliDir, "dist");
+
+const bundleDir = join(cliDistDir, "bundle");
+
 const banner = {
 	js:
 		'import { createRequire as __piCreateRequire } from "node:module"; ' +
 		"const require = __piCreateRequire(import.meta.url);",
 };
+
 const allowedExternalPackages = new Set([
 	"@silvia-odwyer/photon-node",
 	"jiti",
@@ -44,9 +51,11 @@ const lazyJitiPlugin = {
 		}));
 		build.onLoad({ filter: /.*/, namespace: "lazy-jiti" }, () => ({
 			contents: `
+
 import { createRequire } from "node:module";
 
 const require = createRequire(import.meta.url);
+
 let createJitiImpl;
 
 export function createJiti(...args) {
@@ -145,12 +154,12 @@ function outputBytes(metafiles) {
 }
 
 for (const entry of [
-	join(codingAgentDistDir, "cli.js"),
-	join(codingAgentDistDir, "index.js"),
-	join(codingAgentDistDir, "rpc-entry.js"),
-	join(codingAgentDistDir, "utils", "image-resize-worker.js"),
-	join(codingAgentDistDir, "ext", "codemode", "worker.js"),
-	join(aiDistDir, "api", "bedrock-converse-stream.js"),
+	join(cliDistDir, "cli.js"),
+	join(cliDistDir, "index.js"),
+	join(cliDistDir, "rpc-entry.js"),
+	join(cliDistDir, "utils", "image-resize-worker.js"),
+	join(cliDistDir, "ext", "codemode", "worker.js"),
+	join(modelDistDir, "wire", "bedrock-converse-stream.js"),
 ]) {
 	if (!existsSync(entry)) {
 		const missing = relative(repoRoot, entry);
@@ -165,9 +174,9 @@ const mainResult = await build({
 	...commonBuildOptions(),
 	entryNames: "[name]",
 	entryPoints: {
-		"cli-runtime": join(codingAgentDistDir, "cli.js"),
-		index: join(codingAgentDistDir, "index.js"),
-		"rpc-entry": join(codingAgentDistDir, "rpc-entry.js"),
+		"cli-runtime": join(cliDistDir, "cli.js"),
+		index: join(cliDistDir, "index.js"),
+		"rpc-entry": join(cliDistDir, "rpc-entry.js"),
 	},
 	outdir: bundleDir,
 	chunkNames: "chunks/[name]-[hash]",
@@ -175,17 +184,23 @@ const mainResult = await build({
 });
 
 const mainMetafile = mainResult.metafile;
-const bedrockDist = "packages/ai/dist/api/bedrock-converse-stream.lazy.js";
-const imageResizeDist = "packages/coding-agent/dist/utils/image-resize.js";
-const configDist = "packages/coding-agent/dist/config.js";
+
+const bedrockDist = "packages/model/dist/wire/bedrock-converse-stream.lazy.js";
+
+const imageResizeDist = "packages/cli/dist/utils/image-resize.js";
+
+const configDist = "packages/cli/dist/config.js";
+
 const bedrockLoaderOutput = findContainingOutput(mainMetafile, bedrockDist);
+
 const imageResizeOutput = findContainingOutput(mainMetafile, imageResizeDist);
+
 const configOutput = findContainingOutput(mainMetafile, configDist);
 
 const lazyEntryPoints = {
-	"bedrock-converse-stream": join(aiDistDir, "api", "bedrock-converse-stream.js"),
-	"codemode-worker": join(codingAgentDistDir, "ext", "codemode", "worker.js"),
-	"image-resize-worker": join(codingAgentDistDir, "utils", "image-resize-worker.js"),
+	"bedrock-converse-stream": join(modelDistDir, "wire", "bedrock-converse-stream.js"),
+	"codemode-worker": join(cliDistDir, "ext", "codemode", "worker.js"),
+	"image-resize-worker": join(cliDistDir, "utils", "image-resize-worker.js"),
 };
 
 const lazyResult = await build({
@@ -205,7 +220,9 @@ if (dirname(configOutput) !== dirname(bedrockLoaderOutput)) {
 }
 
 validateExternalImports([mainResult.metafile, lazyResult.metafile]);
+
 const cliLauncher = `#!/usr/bin/env node
+
 import { createRequire, enableCompileCache } from "node:module";
 
 enableCompileCache();
@@ -216,44 +233,45 @@ chmodSync(join(bundleDir, "cli.js"), 0o755);
 chmodSync(join(bundleDir, "rpc-entry.js"), 0o755);
 
 const mainOutputs = Object.keys(mainMetafile.outputs);
+
 const lazyOutputs = Object.keys(lazyResult.metafile.outputs);
+
 const outputPaths = [...mainOutputs, ...lazyOutputs];
+
 const files = new Set(outputPaths).size + 1;
+
 const metafiles = [mainMetafile, lazyResult.metafile];
+
 const mib = (outputBytes(metafiles) + cliLauncher.length) / (1024 * 1024);
 console.log(`Built ${relative(repoRoot, bundleDir)} (${files} files, ${mib.toFixed(1)} MiB)`);
 
-if (process.argv.includes("--public-release")) {
-	preparePublicRelease();
-}
-
 function preparePublicRelease() {
-	const releaseDir = join(codingAgentDistDir, "public-release");
+	const releaseDir = join(cliDistDir, "public-release");
 	if (existsSync(releaseDir)) {
 		throw new Error("Public release output already exists. Rebuild before preparing it again.");
 	}
 	mkdirSync(join(releaseDir, "dist"), { recursive: true });
-	for (const entry of readdirSync(codingAgentDistDir)) {
+	for (const entry of readdirSync(cliDistDir)) {
 		if (entry.startsWith("public-")) continue;
-		cpSync(join(codingAgentDistDir, entry), join(releaseDir, "dist", entry), {
+		cpSync(join(cliDistDir, entry), join(releaseDir, "dist", entry), {
 			recursive: true,
 			filter: (source) =>
 				source.startsWith(bundleDir) ||
-				source.startsWith(join(codingAgentDistDir, "core", "html")) ||
-				source.startsWith(join(codingAgentDistDir, "modes", "tui", "theme")) ||
+				source.startsWith(join(cliDistDir, "core", "html")) ||
+				source.startsWith(join(cliDistDir, "term", "theme")) ||
 				(!source.endsWith(".js") && !source.endsWith(".map")),
 		});
 	}
 
-	const workspaceDirs = ["chord", "agent", "ai", "codemode", "tui", "telemetry"];
+	const workspaceDirs = ["bus", "loop", "model", "script", "ui", "trace"];
 	const workspaces = new Map();
-	const packageJson = JSON.parse(readFileSync(join(codingAgentDir, "package.json"), "utf8"));
+	const packageJson = JSON.parse(readFileSync(join(cliDir, "package.json"), "utf8"));
 	const dependencies = {};
 
-	for (const directory of ["coding-agent", ...workspaceDirs]) {
+	for (const directory of ["cli", ...workspaceDirs]) {
 		const manifestPath = join(repoRoot, "packages", directory, "package.json");
 		const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
-		if (directory !== "coding-agent") workspaces.set(manifest.name, { directory, manifest });
+		if (directory !== "cli") workspaces.set(manifest.name, { directory, manifest });
 		for (const [name, version] of Object.entries(manifest.dependencies ?? {})) {
 			if (name.startsWith("@huranth/")) continue;
 			if (dependencies[name] && dependencies[name] !== version) {
@@ -282,21 +300,28 @@ function preparePublicRelease() {
 			}
 			if (!entry.name.endsWith(".d.ts")) continue;
 			const content = readFileSync(file, "utf8");
-			const updated = content.replace(/(["'])(@huranth\/[\w-]+)(\/[^"']*)?\1/g, (match, quote, name, subpath = "") => {
+			const internalImport = /(["'])(@huranth\/[\w-]+)(\/[^"']*)?\1/g;
+			const updated = content.replace(internalImport, (match, quote, name, subpath = "") => {
 				const workspace = workspaces.get(name);
 				if (!workspace) throw new Error(`Unknown internal declaration import: ${name}${subpath}`);
 				const exports = workspace.manifest.exports;
 				const key = subpath ? `.${subpath}` : ".";
 				let target = exports?.[key]?.types;
 				if (!target && subpath && exports) {
-					const wildcard = Object.keys(exports).find((item) => item.endsWith("/*") && key.startsWith(item.slice(0, -1)));
+					const wildcard = Object.keys(exports).find(
+						(item) => item.endsWith("/*") && key.startsWith(item.slice(0, -1)),
+					);
 					if (wildcard) target = exports[wildcard].types.replace("*", key.slice(wildcard.length - 1));
 				}
 				target ??= subpath ? `./dist${subpath}.d.ts` : workspace.manifest.types;
-				if (!target?.startsWith("./dist/")) throw new Error(`Cannot resolve declaration import: ${name}${subpath}`);
+				if (!target?.startsWith("./dist/")) {
+					throw new Error(`Cannot resolve declaration import: ${name}${subpath}`);
+				}
 				const declaration = join(vendorDir, workspace.directory, target.slice("./dist/".length));
 				if (!existsSync(declaration)) throw new Error(`Missing declaration: ${declaration}`);
-				let specifier = relative(dirname(file), declaration).replaceAll("\\", "/").replace(/\.d\.ts$/, ".js");
+				let specifier = relative(dirname(file), declaration)
+					.replaceAll("\\", "/")
+					.replace(/\.d\.ts$/, ".js");
 				if (!specifier.startsWith(".")) specifier = `./${specifier}`;
 				return `${quote}${specifier}${quote}`;
 			});
@@ -321,9 +346,13 @@ function preparePublicRelease() {
 	);
 	delete packageJson.devDependencies;
 	delete packageJson.scripts;
-	cpSync(join(codingAgentDir, "CHANGELOG.md"), join(releaseDir, "CHANGELOG.md"));
-	cpSync(join(codingAgentDir, "README.md"), join(releaseDir, "README.md"));
-	cpSync(join(codingAgentDir, "LICENSE"), join(releaseDir, "LICENSE"));
+	cpSync(join(cliDir, "CHANGELOG.md"), join(releaseDir, "CHANGELOG.md"));
+	cpSync(join(cliDir, "README.md"), join(releaseDir, "README.md"));
+	cpSync(join(cliDir, "LICENSE"), join(releaseDir, "LICENSE"));
 	writeFileSync(join(releaseDir, "package.json"), `${JSON.stringify(packageJson, null, "\t")}\n`);
 	console.log(`Prepared ${relative(repoRoot, releaseDir)}`);
+}
+
+if (process.argv.includes("--public-release")) {
+	preparePublicRelease();
 }

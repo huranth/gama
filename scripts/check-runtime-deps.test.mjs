@@ -30,7 +30,7 @@ async function check(t, manifest, source, extraFiles = {}) {
 
 test("rejects undeclared imports even when the workspace package exists", async (t) => {
 	const result = await check(t, {}, 'export { initTheme } from "@huranth/gama-tui/theme";', {
-		"packages/tui/package.json": JSON.stringify({ name: "@huranth/gama-tui", version: "1.0.0" }),
+		"packages/ui/package.json": JSON.stringify({ name: "@huranth/gama-tui", version: "1.0.0" }),
 	});
 	assert.equal(result.status, 1);
 	assert.match(result.stderr, /src[\\/]index\.ts:1: @huranth\/gama-tui\/theme is not declared/);
@@ -39,40 +39,51 @@ test("rejects undeclared imports even when the workspace package exists", async 
 test(
 	"accepts runtime declarations, builtins, self imports, relative imports, and erased types",
 	async (t) => {
-	const result = await check(t, {
-		dependencies: { "@scope/runtime": "1.0.0" },
-		optionalDependencies: { optional: "1.0.0" },
-		peerDependencies: { peer: "1.0.0" },
-	}, `
+		const result = await check(t, {
+			dependencies: { "@scope/runtime": "1.0.0" },
+			optionalDependencies: { optional: "1.0.0" },
+			peerDependencies: { peer: "1.0.0" },
+		}, `
+
 import "node:fs";
 import "fs/promises";
 import "./local.ts";
 import "example/subpath";
 import { value, type T } from "@scope/runtime/subpath";
 import optional from "optional";
+
 export * from "peer";
+
 import type { Type } from "type-only";
 import { type OtherType } from "inline-type-only";
+
 export type { Type } from "export-type-only";
+
 export { type OtherType } from "export-inline-type-only";
 `);
-	assert.equal(result.status, 0, result.stderr);
+		assert.equal(result.status, 0, result.stderr);
 });
 
 test(
 	"rejects dev-only dependencies, side-effect imports, mixed exports, and literal runtime loads",
 	async (t) => {
-	const result = await check(t, { devDependencies: { dev: "1.0.0" } }, `
+		const result = await check(t, { devDependencies: { dev: "1.0.0" } }, `
+
 import "dev";
 import {} from "empty-import";
+
 export {} from "empty-export";
+
 export { type T, value } from "mixed-export";
+
 const lazy = () => import("lazy/subpath");
+
 const required = require("required");
+
 const resolved = require.resolve("resolved/subpath");
 `);
-	assert.equal(result.status, 1);
-	const rejected = [
+		assert.equal(result.status, 1);
+		const rejected = [
 		"dev",
 		"empty-import",
 		"empty-export",

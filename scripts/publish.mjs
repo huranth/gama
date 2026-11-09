@@ -4,27 +4,40 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
-const directory = "packages/coding-agent/dist/public-release";
+const directory = "packages/cli/dist/public-release";
+
 const manifestPath = join(directory, "package.json");
 if (!existsSync(manifestPath)) {
 	throw new Error("Public release missing. Run npm run build:public-release first.");
 }
+
 const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
 if (manifest.name !== "@huranth/gama-harness") {
 	throw new Error(`Unexpected public release package: ${manifest.name}`);
 }
+
 const internalDependencies = Object.keys(manifest.dependencies ?? {}).filter((name) =>
 	name.startsWith("@huranth/"),
 );
 if (internalDependencies.length > 0) {
 	throw new Error(`Public release depends on internal packages: ${internalDependencies.join(", ")}`);
 }
+
 const packages = [{ directory, name: manifest.name, version: manifest.version }];
 
 const args = process.argv.slice(2);
+
 const dryRun = args.includes("--dry-run");
+
 const tagIndex = args.indexOf("--tag");
+
 const tag = tagIndex === -1 ? undefined : args[tagIndex + 1];
+
+if (tag?.startsWith("-")) {
+	console.error(`Invalid tag: ${tag}`);
+	process.exit(1);
+}
+
 const unknownArgs = args.filter(
 	(arg, index) =>
 		arg !== "--dry-run" && arg !== "--tag" && !(tagIndex !== -1 && index === tagIndex + 1),
@@ -57,15 +70,15 @@ function run(command, args, options = {}) {
 	return result;
 }
 
-function assertBuildOutputExists(directory) {
-	if (!existsSync(join(directory, "dist"))) {
-		throw new Error(`${directory}/dist does not exist. Run npm run build before publishing.`);
+function assertBuildOutputExists(packageDir) {
+	if (!existsSync(join(packageDir, "dist"))) {
+		throw new Error(`${packageDir}/dist does not exist. Run npm run build before publishing.`);
 	}
 }
 
-function validatePack(directory) {
+function validatePack(packageDir) {
 	const packArgs = ["pack", "--dry-run", "--ignore-scripts", "--json"];
-	const result = run("npm", packArgs, { capture: true, cwd: directory });
+	const result = run("npm", packArgs, { capture: true, cwd: packageDir });
 	const packed = JSON.parse(result.stdout)[0];
 	console.log(
 		`  ${packed.filename}: ${packed.files.length} files, ${packed.size} bytes packed, ` +
@@ -104,7 +117,7 @@ const packageStates = packages.map((pkg) => {
 			`Prerelease ${pkg.name}@${pkg.version} needs an explicit --tag (for example --tag next).`,
 		);
 	}
-	return { ...pkg, published: false, version: pkg.version };
+	return { ...pkg, published: false };
 });
 
 console.log(

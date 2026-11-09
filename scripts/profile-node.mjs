@@ -5,24 +5,33 @@ import { dirname, join, relative, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 
-const __dirname = dirname(fileURLToPath(import.meta.url));
-const repoRoot = resolve(__dirname, "..");
+const scriptDir = dirname(fileURLToPath(import.meta.url));
+
+const repoRoot = resolve(scriptDir, "..");
+
 const packageDir = join(repoRoot, "packages", "coding-agent");
+
 const distCliPath = join(packageDir, "dist", "cli.js");
+
 const bundledDistCliPath = join(packageDir, "dist", "bundle", "cli.js");
+
 const srcCliPath = join(packageDir, "src", "cli.ts");
+
 const defaultNodeProfileDir = join(repoRoot, "profiles-node");
+
 const defaultBunProfileDir = join(repoRoot, "profiles-bun");
+
 const agentDirEnvName = "GAMA_CODING_AGENT_DIR";
+
 const startupBenchmarkEnvName = "GAMA_STARTUP_BENCHMARK";
 
 function printHelp() {
 	console.log(`Usage:
-  node scripts/profile-coding-agent-node.mjs [options]
+  node scripts/profile-node.mjs [options]
 
 Profiles coding-agent startup with the runtime selected below:
-- npm run profile:tui     -> builds packages/coding-agent and profiles TUI startup with Node
-- npm run profile:rpc     -> builds packages/coding-agent and profiles RPC startup with Node
+- npm run profile:tui     -> builds packages/cli and profiles TUI startup with Node
+- npm run profile:rpc     -> builds packages/cli and profiles RPC startup with Node
 - bun run profile:tui     -> profiles TUI startup from src/cli.ts directly with Bun
 - bun run profile:rpc     -> profiles RPC startup from src/cli.ts directly with Bun
 
@@ -301,18 +310,22 @@ async function runBuild(bundle) {
 				"run",
 				"build",
 				"--workspace",
-				"packages/tui",
+				"packages/ui",
 				"--workspace",
-				"packages/telemetry",
+				"packages/trace",
 				"--workspace",
-				"packages/ai",
+				"packages/script",
 				"--workspace",
-				"packages/agent",
+				"packages/bus",
+				"--workspace",
+				"packages/model",
+				"--workspace",
+				"packages/loop",
 			],
 		},
 		{
 			label: "Coding-agent build",
-			args: ["run", bundle ? "build" : "build:unbundled", "--workspace", "packages/coding-agent"],
+			args: ["run", bundle ? "build" : "build:unbundled", "--workspace", "packages/cli"],
 		},
 	];
 
@@ -599,7 +612,7 @@ async function main() {
 		await runBuild(options.bundle);
 	}
 	if (runtime === "bun") {
-		const cliPath = "packages/coding-agent/src/cli.ts";
+		const cliPath = "packages/cli/src/cli.ts";
 		const cliArgs = options.mode === "rpc" ? " --mode rpc" : "";
 		process.stdout.write(`Using Bun runtime with ${cliPath}${cliArgs}\n`);
 	}

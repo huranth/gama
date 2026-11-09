@@ -6,6 +6,7 @@ import {
 	mkdirSync,
 	mkdtempSync,
 	readFileSync,
+	readdirSync,
 	rmSync,
 	symlinkSync,
 	writeFileSync,
@@ -17,17 +18,17 @@ import {
 	installCodingAgentConsumer,
 	packReleasePackages,
 	smokeTestCodingAgentConsumer,
-} from "./coding-agent-consumer.mjs";
+} from "./cli-consumer.mjs";
 
 const packages = [
-	{ directory: "packages/chord", name: "@huranth/chord" },
-	{ directory: "packages/telemetry", name: "@huranth/gama-telemetry" },
-	{ directory: "packages/codemode", name: "@huranth/gama-codemode" },
-	{ directory: "packages/ai", name: "@huranth/gama-ai" },
-	{ directory: "packages/durable", name: "@huranth/gama-durable" },
-	{ directory: "packages/tui", name: "@huranth/gama-tui" },
-	{ directory: "packages/agent", name: "@huranth/gama-agent-core" },
-	{ directory: "packages/coding-agent", name: "@huranth/gama-harness" },
+	{ directory: "packages/bus", name: "@huranth/gama-bus" },
+	{ directory: "packages/trace", name: "@huranth/gama-telemetry" },
+	{ directory: "packages/script", name: "@huranth/gama-codemode" },
+	{ directory: "packages/model", name: "@huranth/gama-ai" },
+	{ directory: "packages/store", name: "@huranth/gama-durable" },
+	{ directory: "packages/ui", name: "@huranth/gama-tui" },
+	{ directory: "packages/loop", name: "@huranth/gama-agent-core" },
+	{ directory: "packages/cli", name: "@huranth/gama-harness" },
 ];
 
 function printUsage() {
@@ -122,6 +123,18 @@ function commandExists(command) {
 	return spawnSync(command, ["--version"], { stdio: "ignore" }).status === 0;
 }
 
+function runBashScript(script, args, options = {}) {
+	if (process.platform === "win32") {
+		if (!commandExists("bash")) {
+			throw new Error(`Bash is required to run ${script}`);
+		}
+		run("bash", [script, ...args], options);
+		return;
+	}
+
+	run(script, args, options);
+}
+
 function isInsidePath(child, parent) {
 	const relativePath = relative(parent, child);
 	return relativePath === "" || (!relativePath.startsWith("..") && !isAbsolute(relativePath));
@@ -134,13 +147,20 @@ function prepareOutputDirectory(options, repoRoot) {
 
 	const outDir = resolve(options.outDir);
 
-	if (isInsidePath(outDir, repoRoot)) {
-		throw new Error(`Output directory must be outside the repository: ${outDir}`);
+	if (isInsidePath(outDir, repoRoot) || isInsidePath(repoRoot, outDir)) {
+		throw new Error(`Output directory must not contain the repository: ${outDir}`);
 	}
 
 	if (existsSync(outDir)) {
 		if (!options.force) {
 			throw new Error(`Output directory already exists. Use --force to replace it: ${outDir}`);
+		}
+		const entries = readdirSync(outDir);
+		if (entries.length > 0 && !entries.includes(".gama-binaries")) {
+			throw new Error(
+				`Refusing to delete an unrelated directory. Choose an empty directory or a previous GAMA bina` +
+					`ry output: ${outDir}`,
+			);
 		}
 		rmSync(outDir, { force: true, recursive: true });
 	}
@@ -163,7 +183,7 @@ function buildBunBinaryRelease(targetDirectory, archiveDirectory) {
 	}
 	const platform = currentBinaryPlatform();
 	const binaryBuildDirectory = join(archiveDirectory, "binary-build");
-	run("./scripts/build-binaries.sh", [
+	runBashScript("./scripts/build-binaries.sh", [
 		"--skip-install",
 		"--skip-build",
 		"--platform",
@@ -202,8 +222,14 @@ function createGamaShim(installDirectory) {
 	symlinkSync(join("node_modules", ".bin", "gama"), join(installDirectory, "gama"));
 }
 
+export { isInsidePath, prepareOutputDirectory };
+
+if (process.env.GAMA_LOCAL_RELEASE_IMPORT_ONLY !== "1") {
+
 const options = parseArgs();
+
 const repoRoot = process.cwd();
+
 const rootPackageJson = readPackageJson(repoRoot);
 
 if (rootPackageJson.name !== "gama-monorepo") {
@@ -211,9 +237,13 @@ if (rootPackageJson.name !== "gama-monorepo") {
 }
 
 const outDir = prepareOutputDirectory(options, repoRoot);
+
 const tarballDirectory = join(outDir, "tarballs");
+
 const nodeInstallDirectory = join(outDir, "node");
+
 const bunInstallDirectory = join(outDir, "bun-install");
+
 const binaryDirectory = join(outDir, "bun");
 mkdirSync(tarballDirectory, { recursive: true });
 
@@ -222,13 +252,13 @@ if (!options.skipCheck) {
 }
 
 for (const pkg of packages) {
-	const buildScript = pkg.directory === "packages/ai" ? "build:offline" : "build";
+	const buildScript = pkg.directory === "packages/model" ? "build:offline" : "build";
 	run("npm", ["run", "clean"], { cwd: pkg.directory });
 	run("npm", ["run", buildScript], { cwd: pkg.directory });
 }
 
 if (!options.skipTest) {
-	run("./scripts/run-tests.sh", [], { cwd: repoRoot });
+	runBashScript("./scripts/run-tests.sh", [], { cwd: repoRoot });
 }
 
 const tarballs = packReleasePackages(packages, tarballDirectory);
@@ -282,4 +312,5 @@ if (!options.skipInstall) {
 		console.log("\nRun the locally packed Bun package CLI from outside the repository:");
 		console.log(`  ${join(bunInstallDirectory, cliName)} --help`);
 	}
+}
 }
