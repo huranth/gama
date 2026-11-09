@@ -1,0 +1,20 @@
+{
+	"extends": "../../tsconfig.base.json",
+	"compilerOptions": {
+		"outDir": "./dist",
+		"paths": {
+			"@huranth/gama-bus": ["../bus/dist/index.d.ts"],
+			"@huranth/gama-bus/bundler": ["../bus/dist/bundler.d.ts"],
+			"@huranth/gama-bus/node": ["../bus/dist/host.d.ts"],
+			"@huranth/gama-agent-core": ["../loop/dist/index.d.ts"],
+			"@huranth/gama-agent-core/*": ["../loop/dist/*.d.ts"],
+			"@huranth/gama-ai": ["../model/dist/index.d.ts"],
+			"@huranth/gama-ai/*": ["../model/dist/*.d.ts", "../model/dist/catalog/*.d.ts"],
+			"@huranth/gama-tui": ["../ui/dist/index.d.ts"],
+			"@huranth/gama-tui/*": ["../ui/dist/*.d.ts", "../ui/dist/components/*.d.ts"]
+		},
+		"rootDir": "./src"
+	},
+	"include": ["src/**/*.ts", "src/**/*.d.ts"],
+	"exclude": ["node_modules", "dist"]
+}
