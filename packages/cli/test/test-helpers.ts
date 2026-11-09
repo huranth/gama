@@ -1,10 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, rmSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
-import { join } from "node:path";
-import { Agent } from "@huranth/gama-agent-core";
+import { dirname, join } from "node:path";
+import { Runner } from "@huranth/gama-agent-core";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
-import { AgentSession } from "../src/core/agent-session.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
+import { RunSession } from "../src/core/session/session.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createEventBus } from "../src/core/event-bus.ts";
 import type {
 	Extension,
@@ -14,14 +14,17 @@ import type {
 } from "../src/core/ext/index.ts";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/ext/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import { SettingsStore } from "../src/core/settings.ts";
 import { createCodingTools } from "../src/index.ts";
-import { createModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 export const API_KEY = process.env.ANTHROPIC_API_KEY;
 
-const AUTH_PATH = join(homedir(), ".gama", "agent", "auth.json");
+// Env override
+const AUTH_PATH =
+	process.env.GAMA_TEST_AUTH_FILE ?? join(homedir(), ".gama", "agent", "auth.json");
+
 type ApiKeyCredential = {
 	type: "api_key";
 	key: string;
@@ -61,7 +64,7 @@ export function hasAuthForProvider(provider: string): boolean {
 	return provider in storage;
 }
 
-export const GAMA_AGENT_DIR = join(homedir(), ".gama", "agent");
+export const GAMA_AGENT_DIR = dirname(AUTH_PATH);
 
 export function getRealAuthStorage(): AuthStorage {
 	return AuthStorage.create(AUTH_PATH);
@@ -105,13 +108,13 @@ export interface TestSessionOptions {
 	inMemory?: boolean;
 	systemPrompt?: string;
 	settingsOverrides?: Record<string, unknown>;
-	// Options.
+	// Options
 	fauxOptions?: Parameters<typeof registerFauxProvider>[0];
 }
 
 export interface TestSessionContext {
-	session: AgentSession;
-	sessionManager: SessionManager;
+	session: RunSession;
+	sessionManager: SessionStore;
 	tempDir: string;
 	faux: ReturnType<typeof registerFauxProvider>;
 	cleanup: () => void;
@@ -192,7 +195,7 @@ export async function createTestSession(
 
 	const faux = registerFauxProvider(options.fauxOptions);
 	const model = faux.getModel();
-	const agent = new Agent({
+	const agent = new Runner({
 		getApiKey: () => "faux-key",
 		initialState: {
 			model,
@@ -203,9 +206,9 @@ export async function createTestSession(
 	});
 
 	const sessionManager = options.inMemory
-		? SessionManager.inMemory()
-		: SessionManager.create(tempDir);
-	const settingsManager = SettingsManager.create(tempDir, tempDir);
+		? SessionStore.inMemory()
+		: SessionStore.create(tempDir);
+	const settingsManager = SettingsStore.create(tempDir, tempDir);
 
 	if (options.settingsOverrides) {
 		settingsManager.applyOverrides(options.settingsOverrides);
@@ -232,7 +235,7 @@ export async function createTestSession(
 		})),
 	});
 
-	const session = new AgentSession({
+	const session = new RunSession({
 		agent,
 		sessionManager,
 		settingsManager,
@@ -255,7 +258,7 @@ export async function createTestSession(
 }
 
 export function buildTestTree(
-	session: SessionManager,
+	session: SessionStore,
 	structure: {
 		messages: Array<{ role: "user" | "assistant"; text: string; branchFrom?: string }>;
 	},

@@ -1,39 +1,41 @@
+// Manual tool
+
 import type { AssistantMessage } from "@huranth/gama-ai";
-import { ProcessTerminal, type TUI, TuiMainScreen } from "@huranth/gama-tui";
+import { ProcessTerminal, type TUI, MainScreen } from "@huranth/gama-tui";
 import { readFileSync } from "fs";
-import { dirname, join } from "path";
+import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
-import { AssistantMessageComponent } from "../src/modes/tui/parts/assistant-message.ts";
-import { initTheme } from "../src/modes/tui/theme/theme.ts";
+import { AssistantMessageComponent } from "../src/term/parts/assistant-message.ts";
+import { initTheme } from "../src/term/theme/theme.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
-process.env.COLORTERM = "truecolor";
-initTheme("dark");
-
-const fixtureMessage: AssistantMessage = JSON.parse(
-	readFileSync(join(__dirname, "fixtures/assistant-message-with-thinking-code.json"), "utf-8"),
-);
-
-const thinkingContent = fixtureMessage.content.find((c) => c.type === "thinking");
-const textContent = fixtureMessage.content.find((c) => c.type === "text");
-
-if (!thinkingContent || thinkingContent.type !== "thinking") {
-	console.error("No thinking content in fixture");
-	process.exit(1);
-}
-
-const fullThinkingText = thinkingContent.thinking;
-const fullTextContent = textContent && textContent.type === "text" ? textContent.text : "";
-
 async function sleep(ms: number): Promise<void> {
-	return new Promise((resolve) => setTimeout(resolve, ms));
+	return new Promise((done) => setTimeout(done, ms));
 }
 
 async function main() {
+	process.env.COLORTERM = "truecolor";
+	initTheme("dark");
+
+	const fixtureMessage: AssistantMessage = JSON.parse(
+		readFileSync(join(__dirname, "fixtures/assistant-message-with-thinking-code.json"), "utf-8"),
+	);
+
+	const thinkingContent = fixtureMessage.content.find((c) => c.type === "thinking");
+	const textContent = fixtureMessage.content.find((c) => c.type === "text");
+
+	if (!thinkingContent || thinkingContent.type !== "thinking") {
+		console.error("No thinking content in fixture");
+		process.exit(1);
+	}
+
+	const fullThinkingText = thinkingContent.thinking;
+	const fullTextContent = textContent && textContent.type === "text" ? textContent.text : "";
+
 	const terminal = new ProcessTerminal();
-	const tui: TUI = new TuiMainScreen(terminal);
+	const tui: TUI = new MainScreen(terminal);
 
 	const message = {
 		role: "assistant",
@@ -80,4 +82,9 @@ async function main() {
 	process.exit(0);
 }
 
-main().catch(console.error);
+const entry = process.argv[1];
+const isEntry = entry !== undefined && resolve(entry) === __filename;
+
+if (isEntry) {
+	main().catch(console.error);
+}

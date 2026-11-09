@@ -15,6 +15,7 @@ writeFileSync(
 		content: readFileSync(filePath, "utf-8"),
 		entries: readdirSync(directory),
 		directoryMode: statSync(directory).mode & 0o777,
+		fileMode: statSync(filePath).mode & 0o777,
 	}),
 	"utf-8",
 );

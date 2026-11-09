@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@huranth/gama-agent-core";
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import type {
 	FauxModelDefinition,
 	FauxProviderRegistration,
@@ -11,25 +11,25 @@ import type {
 	ToolResultMessage,
 } from "@huranth/gama-ai/compat";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
-import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
-import { AuthStorage } from "../../src/core/auth-storage.ts";
-import type { ExtensionRunner, ExtensionUIContext } from "../../src/core/ext/index.ts";
-import { convertToLlm } from "../../src/core/messages.ts";
-import { SessionManager } from "../../src/core/session-manager.ts";
-import type { Settings } from "../../src/core/settings-manager.ts";
-import { SettingsManager } from "../../src/core/settings-manager.ts";
+import { RunSession, type SessionEvent } from "../../src/core/session/session.ts";
+import { AuthStorage } from "../../src/core/vault.ts";
+import type { PluginHost, ExtensionUIContext } from "../../src/core/ext/index.ts";
+import { convertToLlm } from "../../src/core/msg.ts";
+import { SessionStore } from "../../src/core/sessions.ts";
+import type { Settings } from "../../src/core/settings.ts";
+import { SettingsStore } from "../../src/core/settings.ts";
 import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
-import { theme } from "../../src/modes/tui/theme/theme.ts";
+import { theme } from "../../src/term/theme/theme.ts";
 import {
 	createInMemoryModelRegistry,
 	createModelRegistry,
 	getModelRuntime,
-} from "../model-runtime-test-utils.ts";
+} from "../model-run-test-utils.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
 	createTestResourceLoader,
-} from "../utilities.ts";
+} from "../test-helpers.ts";
 
 type MessageTextPart = { type: "text"; text: string };
 
@@ -121,13 +121,13 @@ export interface HarnessOptions {
 	extensionFactories?: Array<InlineExtension | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
 	modelsJson?: Record<string, unknown>;
-	sessionManager?: SessionManager;
+	sessionManager?: SessionStore;
 }
 
 export interface Harness {
-	session: AgentSession;
-	sessionManager: SessionManager;
-	settingsManager: SettingsManager;
+	session: RunSession;
+	sessionManager: SessionStore;
+	settingsManager: SettingsStore;
 	authStorage: AuthStorage;
 	faux: FauxProviderRegistration;
 	models: [Model<string>, ...Model<string>[]];
@@ -136,10 +136,10 @@ export interface Harness {
 	setResponses: (responses: FauxResponseStep[]) => void;
 	appendResponses: (responses: FauxResponseStep[]) => void;
 	getPendingResponseCount: () => number;
-	events: AgentSessionEvent[];
-	eventsOfType<T extends AgentSessionEvent["type"]>(
+	events: SessionEvent[];
+	eventsOfType<T extends SessionEvent["type"]>(
 		type: T,
-	): Extract<AgentSessionEvent, { type: T }>[];
+	): Extract<SessionEvent, { type: T }>[];
 	tempDir: string;
 	cleanup: () => void;
 }
@@ -164,10 +164,10 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		? Object.fromEntries(options.tools.map((tool) => [tool.name, tool]))
 		: undefined;
 	const withConfiguredAuth = options.withConfiguredAuth ?? true;
-	const extensionRunnerRef: { current?: ExtensionRunner } = {};
+	const extensionRunnerRef: { current?: PluginHost } = {};
 
-	const sessionManager = options.sessionManager ?? SessionManager.inMemory();
-	const settingsManager = SettingsManager.inMemory(options.settings);
+	const sessionManager = options.sessionManager ?? SessionStore.inMemory();
+	const settingsManager = SettingsStore.inMemory(options.settings);
 
 	const authStorage = AuthStorage.inMemory();
 	if (withConfiguredAuth) {
@@ -198,7 +198,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		});
 	}
 
-	const agent = new Agent({
+	const agent = new Runner({
 		getApiKey: () => (withConfiguredAuth ? "faux-key" : undefined),
 		streamFn: streamSimple,
 		initialState: {
@@ -238,7 +238,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		options.resourceLoader ??
 		createTestResourceLoader(extensionsResult ? { extensionsResult } : undefined);
 
-	const session = new AgentSession({
+	const session = new RunSession({
 		agent,
 		sessionManager,
 		settingsManager,
@@ -252,7 +252,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		extensionRunnerRef,
 	});
 
-	const events: AgentSessionEvent[] = [];
+	const events: SessionEvent[] = [];
 	session.subscribe((event) => {
 		events.push(event);
 	});
@@ -269,9 +269,9 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		appendResponses: fauxProvider.appendResponses,
 		getPendingResponseCount: fauxProvider.getPendingResponseCount,
 		events,
-		eventsOfType<T extends AgentSessionEvent["type"]>(type: T) {
+		eventsOfType<T extends SessionEvent["type"]>(type: T) {
 			return events.filter(
-				(event): event is Extract<AgentSessionEvent, { type: T }> => event.type === type,
+				(event): event is Extract<SessionEvent, { type: T }> => event.type === type,
 			);
 		},
 		tempDir,

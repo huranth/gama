@@ -7,7 +7,7 @@ import {
 	type ModelRoute,
 	type ModelRouteRequest,
 	VIRTUAL_MODEL_STATE_ENTRY,
-} from "../../src/core/virtual-models.ts";
+} from "../../src/core/fake-models.ts";
 import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
 
 const echoTool: AgentTool = {
@@ -32,7 +32,7 @@ const defaultRoute: Route = (request, ctx) => {
 		: { model: find("small"), thinkingLevel: "off" };
 };
 
-describe("AgentSession virtual models", () => {
+describe("RunSession virtual models", () => {
 	const harnesses: Harness[] = [];
 
 	afterEach(() => {
@@ -433,6 +433,6 @@ describe("AgentSession virtual models", () => {
 
 		expect(result.summary).toContain("summary");
 		expect(reasons()).toEqual(["user", "user", "direct"]);
-		expect(summaries).toEqual(["large:low:4000", "large:low:4000"]);
+		expect(summaries).toEqual(["large:low:2000", "large:low:2000"]);
 	});
 });

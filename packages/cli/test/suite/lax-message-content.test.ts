@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type SessionEntry,
 	sessionEntryToContextMessages,
-} from "../../src/core/session-manager.ts";
+} from "../../src/core/sessions.ts";
 import type { ExtensionFactory } from "../../src/index.ts";
 import { createHarness } from "./harness.ts";
 

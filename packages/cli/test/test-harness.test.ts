@@ -282,7 +282,7 @@ describe("test harness", () => {
 		expect(firstText).toBeLessThan(firstToolcall);
 	});
 
-	it("loads inline extension factories and disambiguates " + "duplicate commands", async () => {
+	it("loads inline extension factories and disambiguates duplicate commands", async () => {
 		const calls: string[] = [];
 
 		harness = await createHarnessWithExtensions({

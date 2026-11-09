@@ -2,11 +2,11 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@huranth/gama-agent-core";
-import { Agent } from "@huranth/gama-agent-core";
+import { Runner } from "@huranth/gama-agent-core";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
-	AssistantMessageEventStream,
+	ReplyStream,
 	JsonObject,
 	Model,
 	SimpleStreamOptions,
@@ -17,19 +17,19 @@ import type {
 	TranscriptContext,
 	Usage,
 } from "@huranth/gama-ai";
-import { createAssistantMessageEventStream } from "@huranth/gama-ai";
-import { AgentSession, type AgentSessionEvent } from "../src/core/agent-session.ts";
-import { AuthStorage } from "../src/core/auth-storage.ts";
-import { SessionManager } from "../src/core/session-manager.ts";
-import type { Settings } from "../src/core/settings-manager.ts";
-import { SettingsManager } from "../src/core/settings-manager.ts";
+import { createReplyStream } from "@huranth/gama-ai";
+import { RunSession, type SessionEvent } from "../src/core/session/session.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { SessionStore } from "../src/core/sessions.ts";
+import type { Settings } from "../src/core/settings.ts";
+import { SettingsStore } from "../src/core/settings.ts";
 import type { InlineExtension, ResourceLoader } from "../src/index.ts";
-import { createInMemoryModelRegistry, getModelRuntime } from "./model-runtime-test-utils.ts";
+import { createInMemoryModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 import {
 	type CreateTestExtensionsResultInput,
 	createTestExtensionsResult,
 	createTestResourceLoader,
-} from "./utilities.ts";
+} from "./test-helpers.ts";
 
 const FAUX_PROVIDER = "faux";
 const FAUX_MODEL_ID = "faux-1";
@@ -144,7 +144,7 @@ function chunkString(text: string): string[] {
 	return chunks.length > 0 ? chunks : [""];
 }
 
-function streamWithDeltas(stream: AssistantMessageEventStream, message: AssistantMessage): void {
+function streamWithDeltas(stream: ReplyStream, message: AssistantMessage): void {
 	const partial: AssistantMessage = { ...message, content: [], stopReason: "pending" };
 	stream.push({ type: "start", partial: { ...partial } });
 
@@ -238,7 +238,7 @@ export function createFauxStreamFn(responses: FauxResponseInput[]): {
 		model: Model<any>,
 		context: TranscriptContext,
 		options?: SimpleStreamOptions,
-	) => AssistantMessageEventStream;
+	) => ReplyStream;
 	state: FauxStreamFnState;
 } {
 	if (responses.length === 0) {
@@ -258,7 +258,7 @@ export function createFauxStreamFn(responses: FauxResponseInput[]): {
 
 		const resp = normalizeResponse(responses[index]);
 		const message = buildAssistantMessage(resp);
-		const stream = createAssistantMessageEventStream();
+		const stream = createReplyStream();
 
 		const emit = () => {
 			streamWithDeltas(stream, message);
@@ -289,15 +289,15 @@ export interface HarnessOptions {
 }
 
 export interface Harness {
-	session: AgentSession;
-	agent: Agent;
-	sessionManager: SessionManager;
-	settingsManager: SettingsManager;
+	session: RunSession;
+	agent: Runner;
+	sessionManager: SessionStore;
+	settingsManager: SettingsStore;
 	faux: FauxStreamFnState;
-	events: AgentSessionEvent[];
-	eventsOfType<T extends AgentSessionEvent["type"]>(
+	events: SessionEvent[];
+	eventsOfType<T extends SessionEvent["type"]>(
 		type: T,
-	): Extract<AgentSessionEvent, { type: T }>[];
+	): Extract<SessionEvent, { type: T }>[];
 	tempDir: string;
 	cleanup: () => void;
 }
@@ -323,7 +323,7 @@ async function createHarnessWithResourceLoader(
 
 	const { streamFn, state: fauxState } = createFauxStreamFn(options.responses ?? ["ok"]);
 
-	const agent = new Agent({
+	const agent = new Runner({
 		getApiKey: () => "faux-key",
 		initialState: {
 			model,
@@ -333,8 +333,8 @@ async function createHarnessWithResourceLoader(
 		streamFn: streamFn,
 	});
 
-	const sessionManager = SessionManager.inMemory();
-	const settingsManager = SettingsManager.create(tempDir, tempDir);
+	const sessionManager = SessionStore.inMemory();
+	const settingsManager = SettingsStore.create(tempDir, tempDir);
 
 	if (options.settings) {
 		settingsManager.applyOverrides(options.settings);
@@ -362,7 +362,7 @@ async function createHarnessWithResourceLoader(
 		],
 	});
 
-	const session = new AgentSession({
+	const session = new RunSession({
 		agent,
 		sessionManager,
 		settingsManager,
@@ -372,7 +372,7 @@ async function createHarnessWithResourceLoader(
 		baseToolsOverride: options.baseToolsOverride,
 	});
 
-	const events: AgentSessionEvent[] = [];
+	const events: SessionEvent[] = [];
 	session.subscribe((event) => {
 		events.push(event);
 	});
@@ -391,8 +391,8 @@ async function createHarnessWithResourceLoader(
 		settingsManager,
 		faux: fauxState,
 		events,
-		eventsOfType<T extends AgentSessionEvent["type"]>(type: T) {
-			return events.filter((e): e is Extract<AgentSessionEvent, { type: T }> => e.type === type);
+		eventsOfType<T extends SessionEvent["type"]>(type: T) {
+			return events.filter((e): e is Extract<SessionEvent, { type: T }> => e.type === type);
 		},
 		tempDir,
 		cleanup,

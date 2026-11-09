@@ -21,7 +21,7 @@
 		"cacheWrite": 611,
 		"totalTokens": 91605,
 		"cost": {
-			"input": 4e-5,
+			"input": 0.00004,
 			"output": 0.030275,
 			"cacheRead": 0.0448875,
 			"cacheWrite": 0.00381875,
