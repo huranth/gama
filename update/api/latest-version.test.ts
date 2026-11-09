@@ -50,7 +50,7 @@ describe("latest-version endpoint", () => {
 	});
 
 	it("answers HEAD without a body", async () => {
-		stubFetch(async () => registryResponse("1.2.3"));
+		const calls = stubFetch(async () => registryResponse("1.2.3"));
 
 		const response = await latestVersion(
 			new Request("https://gama.example/api/latest-version", { method: "HEAD" }),
@@ -58,6 +58,7 @@ describe("latest-version endpoint", () => {
 
 		assert.equal(response.status, 200);
 		assert.equal(await response.text(), "");
+		assert.equal(calls.length, 0);
 	});
 
 	it("rejects unsupported methods", async () => {
@@ -66,6 +67,8 @@ describe("latest-version endpoint", () => {
 		);
 
 		assert.equal(response.status, 405);
+		assert.equal(response.headers.get("allow"), "GET, HEAD");
+		assert.equal(response.headers.get("cache-control"), "no-store");
 	});
 
 	it("reports an unavailable registry", async () => {

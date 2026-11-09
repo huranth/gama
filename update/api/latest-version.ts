@@ -4,6 +4,8 @@ const REGISTRY_TIMEOUT_MS = 5000;
 
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
 
+const NO_STORE = { "cache-control": "no-store" } as const;
+
 export const config = { runtime: "edge" };
 
 function getPackageName(): string {
@@ -14,13 +16,20 @@ function getPackageName(): string {
 function registryUnavailable(): Response {
 	return Response.json(
 		{ error: "registry unavailable" },
-		{ status: 503, headers: { "cache-control": "no-store" } },
+		{ status: 503, headers: NO_STORE },
 	);
 }
 
 export default async function latestVersion(request: Request): Promise<Response> {
 	if (request.method !== "GET" && request.method !== "HEAD") {
-		return Response.json({ error: "method not allowed" }, { status: 405 });
+		return Response.json(
+			{ error: "method not allowed" },
+			{ status: 405, headers: { allow: "GET, HEAD", ...NO_STORE } },
+		);
+	}
+
+	if (request.method === "HEAD") {
+		return new Response(null, { status: 200, headers: NO_STORE });
 	}
 
 	const packageName = getPackageName();
@@ -37,17 +46,27 @@ export default async function latestVersion(request: Request): Promise<Response>
 	}
 
 	if (!registry.ok) {
+		try {
+			await registry.body?.cancel();
+		} catch {
+			// Best effort
+		}
+
 		return registryUnavailable();
 	}
 
-	let data: { version?: unknown };
+	let data: unknown;
 	try {
-		data = (await registry.json()) as { version?: unknown };
+		data = await registry.json();
 	} catch {
 		return registryUnavailable();
 	}
 
-	const version = typeof data.version === "string" ? data.version.trim() : "";
+	const payload = data as { version?: unknown };
+	const version =
+		data !== null && typeof data === "object" && typeof payload.version === "string"
+			? payload.version.trim()
+			: "";
 	if (!VERSION_PATTERN.test(version)) {
 		return registryUnavailable();
 	}
@@ -57,10 +76,6 @@ export default async function latestVersion(request: Request): Promise<Response>
 		packageName,
 		url: `https://www.npmjs.com/package/${packageName}`,
 	};
-
-	if (request.method === "HEAD") {
-		return new Response(null, { status: 200, headers: { "cache-control": "no-store" } });
-	}
 
 	return Response.json(body, {
 		headers: { "cache-control": "public, s-maxage=60, stale-while-revalidate=300" },
