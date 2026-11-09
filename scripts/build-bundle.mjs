@@ -330,7 +330,7 @@ function preparePublicRelease() {
 	}
 	rewriteDeclarations(join(releaseDir, "dist"));
 
-	const nativeDir = join(repoRoot, "packages", "tui", "native");
+	const nativeDir = join(repoRoot, "packages", "ui", "native");
 	for (const platform of ["win32", "darwin", "linux"]) {
 		cpSync(
 			join(nativeDir, platform, "prebuilds"),
