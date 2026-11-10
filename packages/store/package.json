@@ -1,6 +1,6 @@
 {
 	"name": "@huranth/gama-durable",
-	"version": "1.0.3",
+	"version": "1.0.2",
 	"private": true,
 	"description": "Durable conversations, tasks, and documents",
 	"type": "module",
@@ -100,8 +100,8 @@
 		"node": ">=22.19.0"
 	},
 	"dependencies": {
-		"@huranth/gama-bus": "^1.0.3",
-		"@huranth/gama-ai": "^1.0.3",
+		"@huranth/gama-bus": "^1.0.2",
+		"@huranth/gama-ai": "^1.0.2",
 		"diff": "8.0.4",
 		"typebox": "1.3.27"
 	},

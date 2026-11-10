@@ -1,6 +1,6 @@
 {
 	"name": "@huranth/gama-bus",
-	"version": "1.0.3",
+	"version": "1.0.2",
 	"private": true,
 	"description": "Service composition and replicated state",
 	"type": "module",

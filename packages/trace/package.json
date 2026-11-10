@@ -1,6 +1,6 @@
 {
 	"name": "@huranth/gama-telemetry",
-	"version": "1.0.3",
+	"version": "1.0.2",
 	"private": true,
 	"description": "Telemetry contracts for Gama",
 	"type": "module",

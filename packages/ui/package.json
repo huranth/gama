@@ -1,6 +1,6 @@
 {
 	"name": "@huranth/gama-tui",
-	"version": "1.0.3",
+	"version": "1.0.2",
 	"private": true,
 	"description": "Terminal interface toolkit for Gama",
 	"type": "module",

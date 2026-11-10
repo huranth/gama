@@ -10,6 +10,8 @@ const RELEASE_TARGET = process.argv[2];
 
 const BUMP_TYPES = new Set(["major", "minor", "patch"]);
 
+const cliPackageName = "@huranth/gama-harness";
+
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
@@ -182,7 +184,7 @@ function bumpOrSetVersion(target) {
 		}
 
 		console.log(`Setting explicit version (${target})...`);
-		run("npm", ["version", target, "--workspaces", "--no-git-tag-version", "--no-workspaces-update"]);
+		run("npm", ["version", target, "-w", cliPackageName, "--no-git-tag-version", "--no-workspaces-update"]);
 		run(process.execPath, ["scripts/sync-versions.js"]);
 		run("npm", ["install", "--package-lock-only", "--ignore-scripts"]);
 	}
@@ -269,7 +271,8 @@ console.log("Building packages for tests...");
 run("npm", ["run", "build:offline"]);
 console.log();
 
-console.log("Running tests...");	run(resolveBash(), ["scripts/run-tests.sh"]);
+console.log("Running tests...");
+	run(resolveBash(), ["scripts/run-tests.sh"]);
 console.log();
 
 // Build once
