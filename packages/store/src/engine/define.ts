@@ -1,5 +1,5 @@
-import type { JsonValue } from "@huranth/gama-bus";
 import type { TSchema } from "@huranth/gama-ai";
+import type { JsonValue } from "@huranth/gama-bus";
 import type {
 	AnyTask,
 	Extension,

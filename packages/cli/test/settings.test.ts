@@ -456,9 +456,7 @@ describe("SettingsStore", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ httpIdleTimeoutMs: -1 }));
 			const manager = SettingsStore.create(projectDir, agentDir);
 
-			expect(() => manager.getHttpIdleTimeoutMs()).toThrow(
-				"Invalid setting: httpIdleTimeoutMs",
-			);
+			expect(() => manager.getHttpIdleTimeoutMs()).toThrow("Invalid setting: httpIdleTimeoutMs");
 		});
 	});
 

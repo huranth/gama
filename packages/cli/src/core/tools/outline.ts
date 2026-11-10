@@ -1,6 +1,6 @@
-import type { AgentTool } from "@huranth/gama-agent-core";
 import { readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import nodePath from "node:path";
+import type { AgentTool } from "@huranth/gama-agent-core";
 import { type Static, Type } from "typebox";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
 import { assertNotAborted } from "./abort.ts";
@@ -789,7 +789,7 @@ function scanJson(source: string, lines: string[]): OutlineEntry[] {
 	const keys: Array<{ start: number; name: string }> = [];
 	let depth = 0;
 	let quote = false;
-	let escape = false;
+	let escaped = false;
 	let text = "";
 	let closeLine = lines.length;
 
@@ -797,12 +797,12 @@ function scanJson(source: string, lines: string[]): OutlineEntry[] {
 		const char = source[index];
 
 		if (quote) {
-			if (escape) {
-				escape = false;
+			if (escaped) {
+				escaped = false;
 				continue;
 			}
 			if (char === "\\") {
-				escape = true;
+				escaped = true;
 				continue;
 			}
 			if (char === '"') {
@@ -922,13 +922,8 @@ function scanFallback(lines: string[]): OutlineEntry[] {
 function scanSource(source: string, language: Language | undefined): OutlineEntry[] {
 	const lines = sourceLines(source);
 	const raw =
-		language === "markdown" ||
-		language === "json" ||
-		language === "yaml" ||
-		language === "toml";
-	const masked = raw
-		? lines
-		: sourceLines(maskSource(source, commentRules(language), language));
+		language === "markdown" || language === "json" || language === "yaml" || language === "toml";
+	const masked = raw ? lines : sourceLines(maskSource(source, commentRules(language), language));
 
 	switch (language) {
 		case "ts":
@@ -1070,13 +1065,16 @@ export function createOutlineToolDefinition(
 			const source = buffer.toString("utf-8");
 			const language = detectLanguage(absolutePath);
 			const entries = scanSource(source, language);
-			const result = renderIndex(path, sourceLines(source).length, entries, normalizeLimit(limit));
+			const result = renderIndex(
+				path,
+				sourceLines(source).length,
+				entries,
+				normalizeLimit(limit),
+			);
 
 			return {
 				content: [{ type: "text" as const, text: result.text }],
-				details: language
-					? { ...result.details, language }
-					: result.details,
+				details: language ? { ...result.details, language } : result.details,
 			};
 		},
 	};

@@ -1,5 +1,5 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	createRegistry,
 	defineExtension,

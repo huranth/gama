@@ -1434,9 +1434,7 @@ export function createStorageConformance(
 					version: 2,
 					value: { count: 3 },
 				});
-				await expect(storage.document(id, migratedAt, context)).rejects.toThrow(
-					"No history",
-				);
+				await expect(storage.document(id, migratedAt, context)).rejects.toThrow("No history");
 
 				await expect(
 					storage.commit(

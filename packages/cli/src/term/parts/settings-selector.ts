@@ -13,10 +13,7 @@ import {
 	type WheelScrollLines,
 } from "@huranth/gama-tui";
 import { reasoningLevelName } from "../../core/defaults.ts";
-import {
-	formatHttpIdleTimeoutMs,
-	HTTP_IDLE_TIMEOUT_CHOICES,
-} from "../../core/http-dispatcher.ts";
+import { formatHttpIdleTimeoutMs, HTTP_IDLE_TIMEOUT_CHOICES } from "../../core/http-dispatcher.ts";
 import type {
 	DefaultProjectTrust,
 	FullscreenExitOutput,
@@ -462,12 +459,8 @@ class ThemeSubmenu extends Container {
 		const content = new Container();
 		content.addChild(new Text(theme.bold(theme.fg("accent", "Automatic Theme")), 0, 0));
 		content.addChild(new Spacer(1));
-		content.addChild(
-			new Text(theme.fg("muted", "Light and dark themes"), 0, 0),
-		);
-		content.addChild(
-			new Text(theme.fg("muted", "Needs terminal support"), 0, 0),
-		);
+		content.addChild(new Text(theme.fg("muted", "Light and dark themes"), 0, 0));
+		content.addChild(new Text(theme.fg("muted", "Needs terminal support"), 0, 0));
 		content.addChild(new Spacer(1));
 
 		const items: SettingItem[] = [

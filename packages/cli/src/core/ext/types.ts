@@ -11,7 +11,6 @@ import type {
 	AnyModel,
 	Api,
 	AssistantMessageEvent,
-	ReplyStream,
 	ClassifierApi,
 	ConstrainedSamplingConfig,
 	ImageApi,
@@ -25,6 +24,7 @@ import type {
 	ProviderId,
 	ProviderImages,
 	RefreshModelsContext,
+	ReplyStream,
 	SimpleStreamOptions,
 	TextContent,
 	ToolResultMessage,
@@ -48,11 +48,13 @@ import type { BashResult } from "../bash-executor.ts";
 import type { CompactionPreparation, CompactionResult } from "../comp/index.ts";
 import type { EventBus } from "../event-bus.ts";
 import type { ExecOptions, ExecResult } from "../exec.ts";
+import type { ModelRoute, ModelRouteRequest, VirtualModelDefinition } from "../fake-models.ts";
 import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
 import type { Keymap } from "../hotkeys.ts";
 import type { CustomMessage } from "../msg.ts";
-import type { ModelRegistry } from "../roster.ts";
+import type { SourceInfo } from "../origin.ts";
 import type { ScopedModel } from "../pick.ts";
+import type { ModelRegistry } from "../roster.ts";
 import type {
 	BranchSummaryEntry,
 	CompactionEntry,
@@ -65,7 +67,6 @@ import type {
 } from "../sessions.ts";
 import type { Settings } from "../settings.ts";
 import type { SlashCommandInfo } from "../slash-commands.ts";
-import type { SourceInfo } from "../origin.ts";
 import type {
 	BuildSystemPromptOptions,
 	NormalizedBuildSystemPromptOptions,
@@ -88,7 +89,6 @@ import type {
 	ReadToolInput,
 	WriteToolInput,
 } from "../tools/index.ts";
-import type { ModelRoute, ModelRouteRequest, VirtualModelDefinition } from "../fake-models.ts";
 
 export type { ExecOptions, ExecResult } from "../exec.ts";
 
@@ -123,11 +123,7 @@ export interface WorkingIndicatorOptions {
 
 export type AutocompleteProviderFactory = (current: AutocompleteProvider) => AutocompleteProvider;
 
-export type EditorFactory = (
-	tui: TUI,
-	theme: EditorTheme,
-	keybindings: Keymap,
-) => EditorComponent;
+export type EditorFactory = (tui: TUI, theme: EditorTheme, keybindings: Keymap) => EditorComponent;
 
 export interface ExtensionUIContext {
 	select(

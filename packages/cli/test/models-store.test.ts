@@ -56,9 +56,7 @@ describe("FileModelsStore", () => {
 		expect((await reloaded.read("two"))?.models.map((entry) => entry.id)).toEqual(["m2"]);
 	});
 
-	it(
-		"coalesces file reloads across concurrent readers and interleaved storage instances",
-		async () => {
+	it("coalesces file reloads across concurrent readers and interleaved storage instances", async () => {
 		writeFileSync(
 			sharedModelsPath,
 			JSON.stringify({

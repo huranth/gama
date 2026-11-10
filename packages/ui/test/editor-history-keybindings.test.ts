@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { afterEach, describe, it } from "node:test";
 import { Keymap, setKeybindings, TUI_KEYBINDINGS } from "../src/keybindings.ts";
-import { Editor } from "../src/view/editor.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import { Editor } from "../src/view/editor.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 

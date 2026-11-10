@@ -50,15 +50,11 @@ function fileChanged(current: Stats, previous: Stats): boolean {
 }
 
 function resolveBranchWithGitSync(repoDir: string): string | null {
-	const result = spawnSync(
-		"git",
-		GIT_BRANCH_ARGS,
-		{
-			cwd: repoDir,
-			encoding: "utf8",
-			stdio: ["ignore", "pipe", "ignore"],
-		},
-	);
+	const result = spawnSync("git", GIT_BRANCH_ARGS, {
+		cwd: repoDir,
+		encoding: "utf8",
+		stdio: ["ignore", "pipe", "ignore"],
+	});
 	const branch = result.status === 0 ? result.stdout.trim() : "";
 	return branch || null;
 }
@@ -398,9 +394,13 @@ export class FooterDataProvider {
 				if (!this.reftableTablesListWatcher) {
 					return;
 				}
-				watchFile(tablesListPath, { interval: REFTABLE_POLL_INTERVAL_MS }, (current, previous) => {
-					if (fileChanged(current, previous)) this.scheduleRefresh();
-				});
+				watchFile(
+					tablesListPath,
+					{ interval: REFTABLE_POLL_INTERVAL_MS },
+					(current, previous) => {
+						if (fileChanged(current, previous)) this.scheduleRefresh();
+					},
+				);
 			}
 		}
 	}

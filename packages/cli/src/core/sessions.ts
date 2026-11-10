@@ -13,28 +13,28 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { sleepSync } from "../utils/sleep.ts";
 import type { BashExecutionMessage, CustomMessage } from "./msg.ts";
 import {
-	CURRENT_SESSION_VERSION,
 	type BranchSummaryEntry,
 	type CompactionEntry,
-	type ContextEditEntry,
 	type ContextEditableContent,
-	createSessionId,
+	type ContextEditEntry,
+	CURRENT_SESSION_VERSION,
 	type CustomEntry,
 	type CustomMessageEntry,
+	createSessionId,
 	type FileEntry,
 	generateId,
 	getLatestCompactionEntry,
 	type LabelEntry,
+	type ModelChangeEntry,
 	migrateSessionEntries,
 	migrateToCurrentVersion,
-	type ModelChangeEntry,
 	type NewSessionOptions,
-	serializeSessionFileEntry,
 	type SessionEntry,
 	type SessionEntryBase,
 	type SessionHeader,
 	type SessionInfoEntry,
 	type SessionMessageEntry,
+	serializeSessionFileEntry,
 	type ThinkingLevelChangeEntry,
 	type UsageEntry,
 } from "./session/entries.ts";
@@ -91,9 +91,8 @@ import {
 	sessionCwdMatches,
 } from "./session-file.ts";
 
-export { loadEntriesFromFile, loadSessionFile, parseSessionEntries } from "./session-file.ts";
-
 export type { SessionFileLoad } from "./session-file.ts";
+export { loadEntriesFromFile, loadSessionFile, parseSessionEntries } from "./session-file.ts";
 
 // Entry types
 export {
@@ -279,7 +278,10 @@ export class SessionStore {
 		this.persistFailure = false;
 
 		if (this.persist) {
-			this.sessionFile = join(this.getSessionDir(), `${this.sessionId}${SESSION_FILE_EXTENSION}`);
+			this.sessionFile = join(
+				this.getSessionDir(),
+				`${this.sessionId}${SESSION_FILE_EXTENSION}`,
+			);
 		}
 
 		return this.sessionFile;
@@ -1041,7 +1043,9 @@ export class SessionStore {
 		abortSignal?.throwIfAborted();
 
 		if (customSessionDir) {
-			return sortSessionInfos(await listSessionsFromDir(customSessionDir, progress, abortSignal));
+			return sortSessionInfos(
+				await listSessionsFromDir(customSessionDir, progress, abortSignal),
+			);
 		}
 
 		const sessionsDir = getSessionsDir();

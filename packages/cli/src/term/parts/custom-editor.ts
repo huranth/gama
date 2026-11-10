@@ -23,12 +23,7 @@ export class CustomEditor extends Editor {
 	public onPasteImage?: () => void;
 	public onExtensionShortcut?: (data: string) => boolean;
 
-	constructor(
-		tui: TUI,
-		theme: EditorTheme,
-		keybindings: Keymap,
-		options?: CustomEditorOptions,
-	) {
+	constructor(tui: TUI, theme: EditorTheme, keybindings: Keymap, options?: CustomEditorOptions) {
 		super(tui, theme, options);
 		this.keybindings = keybindings;
 		this.embedWorkingStatus = options?.embedWorkingStatus ?? false;

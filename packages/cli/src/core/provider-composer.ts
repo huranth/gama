@@ -2,7 +2,6 @@ import {
 	type AnyModel,
 	type Api,
 	type ApiKeyAuth,
-	type ReplyStream,
 	type AuthContext,
 	type AuthInteraction,
 	type AuthResult,
@@ -18,6 +17,7 @@ import {
 	type ProviderHeaders,
 	type ProviderImages,
 	type RefreshModelsContext,
+	type ReplyStream,
 	type SimpleStreamOptions,
 	type StreamOptions,
 	type TranscriptContext,
@@ -685,18 +685,15 @@ export function composeModelProvider(
 	const refreshFromEndpoint = async (context: RefreshModelsContext): Promise<void> => {
 		// Network refresh
 		if (!context.allowNetwork || context.signal.aborted) return;
-		const key =
-			context.credential?.type === "api_key"
-				? (context.credential.key ?? "")
-				: "";
+		const key = context.credential?.type === "api_key" ? (context.credential.key ?? "") : "";
 		const endpoint = (extension?.baseUrl ?? config?.baseUrl ?? "").trim();
 		if (!key || !endpoint) return;
 		const live = await fetchEndpointModels(endpoint, key, {
 			signal: context.signal,
 		});
 		if (context.signal.aborted) return;
-		const builtinModels = getAllProviderModels(base).filter(
-			(model): model is Model<Api> => isModelType(model, "chat"),
+		const builtinModels = getAllProviderModels(base).filter((model): model is Model<Api> =>
+			isModelType(model, "chat"),
 		);
 		const catalog = await getModelsDevCatalog({
 			signal: context.signal,
@@ -754,7 +751,7 @@ export function composeModelProvider(
 		});
 	};
 
-	let refreshModels: Provider["refreshModels"] = undefined;
+	let refreshModels: Provider["refreshModels"];
 	if (base?.refreshModels || extension?.refreshModels) {
 		refreshModels = refreshFromExtension;
 	} else if ((extension?.baseUrl ?? config?.baseUrl) !== undefined) {
@@ -795,12 +792,7 @@ export function composeModelProvider(
 			const implementation = extensionImages?.[model.api];
 			if (implementation) return implementation.generateImages(model, context, options);
 			if (generateImages) return generateImages(model, context, options);
-			return Promise.resolve(
-				imageErrorResult(
-					model,
-					new Error(`No image API: ${model.api}`),
-				),
-			);
+			return Promise.resolve(imageErrorResult(model, new Error(`No image API: ${model.api}`)));
 		};
 	}
 	const extensionClassifiers = extension?.classifiers;
@@ -811,10 +803,7 @@ export function composeModelProvider(
 			if (implementation) return implementation.classify(model, context, options);
 			if (classify) return classify(model, context, options);
 			return Promise.resolve(
-				classifierErrorResult(
-					model,
-					new Error(`No classifier API: ${model.api}`),
-				),
+				classifierErrorResult(model, new Error(`No classifier API: ${model.api}`)),
 			);
 		};
 	}

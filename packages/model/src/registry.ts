@@ -1,4 +1,3 @@
-import { lazyStream } from "./wire/lazy.ts";
 import { defaultProviderAuthContext as defaultAuthContext } from "./auth/context.ts";
 import { InMemoryCredentialStore } from "./auth/credential-store.ts";
 import { type AuthResolutionOverrides, ModelsError, resolveProviderAuth } from "./auth/resolve.ts";
@@ -18,7 +17,6 @@ import type {
 	ApiStreamOptions,
 	AssistantImages,
 	AssistantMessage,
-	ReplyStream,
 	ClassifierApi,
 	ClassifierContext,
 	ClassifierModel,
@@ -41,6 +39,7 @@ import type {
 	ProviderImages,
 	ProviderRequestOptions,
 	ProviderStreams,
+	ReplyStream,
 	SimpleStreamOptions,
 	TranscriptContext,
 	Usage,
@@ -56,6 +55,7 @@ import {
 	isModelType,
 } from "./utils/model-operations.ts";
 import { normalizeContext } from "./utils/transcript.ts";
+import { lazyStream } from "./wire/lazy.ts";
 
 export { ModelsError, type ModelsErrorCode } from "./auth/resolve.ts";
 

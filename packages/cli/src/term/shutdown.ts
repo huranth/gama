@@ -157,9 +157,7 @@ export async function flushCompactionQueue(
 		mode.session.clearQueue();
 		mode.compactionQueuedMessages = queuedMessages;
 		mode.updatePendingMessagesDisplay();
-		mode.showError(
-			`Send failed: ${error instanceof Error ? error.message : String(error)}`,
-		);
+		mode.showError(`Send failed: ${error instanceof Error ? error.message : String(error)}`);
 	};
 
 	try {
@@ -332,7 +330,9 @@ export function registerSignalHandlers(mode: TermApp): void {
 
 	const uncaughtExceptionHandler = (error: Error) => mode.uncaughtCrash(error);
 	process.prependListener("uncaughtException", uncaughtExceptionHandler);
-	mode.signalCleanupHandlers.push(() => process.off("uncaughtException", uncaughtExceptionHandler));
+	mode.signalCleanupHandlers.push(() =>
+		process.off("uncaughtException", uncaughtExceptionHandler),
+	);
 }
 
 export function unregisterSignalHandlers(mode: TermApp): void {

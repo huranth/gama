@@ -7,15 +7,15 @@ import {
 	type Model,
 } from "@huranth/gama-ai/compat";
 import {
-	calculateContextTokens,
 	type CompactionPreparation,
 	type CompactionResult,
 	type CompactionSettings,
+	calculateContextTokens,
 	estimateContextTokens,
 	estimateProjectedContextTokens,
 	prepareCompaction,
-	shouldCompact,
 	type SummarizationLineage,
+	shouldCompact,
 } from "../comp/index.ts";
 import {
 	type ContextEditEntry,
@@ -72,10 +72,7 @@ export function assertCompactionResult(
 	}
 
 	const firstKeptEntryId = result.firstKeptEntryId ?? null;
-	if (
-		firstKeptEntryId !== null &&
-		!branch.some((entry) => entry.id === firstKeptEntryId)
-	) {
+	if (firstKeptEntryId !== null && !branch.some((entry) => entry.id === firstKeptEntryId)) {
 		throw new Error(`Entry off branch: ${firstKeptEntryId}`);
 	}
 }
@@ -178,8 +175,7 @@ export async function checkCompaction(
 	const contextOverflow =
 		sameModel &&
 		((explicitOverflow && assistantRetainedForExplicitRecovery) ||
-			(assistantUsageMatchesProjection &&
-				isContextOverflow(assistantMessage, contextWindow)));
+			(assistantUsageMatchesProjection && isContextOverflow(assistantMessage, contextWindow)));
 	const recoverableLength =
 		sameModel &&
 		assistantIsProjected &&

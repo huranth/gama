@@ -78,9 +78,9 @@ describe("RunSession model and extension characterization", () => {
 
 		harness.session.setThinkingLevel("high", { persist: true });
 		expect(harness.settingsManager.getDefaultThinkingLevel()).toBe("high");
-		expect(
-			harness.settingsManager.getModelThinkingLevel(nextModel.provider, nextModel.id),
-		).toBe("high");
+		expect(harness.settingsManager.getModelThinkingLevel(nextModel.provider, nextModel.id)).toBe(
+			"high",
+		);
 	});
 
 	it(

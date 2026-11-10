@@ -4,11 +4,11 @@ import {
 	buildHandTranscript,
 	createHandsTool,
 	HAND_KINDS,
-	MAX_HANDS,
 	type HandKind,
 	type HandSession,
 	type HandsEvent,
 	type HandsTool,
+	MAX_HANDS,
 } from "../src/core/hands.ts";
 
 interface FakeSessionOptions {
@@ -22,7 +22,7 @@ interface FakeSessionOptions {
 }
 
 function createFakeSession(options: FakeSessionOptions = {}): HandSession {
-	let messages: AgentMessage[] = [];
+	const messages: AgentMessage[] = [];
 	let promptCount = 0;
 	const listeners = new Set<(event: unknown) => void>();
 	const emit = (event: unknown) => {
@@ -278,7 +278,7 @@ describe("hands", () => {
 		const reply =
 			"Mapped the CLI entry. The boot path starts in cli.ts.\n\n" +
 			'```json\n{"files":[{"path":"cli.ts","purpose":"entry"}],"symbols":[],"entryPoints":["cli.ts"]' +
-				'}\n```';
+			"}\n```";
 		const tool = createHandsTool({
 			emit: () => {},
 			createSession: async () => createFakeSession({ reply }),

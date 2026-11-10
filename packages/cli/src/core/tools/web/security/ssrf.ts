@@ -1,6 +1,6 @@
+import type { LookupAddress, LookupOptions } from "node:dns";
 import { lookup } from "node:dns/promises";
 import net from "node:net";
-import type { LookupAddress, LookupOptions } from "node:dns";
 
 // DNS resolver
 export type HostLookup = (hostname: string) => Promise<string[]>;
@@ -356,7 +356,7 @@ function compilePattern(pattern: string, denylist: boolean): (host: string) => b
 	if (/[{}\\/\s]/.test(source)) throw badPattern();
 	if (source.includes("[") && !source.startsWith("[")) throw badPattern();
 
-	let value = source.endsWith(".") ? source.slice(0, -1) : source;
+	const value = source.endsWith(".") ? source.slice(0, -1) : source;
 
 	// Bracketed v6
 	if (value.startsWith("[")) {

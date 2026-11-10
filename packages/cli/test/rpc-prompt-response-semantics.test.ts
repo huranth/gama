@@ -9,12 +9,12 @@ import {
 	type Model,
 } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RunSession } from "../src/core/session/session.ts";
-import type { SessionRuntime } from "../src/core/session/runtime.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import type { LoadExtensionsResult } from "../src/core/ext/index.ts";
+import type { SessionRuntime } from "../src/core/session/runtime.ts";
+import { RunSession } from "../src/core/session/session.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { runRpcMode } from "../src/rpc/server.ts";
 import {
 	createInMemoryModelRegistry,
@@ -335,9 +335,7 @@ describe("RPC prompt response semantics", () => {
 		}
 	});
 
-	it(
-		"reports extension commands and intercepted input as handled without starting a run",
-		async () => {
+	it("reports extension commands and intercepted input as handled without starting a run", async () => {
 		const { lineHandler, cleanup } = await startRpcMode({
 			withAuth: false,
 			responseDelayMs: 0,

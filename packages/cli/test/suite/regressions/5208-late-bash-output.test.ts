@@ -21,10 +21,10 @@ describe("regression #5208: late bash output callbacks", () => {
 		};
 		const bash = createBashTool(process.cwd(), { operations });
 
-		const result = await bash.execute(
-			"test-call-late-output",
-			{ command: "late-output", timeout: 30 }
-		); // Shell exits
+		const result = await bash.execute("test-call-late-output", {
+			command: "late-output",
+			timeout: 30,
+		}); // Shell exits
 		await new Promise((resolve) => setTimeout(resolve, 20));
 
 		expect(getTextOutput(result).trim()).toBe("before");

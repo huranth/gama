@@ -1,8 +1,8 @@
 import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { registerStorageConformance } from "@huranth/gama-durable/testing";
 import { describe, expect, it } from "vitest";
-import { idFromNumber, seqFromNumber } from "../src/ids.ts";
 import { MemoryStorage } from "../src/backends/memory.ts";
+import { idFromNumber, seqFromNumber } from "../src/ids.ts";
 import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 registerStorageConformance({ describe, expect, it }, "MemoryStorage", (use) =>

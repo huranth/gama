@@ -14,8 +14,8 @@ import {
 	type Model,
 } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { ModelHub } from "../src/core/model-run.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 function imageModel(provider: string, id: string): ImageModel<"test-images"> {
 	return {
@@ -366,9 +366,7 @@ describe("ModelHub image generation", () => {
 		expect(chatDispatches).toBe(0);
 	});
 
-	it(
-		"keeps image generation on a registered provider composed with models.json overrides",
-		async () => {
+	it("keeps image generation on a registered provider composed with models.json overrides", async () => {
 		const runtime = await createRuntime({
 			providers: {
 				openrouter: {

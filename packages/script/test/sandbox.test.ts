@@ -580,7 +580,9 @@ describe("limits and lifetime", () => {
 
 	it("starts the deadline when the worker starts, not while wasm loads", async () => {
 		const wasm = await loadQuickJSWasm();
-		const slowWasm = new Promise<typeof wasm>((resolve) => setTimeout(() => resolve(wasm), 1_500));
+		const slowWasm = new Promise<typeof wasm>((resolve) =>
+			setTimeout(() => resolve(wasm), 1_500),
+		);
 		const sandbox = new CodemodeSandbox({ wasm: slowWasm, timeoutMs: 1_000 });
 		sandboxes.push(sandbox);
 

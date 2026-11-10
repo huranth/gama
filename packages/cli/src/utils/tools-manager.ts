@@ -83,7 +83,8 @@ const tools: Record<string, ToolConfig> = {
 		binaryName: "fd",
 		systemBinaryNames: ["fd", "fdfind"],
 		tagPrefix: "v",
-		getAssetName: (version, plat, architecture) => rustAssetName("fd-v", version, plat, architecture),
+		getAssetName: (version, plat, architecture) =>
+			rustAssetName("fd-v", version, plat, architecture),
 	},
 
 	rg: {
@@ -188,16 +189,12 @@ export async function getLatestVersion(repo: string): Promise<string> {
 	const location =
 		response.status >= 300 && response.status < 400 ? response.headers.get("location") : null;
 	if (!location) {
-		throw new Error(
-			`Release lookup failed: ${repo}`,
-		);
+		throw new Error(`Release lookup failed: ${repo}`);
 	}
 
 	const tag = new URL(location, "https://github.com").pathname.split("/").pop();
 	if (!tag || !location.includes("/releases/tag/")) {
-		throw new Error(
-			`Release redirect failed: ${repo}`,
-		);
+		throw new Error(`Release redirect failed: ${repo}`);
 	}
 
 	return decodeURIComponent(tag).replace(/^v/, "");
@@ -502,9 +499,7 @@ async function downloadTool(tool: ToolName): Promise<string> {
 		const binaryFileName = config.binaryName + binaryExt;
 		const extractedBinary = locateBinary(extractDir, assetName, binaryFileName);
 		if (!extractedBinary) {
-			throw new Error(
-				`Missing binary: ${binaryFileName}`,
-			);
+			throw new Error(`Missing binary: ${binaryFileName}`);
 		}
 
 		renameSync(extractedBinary, binaryPath);

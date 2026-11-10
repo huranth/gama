@@ -235,17 +235,14 @@ describe("inspectAddedModel", () => {
 		expect(runtime.getModels(PROVIDER)).toEqual([]);
 	});
 
-	it(
-		"returns a structured error when the added model is missing from a configured provider",
-		async () => {
-			const runtime = await runtimeWith(
-				providerConfig(modelEntry(EXISTING_ID, "Existing Chat", false)),
-			);
-			await expect(inspectAddedModel(runtime, PROVIDER, MODEL_ID)).resolves.toEqual({
-				result: { error: `Model ${PROVIDER}/${MODEL_ID} is unavailable after reload.` },
-			});
-		},
-	);
+	it("returns a structured error when the added model is missing from a configured provider", async () => {
+		const runtime = await runtimeWith(
+			providerConfig(modelEntry(EXISTING_ID, "Existing Chat", false)),
+		);
+		await expect(inspectAddedModel(runtime, PROVIDER, MODEL_ID)).resolves.toEqual({
+			result: { error: `Model ${PROVIDER}/${MODEL_ID} is unavailable after reload.` },
+		});
+	});
 
 	it("returns a structured error when the provider omits api configuration", async () => {
 		const runtime = await runtimeWith({

@@ -143,11 +143,7 @@ export class DefaultPackageManager implements PackageManager {
 		}
 	}
 
-	private spawnCommand(
-		command: string,
-		args: string[],
-		options?: { cwd?: string },
-	): ChildProcess {
+	private spawnCommand(command: string, args: string[], options?: { cwd?: string }): ChildProcess {
 		const env = getEnv();
 		return spawnProcess(command, args, {
 			cwd: options?.cwd,
@@ -210,11 +206,7 @@ export class DefaultPackageManager implements PackageManager {
 		});
 	}
 
-	private runCommand(
-		command: string,
-		args: string[],
-		options?: { cwd?: string },
-	): Promise<void> {
+	private runCommand(command: string, args: string[], options?: { cwd?: string }): Promise<void> {
 		return new Promise((resolvePromise, reject) => {
 			const child = this.spawnCommand(command, args, options);
 			child.on("error", reject);

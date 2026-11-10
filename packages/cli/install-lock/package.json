@@ -1,10 +1,10 @@
 {
 	"name": "@huranth/gama-coding-agent-install",
-	"version": "1.0.1",
+	"version": "1.0.2",
 	"private": true,
 	"description": "Lockfile root used by the Gama installer and updater.",
 	"dependencies": {
-		"@huranth/gama-harness": "1.0.1"
+		"@huranth/gama-harness": "1.0.2"
 	},
 	"overrides": {
 		"protobufjs": "7.6.6"

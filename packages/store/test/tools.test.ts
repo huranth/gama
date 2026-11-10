@@ -12,6 +12,14 @@ import type {
 } from "@huranth/gama-durable";
 import { applyPatch } from "diff";
 import { afterAll, describe, expect, it } from "vitest";
+import { withFileMutationQueue } from "../src/ops/file-mutation-queue.ts";
+import { detectSupportedImageMimeType } from "../src/ops/image.ts";
+import {
+	createBashTool,
+	createEditTool,
+	createReadTool,
+	createWriteTool,
+} from "../src/ops/index.ts";
 import {
 	type ExecutionEnv,
 	ExecutionError,
@@ -23,14 +31,6 @@ import {
 	type ShellExecResult,
 } from "../src/system/index.ts";
 import { NodeExecutionEnv } from "../src/system/node.ts";
-import { withFileMutationQueue } from "../src/ops/file-mutation-queue.ts";
-import { detectSupportedImageMimeType } from "../src/ops/image.ts";
-import {
-	createBashTool,
-	createEditTool,
-	createReadTool,
-	createWriteTool,
-} from "../src/ops/index.ts";
 import { DEFAULT_MAX_LINES } from "../src/truncate.ts";
 
 const tempDirs: string[] = [];
@@ -284,14 +284,8 @@ describe("durable tools", () => {
 				"Showing lines 1-2000 of 2100. Use offset=2001 to continue.",
 			);
 
-			const limited = await run(
-				createReadTool(),
-				{ path: "trailing.txt", limit: 2 },
-				env,
-			);
-			expect(diagnosticText(limited)).toBe(
-				"2098 more lines in file. Use offset=3 to continue.",
-			);
+			const limited = await run(createReadTool(), { path: "trailing.txt", limit: 2 }, env);
+			expect(diagnosticText(limited)).toBe("2098 more lines in file. Use offset=3 to continue.");
 
 			await expect(
 				run(createReadTool(), { path: "trailing.txt", offset: 2101 }, env),
@@ -330,9 +324,9 @@ describe("durable tools", () => {
 		it("rejects non-positive integer limits", async () => {
 			const env = createEnv();
 			getOrThrow(await env.writeFile("short.txt", "one\ntwo\nthree", BACKGROUND_CONTEXT));
-			await expect(
-				run(createReadTool(), { path: "short.txt", offset: 0 }, env),
-			).rejects.toThrow("Invalid offset");
+			await expect(run(createReadTool(), { path: "short.txt", offset: 0 }, env)).rejects.toThrow(
+				"Invalid offset",
+			);
 			await expect(
 				run(createReadTool(), { path: "short.txt", limit: 1.5 }, env),
 			).rejects.toThrow("Invalid limit");
@@ -515,29 +509,26 @@ describe("durable tools", () => {
 			);
 		});
 
-		it(
-			"serializes a new file created through a symlinked directory with its canonical path",
-			async () => {
-				const env = new BlockingWriteExecutionEnv({ cwd: createTempDir() });
-				mkdirSync(join(env.cwd, "real"));
-				await symlink(
-					join(env.cwd, "real"),
-					join(env.cwd, "link"),
-					process.platform === "win32" ? "junction" : "dir",
-				);
-				const tool = createWriteTool();
-				const first = run(tool, { path: "link/new.txt", content: "first\n" }, env);
-				await env.firstWriteStarted.promise;
-				const second = run(tool, { path: "real/new.txt", content: "second\n" }, env);
-				await delay(20);
-				expect(env.secondWriteStarted).toBe(false);
-				env.finishFirstWrite.resolve();
-				await Promise.all([first, second]);
-				expect(getOrThrow(await env.readTextFile("real/new.txt", BACKGROUND_CONTEXT))).toBe(
-					"second\n",
-				);
-			},
-		);
+		it("serializes a new file created through a symlinked directory with its canonical path", async () => {
+			const env = new BlockingWriteExecutionEnv({ cwd: createTempDir() });
+			mkdirSync(join(env.cwd, "real"));
+			await symlink(
+				join(env.cwd, "real"),
+				join(env.cwd, "link"),
+				process.platform === "win32" ? "junction" : "dir",
+			);
+			const tool = createWriteTool();
+			const first = run(tool, { path: "link/new.txt", content: "first\n" }, env);
+			await env.firstWriteStarted.promise;
+			const second = run(tool, { path: "real/new.txt", content: "second\n" }, env);
+			await delay(20);
+			expect(env.secondWriteStarted).toBe(false);
+			env.finishFirstWrite.resolve();
+			await Promise.all([first, second]);
+			expect(getOrThrow(await env.readTextFile("real/new.txt", BACKGROUND_CONTEXT))).toBe(
+				"second\n",
+			);
+		});
 
 		it("does not serialize the same path on different file systems", async () => {
 			class OtherFileSystem extends BlockingWriteExecutionEnv {

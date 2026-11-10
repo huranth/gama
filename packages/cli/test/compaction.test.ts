@@ -553,48 +553,45 @@ describe("prepareCompaction with previous compaction", () => {
 		expect(preparation).toBeUndefined();
 	});
 
-	it(
-		"be-summarize previously kept messages when the " + "recent window moves past them",
-		() => {
-			const u1 = createMessageEntry(
-				createUserMessage("user msg 1 (summarized by compaction1)".repeat(4)),
-			);
-			const a1 = createMessageEntry(createAssistantMessage("assistant msg 1".repeat(4)));
-			const u2 = createMessageEntry(
-				createUserMessage("user msg 2 - kept by compaction1 ".repeat(12)),
-			);
-			const a2 = createMessageEntry(createAssistantMessage("assistant msg 2 ".repeat(12)));
-			const u3 = createMessageEntry(
-				createUserMessage("user msg 3 - kept by compaction1 ".repeat(12)),
-			);
-			const a3 = createMessageEntry(
-				createAssistantMessage("assistant msg 3 ".repeat(12), createMockUsage(5000, 1000)),
-			);
-			const compaction1 = createCompactionEntry("First summary", u2.id);
-			const u4 = createMessageEntry(
-				createUserMessage("user msg 4 (new after compaction1) ".repeat(12)),
-			);
-			const a4 = createMessageEntry(
-				createAssistantMessage("assistant msg 4 ".repeat(12), createMockUsage(8000, 2000)),
-			);
+	it("be-summarize previously kept messages when the " + "recent window moves past them", () => {
+		const u1 = createMessageEntry(
+			createUserMessage("user msg 1 (summarized by compaction1)".repeat(4)),
+		);
+		const a1 = createMessageEntry(createAssistantMessage("assistant msg 1".repeat(4)));
+		const u2 = createMessageEntry(
+			createUserMessage("user msg 2 - kept by compaction1 ".repeat(12)),
+		);
+		const a2 = createMessageEntry(createAssistantMessage("assistant msg 2 ".repeat(12)));
+		const u3 = createMessageEntry(
+			createUserMessage("user msg 3 - kept by compaction1 ".repeat(12)),
+		);
+		const a3 = createMessageEntry(
+			createAssistantMessage("assistant msg 3 ".repeat(12), createMockUsage(5000, 1000)),
+		);
+		const compaction1 = createCompactionEntry("First summary", u2.id);
+		const u4 = createMessageEntry(
+			createUserMessage("user msg 4 (new after compaction1) ".repeat(12)),
+		);
+		const a4 = createMessageEntry(
+			createAssistantMessage("assistant msg 4 ".repeat(12), createMockUsage(8000, 2000)),
+		);
 
-			const settings: CompactionSettings = {
-				...DEFAULT_COMPACTION_SETTINGS,
-				keepRecentTokens: 100,
-			};
-			const preparation = prepareCompaction(
-				[u1, a1, u2, a2, u3, a3, compaction1, u4, a4],
-				settings,
-			);
+		const settings: CompactionSettings = {
+			...DEFAULT_COMPACTION_SETTINGS,
+			keepRecentTokens: 100,
+		};
+		const preparation = prepareCompaction(
+			[u1, a1, u2, a2, u3, a3, compaction1, u4, a4],
+			settings,
+		);
 
-			expect(preparation).toBeDefined();
-			const summarizedText = extractText(preparation!.messagesToSummarize);
-			expect(summarizedText).toContain("user msg 2 - kept by compaction1");
-			expect(summarizedText).toContain("user msg 3 - kept by compaction1");
-			expect(summarizedText).not.toContain("First summary");
-			expect(preparation!.previousSummary).toBe("First summary");
-		},
-	);
+		expect(preparation).toBeDefined();
+		const summarizedText = extractText(preparation!.messagesToSummarize);
+		expect(summarizedText).toContain("user msg 2 - kept by compaction1");
+		expect(summarizedText).toContain("user msg 3 - kept by compaction1");
+		expect(summarizedText).not.toContain("First summary");
+		expect(preparation!.previousSummary).toBe("First summary");
+	});
 });
 
 describe("Large session fixture", () => {

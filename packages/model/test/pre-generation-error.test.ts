@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import type { Api, Model, ReplyStream } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
 import { streamSimple as streamAzure } from "../src/wire/azure-openai-responses.ts";
 import { streamSimple as streamGoogle } from "../src/wire/google-generative-ai.ts";
@@ -6,8 +8,6 @@ import { streamSimple as streamMistral } from "../src/wire/mistral-conversations
 import { streamSimple as streamCodex } from "../src/wire/openai-codex-responses.ts";
 import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
 import { streamSimple as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
-import type { Api, ReplyStream, Model } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 function model<TApi extends Api>(api: TApi): Model<TApi> {
 	return {

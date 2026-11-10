@@ -4,16 +4,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
-import { BACKGROUND_CONTEXT as context } from "@huranth/gama-bus/context";
-import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
 } from "@huranth/gama-ai/catalog/faux";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT as context } from "@huranth/gama-bus/context";
 import { Type } from "typebox";
-import { NodeExecutionEnv } from "../src/system/node.ts";
+import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import {
 	createRegistry,
 	defineTool,
@@ -22,9 +23,8 @@ import {
 	MemoryStorage,
 	type Storage,
 } from "../src/index.ts";
-import { openNodeJsonlStorage } from "../src/backends/jsonl/node.ts";
-import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { createBashTool } from "../src/ops/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 import { addTool } from "./harness-support.ts";
 
 type Backend = "memory" | "sqlite" | "jsonl";

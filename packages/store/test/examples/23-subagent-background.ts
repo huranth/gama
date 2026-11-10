@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	type AssistantMessage,
 	createProvider,
@@ -10,14 +9,16 @@ import {
 	type Model,
 	Type,
 } from "@huranth/gama-ai";
-import { openAICompletionsApi } from "@huranth/gama-ai/compat";
-import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
 } from "@huranth/gama-ai/catalog/faux";
+import { openAICompletionsApi } from "@huranth/gama-ai/compat";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 import {
 	type AgentEvent,
 	AssistantEntry,
@@ -34,7 +35,6 @@ import {
 	type TaskId,
 	watchEvents,
 } from "../../src/index.ts";
-import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 

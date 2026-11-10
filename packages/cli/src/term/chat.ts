@@ -1,11 +1,11 @@
 import type { AgentMessage } from "@huranth/gama-agent-core";
 import type { AssistantMessage, Message, Usage } from "@huranth/gama-ai/compat";
-import { Spacer, type Component, type MarkdownTheme } from "@huranth/gama-tui";
+import { type Component, type MarkdownTheme, Spacer } from "@huranth/gama-tui";
 import { CONFIG_DIR_NAME } from "../config.ts";
-import { parseSkillBlock } from "../core/session/session.ts";
 import type { MarkdownTransformer } from "../core/ext/index.ts";
 import { formatNotice } from "../core/notices.ts";
-import { sessionEntryToContextMessages, type SessionEntry } from "../core/sessions.ts";
+import { parseSkillBlock } from "../core/session/session.ts";
+import { type SessionEntry, sessionEntryToContextMessages } from "../core/sessions.ts";
 import type { TruncationResult } from "../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources } from "../core/trust-manager.ts";
 import type { TermApp } from "./app.ts";
@@ -147,12 +147,7 @@ export function showStatus(
 	const last = children.length > 0 ? children[children.length - 1] : undefined;
 	const secondLast = children.length > 1 ? children[children.length - 2] : undefined;
 
-	if (
-		last &&
-		secondLast &&
-		last === mode.lastStatusText &&
-		secondLast === mode.lastStatusSpacer
-	) {
+	if (last && secondLast && last === mode.lastStatusText && secondLast === mode.lastStatusSpacer) {
 		mode.lastStatusMessage = message;
 		mode.lastStatusTone = tone;
 		mode.lastStatusText.invalidate();
@@ -163,11 +158,7 @@ export function showStatus(
 	const spacer = new Spacer(1);
 	mode.lastStatusMessage = message;
 	mode.lastStatusTone = tone;
-	const text = new ThemedText(
-		() => theme.fg(mode.lastStatusTone, mode.lastStatusMessage),
-		1,
-		0,
-	);
+	const text = new ThemedText(() => theme.fg(mode.lastStatusTone, mode.lastStatusMessage), 1, 0);
 	mode.chatContainer.addChild(spacer);
 	mode.chatContainer.addChild(text);
 	mode.lastStatusSpacer = spacer;
@@ -190,11 +181,7 @@ export function showError(mode: TermApp, errorMessage: string): void {
 export function showWarning(mode: TermApp, warningMessage: string): void {
 	mode.chatContainer.addChild(new Spacer(1));
 	mode.chatContainer.addChild(
-		new ThemedText(
-			() => theme.fg("warning", `Warning: ${formatNotice(warningMessage)}`),
-			1,
-			0,
-		),
+		new ThemedText(() => theme.fg("warning", `Warning: ${formatNotice(warningMessage)}`), 1, 0),
 	);
 	mode.ui.requestRender();
 }
@@ -270,11 +257,7 @@ export function addChatChild(mode: TermApp, component: Component): Spacer | null
 	return spacer;
 }
 
-export function dropChatChild(
-	mode: TermApp,
-	component: Component,
-	spacer: Spacer | null,
-): void {
+export function dropChatChild(mode: TermApp, component: Component, spacer: Spacer | null): void {
 	mode.chatContainer.removeChild(component);
 	(component as { dispose?: () => void }).dispose?.();
 	if (spacer) mode.chatContainer.removeChild(spacer);
@@ -480,21 +463,13 @@ export function renderSessionItems(
 			mode.addMessageToChat(message);
 			for (const content of message.content) {
 				if (content.type === "toolCall") {
-					mode.trackActivity(
-						content.id,
-						content.name,
-						content.arguments,
-						message.timestamp,
-					);
+					mode.trackActivity(content.id, content.name, content.arguments, message.timestamp);
 
 					if (message.stopReason === "aborted" || message.stopReason === "error") {
 						let errorMessage: string;
 						if (message.stopReason === "aborted") {
 							const retryAttempt = mode.session.retryAttempt;
-							errorMessage =
-								retryAttempt > 0
-									? `Aborted: ${retryAttempt}`
-									: "Aborted";
+							errorMessage = retryAttempt > 0 ? `Aborted: ${retryAttempt}` : "Aborted";
 						} else {
 							errorMessage = message.errorMessage || "Error";
 						}
@@ -593,10 +568,7 @@ export function countDroppedThinkingBlocks(message: AssistantMessage): number {
 	return count;
 }
 
-export function maybeShowThinkingDropNotice(
-	mode: TermApp,
-	message: AssistantMessage,
-): void {
+export function maybeShowThinkingDropNotice(mode: TermApp, message: AssistantMessage): void {
 	const droppedCount = countDroppedThinkingBlocks(message);
 	if (droppedCount === 0) return;
 
@@ -614,15 +586,7 @@ export function maybeShowThinkingDropNotice(
 	const noun = droppedCount === 1 ? "thinking block" : "thinking blocks";
 	mode.chatContainer.addChild(new Spacer(1));
 	mode.chatContainer.addChild(
-		new ThemedText(
-			() =>
-				theme.fg(
-					"warning",
-					`Dropped: ${droppedCount} ${noun}`,
-				),
-			1,
-			0,
-		),
+		new ThemedText(() => theme.fg("warning", `Dropped: ${droppedCount} ${noun}`), 1, 0),
 	);
 }
 

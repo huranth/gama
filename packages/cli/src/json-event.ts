@@ -25,9 +25,7 @@ function toJsonAssistantMessageEvent(
 	if (event.type === "toolcall_start") {
 		const toolCall = event.partial.content[event.contentIndex];
 		if (toolCall?.type !== "toolCall") {
-			throw new Error(
-				"Invalid tool call",
-			);
+			throw new Error("Invalid tool call");
 		}
 		const { partial: _partial, ...deltaEvent } = event;
 		return { ...deltaEvent, id: toolCall.id, toolName: toolCall.name };

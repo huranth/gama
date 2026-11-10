@@ -2,10 +2,10 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { discoverAndLoadExtensions } from "../src/core/ext/loader.ts";
 import { PluginHost } from "../src/core/ext/runner.ts";
 import { SessionStore } from "../src/core/sessions.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 import { createInMemoryModelRegistry } from "./model-run-test-utils.ts";
 

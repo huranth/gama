@@ -16,10 +16,7 @@ describe("TermApp compaction events", () => {
 			totalTokens: 100,
 			cost: { input: 0.01, output: 0.02, cacheRead: 0.03, cacheWrite: 0.065, total: 0.125 },
 		};
-		const addCompactionCostNotice = Reflect.get(
-			TermApp.prototype,
-			"addCompactionCostNotice",
-		) as (
+		const addCompactionCostNotice = Reflect.get(TermApp.prototype, "addCompactionCostNotice") as (
 			this: { chatContainer: Container },
 			notice: {
 				type: "compaction_cost";
@@ -83,10 +80,10 @@ describe("TermApp compaction events", () => {
 			},
 		];
 		const fakeThis = { renderSessionItems: vi.fn() };
-		const renderSessionEntries = Reflect.get(
-			TermApp.prototype,
-			"renderSessionEntries",
-		) as (this: typeof fakeThis, entries: SessionEntry[]) => void;
+		const renderSessionEntries = Reflect.get(TermApp.prototype, "renderSessionEntries") as (
+			this: typeof fakeThis,
+			entries: SessionEntry[],
+		) => void;
 
 		renderSessionEntries.call(fakeThis, entries);
 
@@ -139,8 +136,7 @@ describe("TermApp compaction events", () => {
 			statusContainer: { clear: vi.fn() },
 			chatContainer: { clear: vi.fn() },
 			activityByToolId: new Map(),
-			resetActivity: (TermApp.prototype as unknown as { resetActivity(): void })
-				.resetActivity,
+			resetActivity: (TermApp.prototype as unknown as { resetActivity(): void }).resetActivity,
 			handleCompactionEnd: (
 				TermApp.prototype as unknown as {
 					handleCompactionEnd: (this: unknown, event: never) => void;
@@ -269,10 +265,10 @@ describe("TermApp compaction events", () => {
 			showError: vi.fn(),
 		};
 
-		const flushCompactionQueue = Reflect.get(
-			TermApp.prototype,
-			"flushCompactionQueue",
-		) as (this: typeof fakeThis, options?: { willRetry?: boolean }) => Promise<void>;
+		const flushCompactionQueue = Reflect.get(TermApp.prototype, "flushCompactionQueue") as (
+			this: typeof fakeThis,
+			options?: { willRetry?: boolean },
+		) => Promise<void>;
 
 		await flushCompactionQueue.call(fakeThis, { willRetry: false });
 

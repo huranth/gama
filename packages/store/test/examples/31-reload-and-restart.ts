@@ -1,10 +1,11 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { type ToolResultMessage, Type } from "@huranth/gama-ai";
-import { createModels } from "@huranth/gama-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@huranth/gama-ai/catalog/faux";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 import {
 	createRegistry,
 	defineExtension,
@@ -12,7 +13,6 @@ import {
 	Harness,
 	ToolResultEntry,
 } from "../../src/index.ts";
-import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 

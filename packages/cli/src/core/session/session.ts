@@ -2,7 +2,6 @@ import { basename, dirname } from "node:path";
 import {
 	type AfterToolCallContext,
 	type AfterToolCallResult,
-	type Runner,
 	type AgentContext,
 	type AgentEvent,
 	type AgentMessage,
@@ -12,6 +11,7 @@ import {
 	type BeforeToolCallContext,
 	type BeforeToolCallResult,
 	type PrepareNextTurnContext,
+	type Runner,
 	runToolCall,
 	type ThinkingLevel,
 } from "@huranth/gama-agent-core";
@@ -71,6 +71,7 @@ import {
 	shouldCompact,
 } from "../comp/index.ts";
 import { DEFAULT_THINKING_LEVEL, THINKING_LEVEL_OPTIONS } from "../defaults.ts";
+import { exportSessionToJsonl } from "../dump.ts";
 import {
 	type AgentActivityOutcome,
 	type BoundaryContextPreview,
@@ -79,9 +80,9 @@ import {
 	type ExtensionCommandContextActions,
 	type ExtensionErrorListener,
 	type ExtensionMode,
-	PluginHost,
 	type ExtensionUIContext,
 	type InputSource,
+	PluginHost,
 	type ReplacedSessionContext,
 	type SessionBeforeCompactResult,
 	type SessionBeforeTreeResult,
@@ -95,44 +96,6 @@ import {
 	type TreePreparation,
 } from "../ext/index.ts";
 import { emitSessionShutdownEvent } from "../ext/runner.ts";
-import type { HandsEvent } from "../hands.ts";
-import { exportSessionToHtml, type ToolHtmlRenderer } from "../html/index.ts";
-import { createToolHtmlRenderer } from "../html/tool-renderer.ts";
-import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "../msg.ts";
-import { pickNextModel } from "../model-cycle.ts";
-import { ModelRegistry } from "../roster.ts";
-import type { ModelHub } from "../model-run.ts";
-import { NestedToolCallRunner } from "../nested.ts";
-import { expandPromptTemplate, type PromptTemplate } from "../prompt-templates.ts";
-import type { ResourceExtensionPaths, ResourceLoader } from "../resource-loader.ts";
-import { applyBoundaryDrafts, createBoundaryPreviewManager } from "../session-boundary.ts";
-import { exportSessionToJsonl } from "../dump.ts";
-import {
-	type BranchSummaryEntry,
-	type CompactionEntry,
-	type SessionStore,
-	type SessionProjection,
-} from "../sessions.ts";
-import { computeContextUsage, computeSessionStats, type SessionStats } from "../session-stats.ts";
-import {
-	type CacheWarmingMode,
-	DEFAULT_TOOL_NAMES,
-	type SettingsStore,
-} from "../settings.ts";
-import type { SlashCommandInfo } from "../slash-commands.ts";
-import { isSyntheticPath } from "../origin.ts";
-import {
-	buildSystemPrompt,
-	buildSystemPromptSections,
-	diffSystemPromptSections,
-	type NormalizedBuildSystemPromptOptions,
-	normalizeBuildSystemPromptOptions,
-} from "../system-prompt.ts";
-import { type BashOperations, createLocalBashOperations } from "../tools/bash.ts";
-import { createAllToolDefinitions, createFileReadTracker } from "../tools/index.ts";
-import { createToolDefinitionFromAgentTool } from "../tools/tool-definition-wrapper.ts";
-import { withBuiltInRenderers } from "../tools/ui/index.ts";
-import { combineUsage } from "../usage.ts";
 import {
 	findLatestResponse,
 	getBranchSelection,
@@ -141,22 +104,34 @@ import {
 	VIRTUAL_MODEL_STATE_ENTRY,
 	type VirtualModelStateData,
 } from "../fake-models.ts";
+import type { HandsEvent } from "../hands.ts";
+import { exportSessionToHtml, type ToolHtmlRenderer } from "../html/index.ts";
+import { createToolHtmlRenderer } from "../html/tool-renderer.ts";
+import { pickNextModel } from "../model-cycle.ts";
+import type { ModelHub } from "../model-run.ts";
+import { type BashExecutionMessage, type CustomMessage, convertToLlm } from "../msg.ts";
+import { NestedToolCallRunner } from "../nested.ts";
+import { isSyntheticPath } from "../origin.ts";
+import { expandPromptTemplate, type PromptTemplate } from "../prompt-templates.ts";
+import type { ResourceExtensionPaths, ResourceLoader } from "../resource-loader.ts";
+import { ModelRegistry } from "../roster.ts";
+import { applyBoundaryDrafts, createBoundaryPreviewManager } from "../session-boundary.ts";
 import {
 	assertCompactionResult,
 	autoCompactionErrorMessage,
 	buildSummarizationLineage,
-	checkCompaction,
 	CompactionCancelled,
+	checkCompaction,
 	isCompactionAborted,
 	prepareManualCompaction,
 } from "../session-runtime/compaction.ts";
 import {
-	type SessionEvent,
 	type AgentSessionEventListener,
 	emitExtensionEvent,
 	emitSessionEvent,
 	makeAgentEndEvent,
 	makeQueueUpdateEvent,
+	type SessionEvent,
 	subscribeToSessionEvents,
 } from "../session-runtime/events.ts";
 import {
@@ -169,10 +144,10 @@ import {
 import {
 	consumeQueuedMessage,
 	countPendingMessages,
+	type QueuedInputDisposition,
 	queueFollowUpInput,
 	queueSteeringInput,
 	queueUserInput,
-	type QueuedInputDisposition,
 } from "../session-runtime/queue.ts";
 import {
 	applyToolLoadout,
@@ -190,8 +165,29 @@ import {
 	getLastAssistantText,
 	recordPromptSummaryUsage,
 } from "../session-runtime/usage.ts";
+import { computeContextUsage, computeSessionStats, type SessionStats } from "../session-stats.ts";
+import type {
+	BranchSummaryEntry,
+	CompactionEntry,
+	SessionProjection,
+	SessionStore,
+} from "../sessions.ts";
+import { type CacheWarmingMode, DEFAULT_TOOL_NAMES, type SettingsStore } from "../settings.ts";
+import type { SlashCommandInfo } from "../slash-commands.ts";
+import {
+	buildSystemPrompt,
+	buildSystemPromptSections,
+	diffSystemPromptSections,
+	type NormalizedBuildSystemPromptOptions,
+	normalizeBuildSystemPromptOptions,
+} from "../system-prompt.ts";
+import { type BashOperations, createLocalBashOperations } from "../tools/bash.ts";
+import { createAllToolDefinitions, createFileReadTracker } from "../tools/index.ts";
+import { createToolDefinitionFromAgentTool } from "../tools/tool-definition-wrapper.ts";
+import { withBuiltInRenderers } from "../tools/ui/index.ts";
+import { combineUsage } from "../usage.ts";
 
-export type { SessionEvent, AgentSessionEventListener } from "../session-runtime/events.ts";
+export type { AgentSessionEventListener, SessionEvent } from "../session-runtime/events.ts";
 export type { ParsedSkillBlock } from "../session-runtime/prompt.ts";
 export type { QueuedInputDisposition } from "../session-runtime/queue.ts";
 
@@ -251,8 +247,8 @@ export interface ModelCycleResult {
 	isScoped: boolean;
 }
 
-export type { SessionStats } from "../session-stats.ts";
 export { parseSkillBlock } from "../session-runtime/prompt.ts";
+export type { SessionStats } from "../session-stats.ts";
 
 function withoutDeletedHeaders(
 	headers: ProviderHeaders | undefined,
@@ -1041,7 +1037,8 @@ export class RunSession {
 		for (let i = event.messages.length - 1; i >= 0; i--) {
 			const message = event.messages[i];
 
-			if (message.role === "assistant") return this._isRetryableError(message as AssistantMessage);
+			if (message.role === "assistant")
+				return this._isRetryableError(message as AssistantMessage);
 		}
 
 		return false;
@@ -1135,8 +1132,7 @@ export class RunSession {
 				},
 				dispatchTurnEndBoundary: (message, toolResults) =>
 					this._dispatchTurnEndBoundary(message, toolResults),
-				clearBoundaryDispatched: (message) =>
-					this._boundaryDispatchedMessages.delete(message),
+				clearBoundaryDispatched: (message) => this._boundaryDispatchedMessages.delete(message),
 				replaceMessageInPlace: (target, replacement) =>
 					this._replaceMessageInPlace(target, replacement),
 			},
@@ -1642,13 +1638,7 @@ export class RunSession {
 		source: InputSource,
 		streamingBehavior?: "steer" | "followUp",
 	): Promise<{ text: string; images: ImageContent[] | undefined } | undefined> {
-		return runInputHandlers(
-			this._extensionRunner,
-			text,
-			images,
-			source,
-			streamingBehavior,
-		);
+		return runInputHandlers(this._extensionRunner, text, images, source, streamingBehavior);
 	}
 
 	async prompt(text: string, options?: PromptOptions): Promise<void> {
@@ -2443,13 +2433,11 @@ export class RunSession {
 				setOverflowRecoveryAttempted: (value) => {
 					this._overflowRecoveryAttempted = value;
 				},
-				omitRecoveryAttempt: (message, results) =>
-					this._omitRecoveryAttempt(message, results),
+				omitRecoveryAttempt: (message, results) => this._omitRecoveryAttempt(message, results),
 				setFailedResponse: (message) => {
 					this._failedResponse = message;
 				},
-				runAutoCompaction: (reason, willRetry) =>
-					this._runAutoCompaction(reason, willRetry),
+				runAutoCompaction: (reason, willRetry) => this._runAutoCompaction(reason, willRetry),
 				emitCompactionEnd: (event) => this._emit(event),
 				emitSessionCompactFailed: (event) => this._emitSessionCompactFailed(event),
 			},
@@ -2505,9 +2493,7 @@ export class RunSession {
 		} catch (error) {
 			const message = error instanceof Error ? error.message : "compaction failed";
 			const aborted = isCompactionAborted(error, signal);
-			const errorMessage = aborted
-				? undefined
-				: autoCompactionErrorMessage(reason, message);
+			const errorMessage = aborted ? undefined : autoCompactionErrorMessage(reason, message);
 			this._emit({
 				type: "compaction_end",
 				reason,

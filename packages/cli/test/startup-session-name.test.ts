@@ -43,22 +43,20 @@ function createSessionFile(projectDir: string, sessionFile: string): void {
 			version: 3,
 			id: "existing-session",
 			timestamp,
-			cwd: projectDir
-		})}\n${JSON.stringify(
-			{
-				type: "message",
-				id: "assistant-1",
-				parentId: null,
-				timestamp,
-				message: {
-					role: "assistant",
-					content: [{ type: "text", text: "hello" }],
-					provider: "anthropic",
-					model: "claude-sonnet-4-5",
-					timestamp: Date.now(),
-				},
+			cwd: projectDir,
+		})}\n${JSON.stringify({
+			type: "message",
+			id: "assistant-1",
+			parentId: null,
+			timestamp,
+			message: {
+				role: "assistant",
+				content: [{ type: "text", text: "hello" }],
+				provider: "anthropic",
+				model: "claude-sonnet-4-5",
+				timestamp: Date.now(),
 			},
-		)}\n`,
+		})}\n`,
 	);
 }
 

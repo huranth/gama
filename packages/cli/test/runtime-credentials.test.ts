@@ -1,7 +1,7 @@
 import type { CredentialStore } from "@huranth/gama-ai";
 import { describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { RuntimeCredentials } from "../src/core/runtime-credentials.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 describe("RuntimeCredentials", () => {
 	test("runtime overrides mask stored credentials without persisting", async () => {

@@ -1,14 +1,14 @@
 import type { ImageContent } from "@huranth/gama-ai";
-import type { SessionRuntime } from "./core/session/runtime.ts";
 import { formatMoney, formatPercent } from "./core/cache/view.ts";
 import {
 	flushRawStdout,
 	waitForRawStdoutBackpressure,
 	writeRawStdout,
 } from "./core/output-guard.ts";
+import type { SessionRuntime } from "./core/session/runtime.ts";
+import { toJsonEvent } from "./json-event.ts";
 import { disposeWithTimeout } from "./utils/dispose.ts";
 import { killTrackedDetachedChildren } from "./utils/shell.ts";
-import { toJsonEvent } from "./json-event.ts";
 
 function exitCodeForSignal(signal: NodeJS.Signals): number {
 	if (signal === "SIGHUP") return 129;
@@ -160,8 +160,7 @@ export async function runPrintMode(
 			const lastMessage = state.messages[state.messages.length - 1];
 			if (lastMessage?.role === "assistant") {
 				const failed =
-					lastMessage.stopReason === "error" ||
-					lastMessage.stopReason === "aborted";
+					lastMessage.stopReason === "error" || lastMessage.stopReason === "aborted";
 
 				if (failed) {
 					if (mode === "text") {

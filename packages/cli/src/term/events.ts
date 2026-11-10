@@ -1,9 +1,10 @@
 import type { AssistantMessage } from "@huranth/gama-ai/compat";
 import { Spacer } from "@huranth/gama-tui";
-import type { SessionEvent } from "../core/session/session.ts";
 import { createCompactionSummaryMessage, createCustomMessage } from "../core/msg.ts";
 import { formatNotice } from "../core/notices.ts";
+import type { SessionEvent } from "../core/session/session.ts";
 import type { TermApp } from "./app.ts";
+import { hasAssistantToolCalls } from "./chat.ts";
 import {
 	AssistantMessageComponent,
 	hasVisibleAssistantContent,
@@ -15,13 +16,9 @@ import {
 } from "./parts/status-indicator.ts";
 import { ThemedText } from "./parts/themed-text.ts";
 import { theme } from "./theme/theme.ts";
-import { hasAssistantToolCalls } from "./chat.ts";
 
 // Event slice
-export type AgentEventOf<T extends SessionEvent["type"]> = Extract<
-	SessionEvent,
-	{ type: T }
->;
+export type AgentEventOf<T extends SessionEvent["type"]> = Extract<SessionEvent, { type: T }>;
 
 // Bell delay
 const TURN_NOTIFY_MIN_MS = 20_000;
@@ -66,9 +63,7 @@ export function handleThinkingLevelChanged(mode: TermApp): void {
 	mode.refreshModelIndicators();
 }
 
-export function estimateStreamingOutputTokens(
-	message: AssistantMessage,
-): number {
+export function estimateStreamingOutputTokens(message: AssistantMessage): number {
 	let chars = 0;
 
 	for (const block of message.content) {
@@ -87,10 +82,7 @@ export function maybeWarnAboutCacheCold(mode: TermApp, isAssistant: boolean): vo
 	mode.showWarning(health.message);
 }
 
-export function handleMessageStart(
-	mode: TermApp,
-	event: AgentEventOf<"message_start">,
-): void {
+export function handleMessageStart(mode: TermApp, event: AgentEventOf<"message_start">): void {
 	if (event.message.role === "custom") {
 		mode.addMessageToChat(event.message);
 		mode.ui.requestRender();
@@ -120,10 +112,7 @@ export function handleMessageStart(
 	}
 }
 
-export function handleMessageUpdate(
-	mode: TermApp,
-	event: AgentEventOf<"message_update">,
-): void {
+export function handleMessageUpdate(mode: TermApp, event: AgentEventOf<"message_update">): void {
 	if (mode.streamingComponent && event.message.role === "assistant") {
 		mode.streamingMessage = event.message;
 		mode.footer.setStreamingUsage(
@@ -155,10 +144,7 @@ export function handleMessageEnd(mode: TermApp, event: AgentEventOf<"message_end
 		let errorMessage: string | undefined;
 		if (message.stopReason === "aborted") {
 			const retryAttempt = mode.session.retryAttempt;
-			errorMessage =
-				retryAttempt > 0
-					? `Aborted: ${retryAttempt}`
-					: "Aborted";
+			errorMessage = retryAttempt > 0 ? `Aborted: ${retryAttempt}` : "Aborted";
 			message.errorMessage = errorMessage;
 		}
 		mode.streamingComponent.updateContent(message, false);
@@ -190,10 +176,7 @@ export function handleMessageEnd(mode: TermApp, event: AgentEventOf<"message_end
 	mode.ui.requestRender();
 }
 
-export function handleEntryAppended(
-	mode: TermApp,
-	event: AgentEventOf<"entry_appended">,
-): void {
+export function handleEntryAppended(mode: TermApp, event: AgentEventOf<"entry_appended">): void {
 	if (mode.entriesRenderedByBoundaryCompaction.delete(event.entry.id)) return;
 	if (event.entry.type === "custom") {
 		mode.addCustomEntryToChat(event.entry);
@@ -344,10 +327,7 @@ export function handleCompactionStart(
 	mode.ui.requestRender();
 }
 
-export function handleCompactionEnd(
-	mode: TermApp,
-	event: AgentEventOf<"compaction_end">,
-): void {
+export function handleCompactionEnd(mode: TermApp, event: AgentEventOf<"compaction_end">): void {
 	if (mode.settingsManager.getShowTerminalProgress()) {
 		mode.ui.terminal.setProgress(false);
 	}
@@ -391,42 +371,30 @@ export function handleCompactionEnd(
 		} else {
 			mode.chatContainer.addChild(new Spacer(1));
 			const errorMessage = formatNotice(event.errorMessage);
-			mode.chatContainer.addChild(
-				new ThemedText(() => theme.fg("error", errorMessage), 1, 0),
-			);
+			mode.chatContainer.addChild(new ThemedText(() => theme.fg("error", errorMessage), 1, 0));
 		}
 	}
 	void mode.flushCompactionQueue({ willRetry: event.willRetry });
 	mode.ui.requestRender();
 }
 
-export function handleAutoRetryStart(
-	mode: TermApp,
-	event: AgentEventOf<"auto_retry_start">,
-): void {
+export function handleAutoRetryStart(mode: TermApp, event: AgentEventOf<"auto_retry_start">): void {
 	mode.retryEscapeHandler = mode.defaultEditor.onEscape;
 	mode.defaultEditor.onEscape = () => {
 		mode.session.abortRetry();
 	};
-	mode.showStatusIndicator(
-		new RetryStatusIndicator(mode.ui, event.attempt, event.maxAttempts),
-	);
+	mode.showStatusIndicator(new RetryStatusIndicator(mode.ui, event.attempt, event.maxAttempts));
 	mode.ui.requestRender();
 }
 
-export function handleAutoRetryEnd(
-	mode: TermApp,
-	event: AgentEventOf<"auto_retry_end">,
-): void {
+export function handleAutoRetryEnd(mode: TermApp, event: AgentEventOf<"auto_retry_end">): void {
 	if (mode.retryEscapeHandler) {
 		mode.defaultEditor.onEscape = mode.retryEscapeHandler;
 		mode.retryEscapeHandler = undefined;
 	}
 	mode.clearStatusIndicator("retry");
 	if (!event.success) {
-		mode.showError(
-			`Retry failed: ${event.attempt}`,
-		);
+		mode.showError(`Retry failed: ${event.attempt}`);
 	}
 	mode.ui.requestRender();
 }
@@ -436,9 +404,7 @@ export function handleSummarizationRetryScheduled(
 	event: AgentEventOf<"summarization_retry_scheduled">,
 ): void {
 	mode.showError(event.errorMessage);
-	mode.showStatusIndicator(
-		new RetryStatusIndicator(mode.ui, event.attempt, event.maxAttempts),
-	);
+	mode.showStatusIndicator(new RetryStatusIndicator(mode.ui, event.attempt, event.maxAttempts));
 	mode.ui.requestRender();
 }
 

@@ -59,8 +59,7 @@ export class ScrollView extends Container {
 			options.scrollbarTrackStyle ??
 			((text) => `${ANSI_BRIGHT_BLACK}${text}${ANSI_FOREGROUND_RESET}`);
 		this.scrollbarThumbStyle =
-			options.scrollbarThumbStyle ??
-			((text) => `${ANSI_WHITE}${text}${ANSI_FOREGROUND_RESET}`);
+			options.scrollbarThumbStyle ?? ((text) => `${ANSI_WHITE}${text}${ANSI_FOREGROUND_RESET}`);
 		this.scrollbarHideDelayMs = Math.max(
 			0,
 			Math.floor(options.scrollbarHideDelayMs ?? DEFAULT_SCROLLBAR_HIDE_DELAY_MS),

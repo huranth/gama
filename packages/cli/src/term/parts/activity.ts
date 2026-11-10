@@ -77,16 +77,7 @@ const WRAP_PAD = 2;
 
 const SHORT_NAME_WIDTH = 24;
 
-const PATH_TOOLS = new Set([
-	"read",
-	"grep",
-	"find",
-	"glob",
-	"ls",
-	"fetch",
-	"edit",
-	"write",
-]);
+const PATH_TOOLS = new Set(["read", "grep", "find", "glob", "ls", "fetch", "edit", "write"]);
 
 function cleanText(value: string): string {
 	return stripAnsi(value).replace(/[\x00-\x1f\x7f-\x9f]/g, " ");
@@ -772,7 +763,8 @@ export class ActivityLineComponent implements Component {
 		if (highlighted) this.armHighlight(Math.max(0, this.settleUntil - now));
 
 		return this.withBody(sentence, maxWidth);
-	}	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
+	}
+	handleMouse(event: TuiMouseEvent): TuiMouseEventResult | undefined {
 		if (event.type !== "click" || event.button !== "left") return undefined;
 		if (event.y < 0) return undefined;
 		if (this.record.name === "hands" && this.record.status !== "error") return undefined;
@@ -913,7 +905,8 @@ export class ActivityLineComponent implements Component {
 			const status = isRunning(this.record) ? "Reading" : "Done";
 			const chars = info.chars > 0 ? `${info.chars.toLocaleString()} chars` : "";
 			rows.push(`${INDENT}${theme.fg("accent", theme.bold("Reading"))}`);
-			rows.push(`${INDENT}${theme.fg(handKindColor(hand?.kind), title)}`);				rows.push(
+			rows.push(`${INDENT}${theme.fg(handKindColor(hand?.kind), title)}`);
+			rows.push(
 				`${INDENT}${handStatusPaint(hand?.status, status)}${
 					chars ? `   ${theme.fg("muted", chars)}` : ""
 				}`,
@@ -929,9 +922,7 @@ export class ActivityLineComponent implements Component {
 		if (cardWidth < 1) return [];
 
 		const total = info.total || info.kinds.length;
-		const rows = [
-			`${INDENT}${theme.fg("text", theme.bold(`${plural(total, "hand")} started`))}`,
-		];
+		const rows = [`${INDENT}${theme.fg("text", theme.bold(`${plural(total, "hand")} started`))}`];
 		const roles = info.kinds
 			.slice(0, HANDS_START_MAX_ROLES)
 			.map((kind) => theme.fg(handKindColor(kind), capitalize(kind)));
@@ -1036,9 +1027,7 @@ export class ActivityLineComponent implements Component {
 
 		const cut = Math.round(command.length * progress);
 		const head =
-			cut > 0
-				? theme.bold(theme.strikethrough(theme.fg("error", command.slice(0, cut))))
-				: "";
+			cut > 0 ? theme.bold(theme.strikethrough(theme.fg("error", command.slice(0, cut)))) : "";
 		const tail = theme.fg("error", command.slice(cut));
 
 		return `${indent}${head}${tail}`;

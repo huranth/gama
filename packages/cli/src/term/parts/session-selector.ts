@@ -911,10 +911,7 @@ export class SessionSelectorComponent extends Container implements Focusable {
 			if (scope !== this.scope) return;
 
 			const message = err instanceof Error ? err.message : String(err);
-			this.header.setStatusMessage(
-				{ type: "error", message: `Load failed: ${message}` },
-				4000,
-			);
+			this.header.setStatusMessage({ type: "error", message: `Load failed: ${message}` }, 4000);
 			this.sessionList.setSessions([], showCwd);
 			this.requestRender();
 		}

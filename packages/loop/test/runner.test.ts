@@ -10,10 +10,10 @@ import {
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import {
-	Runner,
 	type AgentEvent,
 	type AgentTool,
 	type AgentToolUpdateCallback,
+	Runner,
 	type StreamFn,
 	setDefaultStreamFn,
 } from "../src/index.ts";
@@ -855,9 +855,7 @@ describe("Runner", () => {
 		try {
 			expect(agent.state.isStreaming).toBe(true);
 			expect(agent.state.messages.map((message) => message.role)).toEqual(["user"]);
-			expect(() => agent.reset()).toThrow(
-				"Agent is busy",
-			);
+			expect(() => agent.reset()).toThrow("Agent is busy");
 			expect(agent.state.isStreaming).toBe(true);
 			expect(agent.state.messages.map((message) => message.role)).toEqual(["user"]);
 		} finally {
@@ -899,9 +897,7 @@ describe("Runner", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(agent.state.isStreaming).toBe(true);
 
-		await expect(agent.prompt("Second message")).rejects.toThrow(
-			"Agent is busy",
-		);
+		await expect(agent.prompt("Second message")).rejects.toThrow("Agent is busy");
 
 		agent.abort();
 		await firstPrompt.catch(() => {});
@@ -936,9 +932,7 @@ describe("Runner", () => {
 		await new Promise((resolve) => setTimeout(resolve, 10));
 		expect(agent.state.isStreaming).toBe(true);
 
-		await expect(agent.continue()).rejects.toThrow(
-			"Agent is busy",
-		);
+		await expect(agent.continue()).rejects.toThrow("Agent is busy");
 
 		agent.abort();
 		await firstPrompt.catch(() => {});
@@ -1415,7 +1409,11 @@ describe("Runner", () => {
 				);
 				const stream = new MockAssistantStream();
 				queueMicrotask(() => {
-					stream.push({ type: "done", reason: "stop", message: createAssistantMessage("done") });
+					stream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage("done"),
+					});
 				});
 				return stream;
 			},

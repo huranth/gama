@@ -3,10 +3,7 @@ import { wrapToolDefinition } from "../tools/tool-definition-wrapper.ts";
 import type { PluginHost } from "./runner.ts";
 import type { RegisteredTool } from "./types.ts";
 
-export function wrapRegisteredTool(
-	registeredTool: RegisteredTool,
-	runner: PluginHost,
-): AgentTool {
+export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: PluginHost): AgentTool {
 	return wrapToolDefinition(registeredTool.definition, (toolCallId, signal) =>
 		runner.createToolContext(toolCallId, signal),
 	);

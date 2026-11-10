@@ -6,9 +6,9 @@ import { Runner } from "@huranth/gama-agent-core";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
-	ReplyStream,
 	JsonObject,
 	Model,
+	ReplyStream,
 	SimpleStreamOptions,
 	StopReason,
 	TextContent,
@@ -19,10 +19,10 @@ import type {
 } from "@huranth/gama-ai";
 import { createReplyStream } from "@huranth/gama-ai";
 import { RunSession, type SessionEvent } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import type { Settings } from "../src/core/settings.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import type { InlineExtension, ResourceLoader } from "../src/index.ts";
 import { createInMemoryModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 import {
@@ -295,9 +295,7 @@ export interface Harness {
 	settingsManager: SettingsStore;
 	faux: FauxStreamFnState;
 	events: SessionEvent[];
-	eventsOfType<T extends SessionEvent["type"]>(
-		type: T,
-	): Extract<SessionEvent, { type: T }>[];
+	eventsOfType<T extends SessionEvent["type"]>(type: T): Extract<SessionEvent, { type: T }>[];
 	tempDir: string;
 	cleanup: () => void;
 }

@@ -7,8 +7,8 @@ import {
 	USER_AGENT,
 } from "./const.ts";
 import { pinnedFetch } from "./pinned-fetch.ts";
-import { assertUrlAllowed } from "./security/ssrf.ts";
 import type { AddressPolicy, HostLookup } from "./security/ssrf.ts";
+import { assertUrlAllowed } from "./security/ssrf.ts";
 
 // Char limits
 export const MIN_MAX_CHARS = 1_000;

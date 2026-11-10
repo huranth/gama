@@ -6,12 +6,12 @@ import type { Context, JsonValue } from "@huranth/gama-bus";
 import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { registerStorageConformance } from "@huranth/gama-durable/testing";
 import { afterEach, describe, expect, it } from "vitest";
-import { idFromNumber } from "../src/ids.ts";
 import type { SqliteStorage } from "../src/backends/sqlite/index.ts";
 import {
 	type NodeSqliteStorageOptions,
 	openNodeSqliteStorage,
 } from "../src/backends/sqlite/node.ts";
+import { idFromNumber } from "../src/ids.ts";
 import type {
 	ConversationId,
 	DocumentCreate,
@@ -230,9 +230,7 @@ describe("Pico SqliteStorage", () => {
 		} finally {
 			database.close();
 		}
-		await expect(openNodeSqliteStorage(path)).rejects.toThrow(
-			"Missing metadata",
-		);
+		await expect(openNodeSqliteStorage(path)).rejects.toThrow("Missing metadata");
 	});
 
 	it("rejects a document whose required base is missing", async () => {
@@ -255,9 +253,7 @@ describe("Pico SqliteStorage", () => {
 		} finally {
 			database.close();
 		}
-		await expect(storage.document(id, "current", context)).rejects.toThrow(
-			`Missing base: ${id}`,
-		);
+		await expect(storage.document(id, "current", context)).rejects.toThrow(`Missing base: ${id}`);
 	});
 
 	it("replays detached root replacements and edits, rejecting corrupt operations", async () => {

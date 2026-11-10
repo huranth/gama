@@ -99,11 +99,7 @@ export function describeCommandFailure(
 	return fallbackFailure(output, exitCode, command);
 }
 
-export function formatCommandFailure(
-	output: string,
-	exitCode: number,
-	command?: string,
-): string {
+export function formatCommandFailure(output: string, exitCode: number, command?: string): string {
 	const failure = describeCommandFailure(output, exitCode, command) ?? {
 		error: `Exit ${exitCode}`,
 		hint: exitHint(exitCode, command),
@@ -145,11 +141,7 @@ function exitFailure(exitCode: number, command?: string): CommandFailure | undef
 	return EXIT_FAILURES[exitCode];
 }
 
-function fallbackFailure(
-	output: string,
-	exitCode: number,
-	command?: string,
-): CommandFailure {
+function fallbackFailure(output: string, exitCode: number, command?: string): CommandFailure {
 	const line = findErrorLine(output);
 	if (line) {
 		return { error: line, hint: hintFor(line, exitCode, command) };
@@ -1311,7 +1303,8 @@ const FAILURE_RULES: Rule[] = [
 		hint: "Check input",
 	},
 	{
-		pattern: /http(?:\/\d(?:\.\d)?)?\s*429|status(?: code)?:?\s*429|too many requests|rate limit/i,
+		pattern:
+			/http(?:\/\d(?:\.\d)?)?\s*429|status(?: code)?:?\s*429|too many requests|rate limit/i,
 		error: "HTTP 429",
 		hint: "Wait and retry",
 	},

@@ -1,6 +1,6 @@
 import { Text } from "@huranth/gama-tui";
-import type { ToolDefinition, ToolRenderResultOptions } from "../../ext/types.ts";
 import type { Theme } from "../../../term/theme/theme.ts";
+import type { ToolDefinition, ToolRenderResultOptions } from "../../ext/types.ts";
 import { getTextOutput, invalidArgText, str } from "../render-utils.ts";
 import { formatResultBlock, warningText } from "./format.ts";
 

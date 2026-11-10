@@ -1,5 +1,5 @@
-import type { Draft, JsonRepresentation, JsonValue } from "@huranth/gama-bus";
 import type { AssistantMessage } from "@huranth/gama-ai";
+import type { Draft, JsonRepresentation, JsonValue } from "@huranth/gama-bus";
 import { defineDoc } from "../docs.ts";
 import type { Transaction } from "../records/transaction.ts";
 import type {

@@ -3,7 +3,6 @@ import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import {
 	CUSTOM_PROVIDER_API,
 	rememberCustomProviderModel,
@@ -13,6 +12,7 @@ import {
 	saveProviderBaseUrl,
 } from "../src/core/custom-provider.ts";
 import { ModelHub } from "../src/core/model-run.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 const cleanupDirs: string[] = [];
 

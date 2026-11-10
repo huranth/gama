@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
-import type { FileError } from "../system/index.ts";
 import { defineTool } from "../engine/define.ts";
 import type { ToolRegistration } from "../engine/types.ts";
+import type { FileError } from "../system/index.ts";
 import {
 	applyEditsToNormalizedContent,
 	detectLineEnding,

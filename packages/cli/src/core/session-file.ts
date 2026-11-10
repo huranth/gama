@@ -1,8 +1,8 @@
 import { closeSync, existsSync, openSync, readSync } from "node:fs";
 import { StringDecoder } from "node:string_decoder";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
-import { CURRENT_SESSION_VERSION } from "./session/entries.ts";
 import type { FileEntry, SessionHeader } from "./session/entries.ts";
+import { CURRENT_SESSION_VERSION } from "./session/entries.ts";
 
 const SESSION_READ_BYTES = 1024 * 1024;
 

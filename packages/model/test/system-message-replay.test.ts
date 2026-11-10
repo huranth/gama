@@ -79,14 +79,11 @@ describe("system message replay", () => {
 		const resolved = resolveTranscript(context, false);
 
 		expect(resolved.messages[0]).toEqual(context.messages[0]);
-		expect(resolved.messages.map((message) => message.role)).toEqual([
-			"system",
-			"user",
-			"user",
-		]);
+		expect(resolved.messages.map((message) => message.role)).toEqual(["system", "user", "user"]);
 		expect(resolved.messages[2]).toMatchObject({
 			role: "user",
-			content: '<system-update>\nUpdated system prompt section "a":\n\n<a>2</a>\n</system-update>',
+			content:
+				'<system-update>\nUpdated system prompt section "a":\n\n<a>2</a>\n</system-update>',
 		});
 	});
 

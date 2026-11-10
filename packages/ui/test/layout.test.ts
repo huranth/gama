@@ -1,12 +1,12 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { renderLayoutFrame } from "../src/layout.ts";
+import { encodeKitty, registerKittyImageMetadata } from "../src/terminal-image.ts";
+import { stripTerminalSequences } from "../src/utils.ts";
 import { HStack } from "../src/view/h-stack.ts";
 import { ScrollView } from "../src/view/scroll-view.ts";
 import { Text } from "../src/view/text.ts";
 import { VStack } from "../src/view/v-stack.ts";
-import { encodeKitty, registerKittyImageMetadata } from "../src/terminal-image.ts";
-import { stripTerminalSequences } from "../src/utils.ts";
 
 function visibleLines(lines: string[]): string[] {
 	return lines.map((line) => stripTerminalSequences(line).trimEnd());

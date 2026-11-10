@@ -18,13 +18,13 @@ import { performance } from "node:perf_hooks";
 import { contentText, InMemoryCredentialStore } from "@huranth/gama-ai";
 import { getCurrentSystemPrompt } from "@huranth/gama-ai/utils/transcript";
 import {
-	type RunSession,
 	type CreateAgentSessionOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
 	getAgentDir,
 	type InlineExtension,
 	ModelHub,
+	type RunSession,
 	readStoredCredential,
 	SessionStore,
 } from "@huranth/gama-harness";
@@ -41,8 +41,8 @@ import {
 	toJsonValue,
 	type UsageSummary,
 } from "vitest-evals/harness";
-import type { DocumentationVariant } from "./plan.ts";
 import { GAMA_SESSION_SNAPSHOT_ARTIFACT } from "./output.ts";
+import type { DocumentationVariant } from "./plan.ts";
 
 type GamaRunDiagnostics = {
 	events: TranscriptEvent[];
@@ -100,9 +100,7 @@ export function resolveModelSelection(
 	const id = (explicitModel?.id ?? environment.GAMA_MODEL)?.trim();
 
 	if (!provider || !id) {
-		throw new Error(
-			"Missing model selection",
-		);
+		throw new Error("Missing model selection");
 	}
 	return { provider, id };
 }
@@ -204,9 +202,7 @@ async function enterToolSandbox(
 		throw new Error("POSIX required");
 	}
 	if (process.getuid() !== 0 || process.geteuid() !== 0) {
-		throw new Error(
-			"Root required",
-		);
+		throw new Error("Root required");
 	}
 
 	const protectedPaths = await protectTransformedModules();
@@ -583,14 +579,11 @@ export function excludeGamaDocumentation(defaultPrompt: string): string {
 	const documentationStartMarker = "\n<docs>\n";
 	const documentationEndMarker = "\n</docs>";
 	const documentationStart = defaultPrompt.indexOf(documentationStartMarker);
-	if (documentationStart === -1)
-		throw new Error("Missing docs section");
+	if (documentationStart === -1) throw new Error("Missing docs section");
 	const documentationEnd = defaultPrompt.indexOf(documentationEndMarker, documentationStart);
-	if (documentationEnd === -1)
-		throw new Error("Incomplete docs section");
+	if (documentationEnd === -1) throw new Error("Incomplete docs section");
 	const cwdStart = defaultPrompt.lastIndexOf("\n<cwd>\n");
-	if (cwdStart < documentationEnd)
-		throw new Error("Missing cwd section");
+	if (cwdStart < documentationEnd) throw new Error("Missing cwd section");
 	return (
 		defaultPrompt.slice(0, documentationStart) +
 		defaultPrompt.slice(documentationEnd + documentationEndMarker.length)

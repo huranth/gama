@@ -1,7 +1,6 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Op } from "@huranth/gama-bus/delta";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -12,6 +11,7 @@ import {
 	Type,
 	type Usage,
 } from "@huranth/gama-ai";
+import type { Op } from "@huranth/gama-bus/delta";
 import {
 	type Conversation,
 	defineDoc,
@@ -31,8 +31,8 @@ import {
 	UsageDoc,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import { recordUsage } from "../src/engine/usage.ts";
 import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
+import { recordUsage } from "../src/engine/usage.ts";
 import {
 	allEntries,
 	type ChatSetup,

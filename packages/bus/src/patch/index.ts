@@ -51,8 +51,7 @@ const DEFAULT_OVERLAP_PROBE = 64;
 
 const DEFAULT_OVERLAP_CANDIDATES = 8;
 
-const isObj = (value: unknown): value is object =>
-	value !== null && typeof value === "object";
+const isObj = (value: unknown): value is object => value !== null && typeof value === "object";
 
 export const isBase = (ops: readonly (Op | WireOp)[]): boolean =>
 	ops.length > 0 && ops[0]![0] === "r";
@@ -80,7 +79,8 @@ export function overlap(
 			if (tried > maxCandidates) break;
 
 			const overlapLength = tail.length - foundAt;
-			const matches = overlapLength <= b.length && tail.slice(foundAt) === b.slice(0, overlapLength);
+			const matches =
+				overlapLength <= b.length && tail.slice(foundAt) === b.slice(0, overlapLength);
 
 			if (matches) return overlapLength;
 

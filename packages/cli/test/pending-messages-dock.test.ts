@@ -33,10 +33,7 @@ function fakeMode(
 
 	Object.assign(fakeThis, {
 		getQueuedMessagesComponent: (messages: string[]) =>
-			(TermApp as any).prototype.getQueuedMessagesComponent.call(
-				fakeThis,
-				messages,
-			),
+			(TermApp as any).prototype.getQueuedMessagesComponent.call(fakeThis, messages),
 	});
 
 	return { fakeThis, children };
@@ -195,9 +192,9 @@ describe("queued prompt dock", () => {
 		fakeThis.handViewId = undefined;
 		(TermApp as any).prototype.updatePendingMessagesDisplay.call(fakeThis);
 		expect(children).toHaveLength(4);
-		expect(
-			stripAnsi((children[1] as UserMessageComponent).render(60).join("\n")),
-		).toContain("hold this for the next model call");
+		expect(stripAnsi((children[1] as UserMessageComponent).render(60).join("\n"))).toContain(
+			"hold this for the next model call",
+		);
 	});
 
 	test("clears the dock when the queue empties", () => {

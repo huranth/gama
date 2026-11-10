@@ -1,11 +1,11 @@
 import { readFileSync } from "fs";
+import { MainScreen } from "../src/main-screen.ts";
+import type { TUI } from "../src/screen.ts";
+import { ProcessTerminal } from "../src/terminal.ts";
+import { getCapabilities, getImageDimensions } from "../src/terminal-image.ts";
 import { Image } from "../src/view/image.ts";
 import { Spacer } from "../src/view/spacer.ts";
 import { Text } from "../src/view/text.ts";
-import { ProcessTerminal } from "../src/terminal.ts";
-import { getCapabilities, getImageDimensions } from "../src/terminal-image.ts";
-import type { TUI } from "../src/screen.ts";
-import { MainScreen } from "../src/main-screen.ts";
 
 const testImagePath = process.argv[2] || "/tmp/test-image.png";
 

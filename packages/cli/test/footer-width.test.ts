@@ -1,8 +1,8 @@
 import { visibleWidth } from "@huranth/gama-tui";
 import { beforeAll, describe, expect, it } from "vitest";
-import type { RunSession } from "../src/core/session/session.ts";
 import type { CacheSnapshot } from "../src/core/cache/index.ts";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
+import type { RunSession } from "../src/core/session/session.ts";
 import { FooterComponent, formatCwdForFooter } from "../src/term/parts/footer.ts";
 import { initTheme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";

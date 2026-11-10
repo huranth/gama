@@ -10,8 +10,8 @@ import {
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 } from "../../src/core/session/runtime.ts";
-import { AuthStorage } from "../../src/core/vault.ts";
 import { SessionStore } from "../../src/core/sessions.ts";
+import { AuthStorage } from "../../src/core/vault.ts";
 import type {
 	AgentToolResult,
 	ExtensionAPI,
@@ -441,9 +441,7 @@ describe("SessionRuntime characterization", () => {
 		expect(existsSync(sessionFile!)).toBe(false);
 		expect(leafId).toBeTruthy();
 
-		await expect(runtime.fork(leafId!, { position: "at" })).rejects.toThrow(
-			"Session not saved",
-		);
+		await expect(runtime.fork(leafId!, { position: "at" })).rejects.toThrow("Session not saved");
 	});
 
 	it("duplicates the current active branch when forking at the current position", async () => {

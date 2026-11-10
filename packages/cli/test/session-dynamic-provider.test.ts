@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Provider } from "@huranth/gama-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
-import { ModelHub } from "../src/core/model-run.ts";
-import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import type { ExtensionFactory } from "../src/core/kit.ts";
 import { createAgentSession } from "../src/core/kit.ts";
+import { ModelHub } from "../src/core/model-run.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { testAnthropicModel } from "./model-run-test-utils.ts";
 
 function nativeAnthropicProvider(baseUrl: string): Provider {

@@ -1,8 +1,8 @@
 import type { AgentMessage, AgentTool } from "@huranth/gama-agent-core";
 import {
+	type Api,
 	getCurrentSystemMessage,
 	type ImageContent,
-	type Api,
 	type Model,
 	type Provider,
 	type ProviderHeaders,
@@ -10,9 +10,10 @@ import {
 import type { KeyId } from "@huranth/gama-tui";
 import { type Theme, theme } from "../../term/theme/theme.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
+import type { VirtualModelDefinition } from "../fake-models.ts";
 import type { KeybindingsConfig } from "../hotkeys.ts";
-import type { ModelRegistry } from "../roster.ts";
 import type { ScopedModel } from "../pick.ts";
+import type { ModelRegistry } from "../roster.ts";
 import type { SessionStore } from "../sessions.ts";
 import {
 	type BuildSystemPromptOptions,
@@ -20,7 +21,6 @@ import {
 	type NormalizedBuildSystemPromptOptions,
 	normalizeBuildSystemPromptOptions,
 } from "../system-prompt.ts";
-import type { VirtualModelDefinition } from "../fake-models.ts";
 import type {
 	AgentBeforeSettleEvent,
 	BeforeAgentStartEvent,
@@ -262,9 +262,7 @@ const buildBuiltinKeybindings = (resolvedKeybindings: KeybindingsConfig): BuiltI
 	for (const [keybinding, keys] of Object.entries(resolvedKeybindings)) {
 		if (keys === undefined) continue;
 		const keyList = Array.isArray(keys) ? keys : [keys];
-		const restrictOverride = (
-			RESERVED_KEYS as readonly string[]
-		).includes(keybinding);
+		const restrictOverride = (RESERVED_KEYS as readonly string[]).includes(keybinding);
 		for (const key of keyList) {
 			const normalizedKey = key.toLowerCase() as KeyId;
 			const existing = builtinKeybindings[normalizedKey];
@@ -721,9 +719,7 @@ export class PluginHost {
 		return this.shortcutDiagnostics;
 	}
 
-	invalidate(
-		message = STALE_CONTEXT_MESSAGE,
-	): void {
+	invalidate(message = STALE_CONTEXT_MESSAGE): void {
 		if (!this.staleMessage) {
 			this.staleMessage = message;
 			this.runtime.invalidate(message);

@@ -1,8 +1,8 @@
 import type { Model, Provider } from "@huranth/gama-ai";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { ModelHub } from "../src/core/model-run.ts";
 import type { ProviderModelConfig } from "../src/core/provider-composer.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 const MODEL_ID = "glm-5.3";
 

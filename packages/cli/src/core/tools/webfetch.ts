@@ -1,11 +1,11 @@
 import type { AgentTool } from "@huranth/gama-agent-core";
 import { type Static, Type } from "typebox";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
+import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
+import { webfetchRenderers } from "./ui/web.ts";
 import { fetchPage } from "./web/get.ts";
 import { FETCH_KINDS, FetchError } from "./web/read-url.ts";
 import { repairNumber } from "./web/util.ts";
-import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
-import { webfetchRenderers } from "./ui/web.ts";
 
 const DEFAULT_MAX_CHARS = 20_000;
 
@@ -383,7 +383,10 @@ export function createWebFetchToolDefinition(
 
 					return {
 						content: [
-							{ type: "text" as const, text: formatMatches(page, find, found.matches, found.total) },
+							{
+								type: "text" as const,
+								text: formatMatches(page, find, found.matches, found.total),
+							},
 						],
 						details: {
 							url: page.url,

@@ -54,9 +54,7 @@ function createRunner(tools: AgentTool[], options: { sequential?: boolean } = {}
 }
 
 describe("NestedToolCallRunner", () => {
-	it(
-		"assigns ids below the caller, emits events with the parent id, and records the calls",
-		async () => {
+	it("assigns ids below the caller, emits events with the parent id, and records the calls", async () => {
 		const echo: AgentTool = {
 			name: "echo",
 			label: "Echo",

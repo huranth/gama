@@ -766,7 +766,7 @@ export async function runRpcMode(runtimeHost: SessionRuntime): Promise<never> {
 		try {
 			parsed = JSON.parse(line);
 		} catch (parseError: unknown) {
-			output(error(undefined, "parse", `Parse failed: ` + messageOf(parseError)));
+			output(error(undefined, "parse", `Parse failed: ${messageOf(parseError)}`));
 			await waitForRawStdoutBackpressure();
 			return;
 		}

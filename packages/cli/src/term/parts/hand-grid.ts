@@ -1,5 +1,5 @@
 import { Container, padLine, type TuiMouseEvent } from "@huranth/gama-tui";
-import { HandCardComponent } from "./hand-card.ts";
+import type { HandCardComponent } from "./hand-card.ts";
 
 const SLOT_WIDTH = 30;
 
@@ -50,9 +50,7 @@ export class HandGridComponent extends Container {
 		const y = event.y - row * (CARD_HEIGHT + ROW_GAP);
 		const column = Math.floor(event.x / slotWidth);
 		const card =
-			y < CARD_HEIGHT && column < columns
-				? this.cards[row * columns + column]
-				: undefined;
+			y < CARD_HEIGHT && column < columns ? this.cards[row * columns + column] : undefined;
 
 		if (!card) {
 			if (event.type !== "move") return undefined;

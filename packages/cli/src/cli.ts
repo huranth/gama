@@ -1,7 +1,7 @@
 #!/usr/bin/env node
+import { main } from "./main.ts";
 import { setupCli } from "./start/setup.ts";
 import { runUpdateCommand, UPDATE_USAGE } from "./start/update.ts";
-import { main } from "./main.ts";
 
 setupCli();
 

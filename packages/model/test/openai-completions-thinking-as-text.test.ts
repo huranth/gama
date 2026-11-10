@@ -2,11 +2,6 @@ import { once } from "node:events";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-	convertMessages,
-	type ResolvedOpenAICompletionsCompat,
-	stream as streamOpenAICompletions,
-} from "../src/wire/openai-completions.ts";
 import type {
 	AssistantMessage,
 	AssistantMessageEvent,
@@ -15,6 +10,11 @@ import type {
 	Usage,
 } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import {
+	convertMessages,
+	type ResolvedOpenAICompletionsCompat,
+	stream as streamOpenAICompletions,
+} from "../src/wire/openai-completions.ts";
 
 const emptyUsage: Usage = {
 	input: 0,

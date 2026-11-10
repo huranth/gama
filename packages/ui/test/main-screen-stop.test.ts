@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import type { Component, TUI } from "../src/screen.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class StaticText implements Component {

@@ -11,7 +11,8 @@ export function stripJsonComments(input: string): string {
 		match[0] === '"' ? match : "",
 	);
 
-	return withoutComments.replace(stringOrTrailingComma, (match, tail: string | undefined) =>
-		tail ?? (match[0] === '"' ? match : ""),
+	return withoutComments.replace(
+		stringOrTrailingComma,
+		(match, tail: string | undefined) => tail ?? (match[0] === '"' ? match : ""),
 	);
 }

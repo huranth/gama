@@ -56,10 +56,8 @@ export async function bundleFacetPackage(
 
 function validateFacetMapping(name: string, source: string, _kind: string): void {
 	if (name.length === 0) throw new Error("Empty entry name");
-	if (isReservedEntryName(name))
-		throw new Error(`Reserved entry: ${name}`);
-	if (source.length === 0)
-		throw new Error(`Missing source: ${name}`);
+	if (isReservedEntryName(name)) throw new Error(`Reserved entry: ${name}`);
+	if (source.length === 0) throw new Error(`Missing source: ${name}`);
 }
 
 function validateCanonicalPackageEntry(packageDirectory: string, path: string, name: string): void {
@@ -83,8 +81,7 @@ function parsePeerDependencies(value: unknown, packageJsonPath: string): readonl
 }
 
 function resolvePackageEntry(packageDirectory: string, source: string, name: string): string {
-	if (isAbsolute(source))
-		throw new Error(`Absolute entry: ${name}`);
+	if (isAbsolute(source)) throw new Error(`Absolute entry: ${name}`);
 	const path = resolve(packageDirectory, source);
 	const relativePath = relative(packageDirectory, path);
 	if (
@@ -108,8 +105,7 @@ async function resolveFacetEntries(
 		const path = resolvePackageEntry(metadata.packageDirectory, source, name);
 		try {
 			const entryStats = await stat(path);
-			if (!entryStats.isFile())
-				throw new Error(`Invalid entry: ${name}`);
+			if (!entryStats.isFile()) throw new Error(`Invalid entry: ${name}`);
 			const canonicalPath = await realpath(path);
 			validateCanonicalPackageEntry(metadata.packageDirectory, canonicalPath, name);
 			entries[name] = canonicalPath;
@@ -134,16 +130,13 @@ async function resolveFacetEntries(
 				cause: error,
 			});
 		}
-		if (!entryStats.isFile())
-			throw new Error(`Invalid entry: ${name}`);
+		if (!entryStats.isFile()) throw new Error(`Invalid entry: ${name}`);
 		const canonicalPath = await realpath(path);
 		validateCanonicalPackageEntry(metadata.packageDirectory, canonicalPath, name);
 		entries[name] = canonicalPath;
 	}
 	if (Object.keys(entries).length === 0) {
-		throw new Error(
-			`Missing entries: ${metadata.name}`,
-		);
+		throw new Error(`Missing entries: ${metadata.name}`);
 	}
 
 	return Object.freeze(entries);
@@ -176,8 +169,7 @@ async function readFacetPackageMetadata(packagePath: string): Promise<FacetPacka
 	} catch (error) {
 		throw new Error(`Unreadable metadata: ${packageJsonPath}`, { cause: error });
 	}
-	if (!isRecord(parsed))
-		throw new Error(`Invalid metadata: ${packageJsonPath}`);
+	if (!isRecord(parsed)) throw new Error(`Invalid metadata: ${packageJsonPath}`);
 
 	if (typeof parsed.name !== "string" || parsed.name.length === 0) {
 		throw new Error("Missing package name");
@@ -210,8 +202,7 @@ function parseChordConfiguration(
 } {
 	if (value === undefined)
 		return { facets: Object.freeze({}), external: Object.freeze([]), sourceMap: true };
-	if (!isRecord(value))
-		throw new Error(`Invalid config: ${packageJsonPath}`);
+	if (!isRecord(value)) throw new Error(`Invalid config: ${packageJsonPath}`);
 	if (
 		Object.keys(value).some(
 			(key) => key !== "facets" && key !== "external" && key !== "sourceMap",
@@ -243,9 +234,7 @@ function parseChordConfiguration(
 			!Array.isArray(value.external) ||
 			value.external.some((specifier) => typeof specifier !== "string" || specifier.length === 0)
 		) {
-			throw new Error(
-				`Invalid externals: ${packageJsonPath}`,
-			);
+			throw new Error(`Invalid externals: ${packageJsonPath}`);
 		}
 		external = Object.freeze([...new Set(value.external as readonly string[])].sort());
 	}

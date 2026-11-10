@@ -2,12 +2,12 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { EvalTask } from "../src/plan.ts";
 import {
 	classifyCaseStatus,
 	GAMA_SESSION_SNAPSHOT_ARTIFACT,
 	readTaskObservation,
 } from "../src/output.ts";
+import type { EvalTask } from "../src/plan.ts";
 
 const temporaryDirectories: string[] = [];
 afterEach(async () => {

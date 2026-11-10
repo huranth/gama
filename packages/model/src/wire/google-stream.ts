@@ -16,7 +16,7 @@ import type {
 	ToolCall,
 	TranscriptContext,
 } from "../types.ts";
-import { ReplyStream } from "../utils/event-stream.ts";
+import type { ReplyStream } from "../utils/event-stream.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText } from "../utils/text.ts";
 import { getCurrentTools, getInitialSystemMessage } from "../utils/transcript.ts";

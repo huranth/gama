@@ -41,10 +41,7 @@ function sameRgb(a: RgbColor | undefined, b: RgbColor | undefined): boolean {
 }
 
 function sameTerminalColors(a: TerminalColors, b: TerminalColors): boolean {
-	if (
-		!sameRgb(a.foreground, b.foreground) ||
-		!sameRgb(a.background, b.background)
-	) {
+	if (!sameRgb(a.foreground, b.foreground) || !sameRgb(a.background, b.background)) {
 		return false;
 	}
 

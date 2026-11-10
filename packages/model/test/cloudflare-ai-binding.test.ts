@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
+import type { Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import {
 	type AiBinding,
 	CLOUDFLARE_GATEWAY_BINDING_AUTH_SENTINEL,
 	createAiBindingFetch,
 } from "../src/wire/cloudflare-ai-binding.ts";
 import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
-import type { Model } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 const BINDING_PREFIX = "https://workers-binding.ai/ai-gateway/gateways/my-gateway";
 

@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
 import { fauxAssistantMessage } from "../src/catalog/faux.ts";
 import type { FetchFunction, Model } from "../src/types.ts";
 import { isRetryableAssistantError } from "../src/utils/retry.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
 
 const model: Model<"anthropic-messages"> = {
 	id: "test-model",

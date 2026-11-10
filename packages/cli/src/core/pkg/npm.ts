@@ -6,12 +6,7 @@ import { markPathIgnoredByCloudSync } from "../../utils/paths.ts";
 import { stripBom } from "../../utils/text.ts";
 import { isOfflineModeEnabled, NETWORK_TIMEOUT_MS } from "../resource-scan.ts";
 import { ensureGitIgnore, getManagedNpmPath, getNpmRoot } from "./dirs.ts";
-import type {
-	InstalledSourceScope,
-	NpmSource,
-	PackageContext,
-	SourceScope,
-} from "./types.ts";
+import type { InstalledSourceScope, NpmSource, PackageContext, SourceScope } from "./types.ts";
 
 export function getNpmCommand(ctx: PackageContext): { command: string; args: string[] } {
 	const configuredCommand = ctx.settings.getNpmCommand();
@@ -225,14 +220,9 @@ export function getPnpmGlobalPackagePath(
 	return undefined;
 }
 
-export function getLegacyGlobalNpmPath(
-	ctx: PackageContext,
-	source: NpmSource,
-): string | undefined {
+export function getLegacyGlobalNpmPath(ctx: PackageContext, source: NpmSource): string | undefined {
 	try {
-		return (
-			getPnpmGlobalPackagePath(ctx, source.name) ?? join(getGlobalNpmRoot(ctx), source.name)
-		);
+		return getPnpmGlobalPackagePath(ctx, source.name) ?? join(getGlobalNpmRoot(ctx), source.name);
 	} catch {
 		return undefined;
 	}

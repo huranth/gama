@@ -5,6 +5,7 @@ import {
 	UPDATE_CHECK_CONCURRENCY,
 } from "../resource-scan.ts";
 import type { PackageSource } from "../settings.ts";
+import { assertTrusted, getGitInstallPath, resolveUserPath } from "./dirs.ts";
 import { gitHasAvailableUpdate, installGit, removeGit, updateGit } from "./git.ts";
 import {
 	getNpmPath,
@@ -14,7 +15,6 @@ import {
 	shouldUpdateNpmSource,
 	uninstallNpm,
 } from "./npm.ts";
-import { assertTrusted, getGitInstallPath, resolveUserPath } from "./dirs.ts";
 import {
 	addSourceToSettings,
 	buildNoMatchingPackageMessage,

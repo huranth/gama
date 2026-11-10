@@ -116,9 +116,7 @@ describe("BashExecutionComponent width handling (#2569)", () => {
 			expect(text).toContain("failed output");
 			expect(text).toContain("Command failed");
 			expect(text).not.toContain("Command failed with exit");
-			expect(text.replace(/\s+/g, "")).toContain(
-				"Outputtruncated:/tmp/full-output.log",
-			);
+			expect(text.replace(/\s+/g, "")).toContain("Outputtruncated:/tmp/full-output.log");
 			for (const line of lines) {
 				expect(visibleWidth(line)).toBeLessThanOrEqual(24);
 			}

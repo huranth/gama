@@ -1,16 +1,16 @@
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type { ToolResultMessage } from "@huranth/gama-ai";
-import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
 } from "@huranth/gama-ai/catalog/faux";
-import { NodeExecutionEnv } from "../../src/system/node.ts";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import { openNodeJsonlStorage } from "../../src/backends/jsonl/node.ts";
 import {
 	AssistantEntry,
 	createRegistry,
@@ -20,8 +20,8 @@ import {
 	ToolResultEntry,
 	ToolTask,
 } from "../../src/index.ts";
-import { openNodeJsonlStorage } from "../../src/backends/jsonl/node.ts";
 import { type BashToolInput, CodingTools } from "../../src/ops/index.ts";
+import { NodeExecutionEnv } from "../../src/system/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 const directory = await mkdtemp(join(tmpdir(), "gama-durable-example-"));

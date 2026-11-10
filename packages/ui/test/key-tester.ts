@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import { matchesKey } from "../src/keys.ts";
-import { ProcessTerminal } from "../src/terminal.ts";
-import type { Component, TUI } from "../src/screen.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { ProcessTerminal } from "../src/terminal.ts";
 import { truncateToWidth } from "../src/utils.ts";
 
 class KeyLogger implements Component {

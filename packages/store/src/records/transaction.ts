@@ -11,8 +11,8 @@ import {
 	type ResolvedAddress,
 	resolveAddress,
 } from "../docs.ts";
-import { ReadAfterWrite } from "../errors.ts";
 import { SCAN_PAGE_SIZE } from "../engine/util.ts";
+import { ReadAfterWrite } from "../errors.ts";
 import type {
 	ConversationDocFamilyToken,
 	ConversationDocToken,
@@ -350,8 +350,7 @@ export class Transaction implements Tx {
 		if (ownerTaskId !== undefined) {
 			const task = await this.#currentTask(ownerTaskId);
 			this.#assertOpen();
-			if (task === undefined)
-				throw new Error(`Unknown owner: ${ownerTaskId}`);
+			if (task === undefined) throw new Error(`Unknown owner: ${ownerTaskId}`);
 			owner = { conversationId: task.conversationId, taskId: ownerTaskId };
 		}
 		const record: ConversationRecord = {
@@ -440,17 +439,14 @@ export class Transaction implements Tx {
 			if (ownership.kind === "task") {
 				owner = await this.#currentTask(ownership.taskId);
 				this.#assertOpen();
-				if (owner === undefined)
-					throw new Error(`Unknown owner: ${ownership.taskId}`);
+				if (owner === undefined) throw new Error(`Unknown owner: ${ownership.taskId}`);
 				if (options.background === true)
 					throw new TypeError("A child task cannot be background");
 				if (
 					options.conversationId !== undefined &&
 					options.conversationId !== owner.conversationId
 				) {
-					throw new Error(
-						`Child conversation: ${owner.conversationId}`,
-					);
+					throw new Error(`Child conversation: ${owner.conversationId}`);
 				}
 			}
 			const conversationId =
@@ -711,9 +707,7 @@ export class Transaction implements Tx {
 			stored.record.history !== target.record.history ||
 			stored.record.fork !== target.record.fork
 		) {
-			throw new Error(
-				`Source mismatch: ${target.source.id}`,
-			);
+			throw new Error(`Source mismatch: ${target.source.id}`);
 		}
 		const value = materializeDocumentValue(
 			definition,
@@ -842,8 +836,7 @@ export class Transaction implements Tx {
 			if (task.write?.kind !== "replace") continue;
 			const committed = await this.#committedTask(id);
 			if (committed === undefined) throw new Error(`Unknown task: ${id}`);
-			if (committed.state.status === "terminal")
-				throw new Error(`Task closed: ${id}`);
+			if (committed.state.status === "terminal") throw new Error(`Task closed: ${id}`);
 			if (committed.conversationId !== task.write.record.conversationId) {
 				throw new Error(`Fixed conversation: ${id}`);
 			}
@@ -964,9 +957,7 @@ export class Transaction implements Tx {
 			if (plan.content === undefined && !plan.retire) continue;
 			const record = plan.record;
 			if (this.#forkSourceDocumentIds.has(record.id)) {
-				throw new Error(
-					`Fixed source: ${record.id}`,
-				);
+				throw new Error(`Fixed source: ${record.id}`);
 			}
 			const scope = plan.record.scope;
 			if (
@@ -975,9 +966,7 @@ export class Transaction implements Tx {
 				record.scope.kind === "conversation" &&
 				record.fork === "current"
 			) {
-				throw new Error(
-					`Fork conflict: ${scope.conversationId}`,
-				);
+				throw new Error(`Fork conflict: ${scope.conversationId}`);
 			}
 		}
 	}

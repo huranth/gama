@@ -1,10 +1,10 @@
 import type { GenerateContentParameters } from "@google/genai";
 import { describe, expect, it } from "vitest";
+import type { Model, ThinkingBudgets, ThinkingLevel, ThinkingLevelMap } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import { streamSimple as streamSimpleGoogle } from "../src/wire/google-generative-ai.ts";
 import { resolveGoogleThinkingLevel } from "../src/wire/google-shared.ts";
 import { streamSimple as streamSimpleVertex } from "../src/wire/google-vertex.ts";
-import type { Model, ThinkingBudgets, ThinkingLevel, ThinkingLevelMap } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 const context = normalizeContext({
 	messages: [{ role: "user", content: "Hello", timestamp: 0 }],

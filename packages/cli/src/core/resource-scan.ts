@@ -14,8 +14,8 @@ import ignore from "ignore";
 import { minimatch } from "minimatch";
 import { valid, validRange } from "semver";
 import { toPosixPath } from "../utils/paths.ts";
-import type { PathMetadata } from "./pkg/types.ts";
 import { readGamaManifest } from "./gama-manifest.ts";
+import type { PathMetadata } from "./pkg/types.ts";
 
 export { toPosixPath };
 

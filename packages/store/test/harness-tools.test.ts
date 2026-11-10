@@ -1,7 +1,6 @@
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { JsonValue } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -12,6 +11,7 @@ import {
 	type ToolResultMessage,
 	Type,
 } from "@huranth/gama-ai";
+import type { JsonValue } from "@huranth/gama-bus";
 import {
 	AgentDoc,
 	type Conversation,
@@ -32,8 +32,8 @@ import {
 	ToolTask,
 } from "@huranth/gama-durable";
 import { describe, expect, it } from "vitest";
-import { NodeExecutionEnv } from "../src/system/node.ts";
 import { createBashTool, createEditTool, createReadTool } from "../src/ops/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, textOf } from "./chat-support.ts";
 import { addHooks, addTask, addTool, type Installed } from "./harness-support.ts";
 import { context } from "./session-support.ts";

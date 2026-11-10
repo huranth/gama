@@ -3,13 +3,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { PluginHost } from "../src/core/ext/runner.ts";
+import { createSyntheticSourceInfo } from "../src/core/origin.ts";
 import { DefaultResourceLoader, loadProjectContextFiles } from "../src/core/resource-loader.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 import type { Skill } from "../src/core/skills.ts";
-import { createSyntheticSourceInfo } from "../src/core/origin.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 import { createModelRegistry } from "./model-run-test-utils.ts";
 import { DIRECTORY_LINK_TYPE } from "./symlink-support.ts";
@@ -80,8 +80,8 @@ describe("DefaultResourceLoader", () => {
 					path: join(packageRoot, "package.json"),
 					warning:
 						'Host-provided extension packages must be declared in peerDependencies with a "*" range, no' +
-							't dependencies: @huranth/gama-harness. Installed copies can bypass the extension loader a' +
-							'nd create duplicate runtime modules.',
+						"t dependencies: @huranth/gama-harness. Installed copies can bypass the extension loader a" +
+						"nd create duplicate runtime modules.",
 				},
 			]);
 		});
@@ -446,24 +446,23 @@ Content`,
 		});
 
 		it("prefers AGENTS.override.md per directory", async () => {
-				const nestedCwd = join(cwd, "service");
-				mkdirSync(nestedCwd);
-				writeFileSync(join(agentDir, "AGENTS.md"), "global instructions");
-				writeFileSync(join(agentDir, "AGENTS.override.md"), "global override");
-				writeFileSync(join(cwd, "AGENTS.md"), "project instructions");
-				writeFileSync(join(nestedCwd, "AGENTS.md"), "service instructions");
-				writeFileSync(join(nestedCwd, "AGENTS.override.md"), "service override");
+			const nestedCwd = join(cwd, "service");
+			mkdirSync(nestedCwd);
+			writeFileSync(join(agentDir, "AGENTS.md"), "global instructions");
+			writeFileSync(join(agentDir, "AGENTS.override.md"), "global override");
+			writeFileSync(join(cwd, "AGENTS.md"), "project instructions");
+			writeFileSync(join(nestedCwd, "AGENTS.md"), "service instructions");
+			writeFileSync(join(nestedCwd, "AGENTS.override.md"), "service override");
 
-				const loader = new DefaultResourceLoader({ cwd: nestedCwd, agentDir });
-				await loader.reload();
+			const loader = new DefaultResourceLoader({ cwd: nestedCwd, agentDir });
+			await loader.reload();
 
-				expect(loader.getAgentsFiles().agentsFiles).toEqual([
-					{ path: join(agentDir, "AGENTS.override.md"), content: "global override" },
-					{ path: join(cwd, "AGENTS.md"), content: "project instructions" },
-					{ path: join(nestedCwd, "AGENTS.override.md"), content: "service override" },
-				]);
-			},
-		);
+			expect(loader.getAgentsFiles().agentsFiles).toEqual([
+				{ path: join(agentDir, "AGENTS.override.md"), content: "global override" },
+				{ path: join(cwd, "AGENTS.md"), content: "project instructions" },
+				{ path: join(nestedCwd, "AGENTS.override.md"), content: "service override" },
+			]);
+		});
 
 		it("ignores context paths that are directories", async () => {
 			mkdirSync(join(cwd, "AGENTS.override.md"));
@@ -1016,13 +1015,13 @@ export default function(gama: ExtensionAPI) {
 		});
 
 		it("prefers explicit CLI extensions on conflicts", async () => {
-				const globalExtDir = join(agentDir, "extensions");
-				mkdirSync(globalExtDir, { recursive: true });
-				const explicitExtPath = join(tempDir, "explicit-extension.ts");
+			const globalExtDir = join(agentDir, "extensions");
+			mkdirSync(globalExtDir, { recursive: true });
+			const explicitExtPath = join(tempDir, "explicit-extension.ts");
 
-				writeFileSync(
-					join(globalExtDir, "global.ts"),
-					`
+			writeFileSync(
+				join(globalExtDir, "global.ts"),
+				`
 import type { ExtensionAPI } from "@huranth/gama-harness";
 import { Type } from "typebox";
 export default function(gama: ExtensionAPI) {
@@ -1037,11 +1036,11 @@ export default function(gama: ExtensionAPI) {
     handler: async () => {},
   });
 }`,
-				);
+			);
 
-				writeFileSync(
-					explicitExtPath,
-					`
+			writeFileSync(
+				explicitExtPath,
+				`
 import type { ExtensionAPI } from "@huranth/gama-harness";
 import { Type } from "typebox";
 export default function(gama: ExtensionAPI) {
@@ -1056,34 +1055,33 @@ export default function(gama: ExtensionAPI) {
     handler: async () => {},
   });
 }`,
-				);
+			);
 
-				const loader = new DefaultResourceLoader({
-					cwd,
-					agentDir,
-					additionalExtensionPaths: [explicitExtPath],
-				});
-				await loader.reload();
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				additionalExtensionPaths: [explicitExtPath],
+			});
+			await loader.reload();
 
-				const extensionsResult = loader.getExtensions();
-				expect(extensionsResult.extensions[0]?.path).toBe(explicitExtPath);
+			const extensionsResult = loader.getExtensions();
+			expect(extensionsResult.extensions[0]?.path).toBe(explicitExtPath);
 
-				const sessionManager = SessionStore.inMemory();
-				const authStorage = AuthStorage.create(join(tempDir, "auth-explicit.json"));
-				const modelRegistry = await createModelRegistry(authStorage);
-				const runner = new PluginHost(
-					extensionsResult.extensions,
-					extensionsResult.runtime,
-					cwd,
-					sessionManager,
-					modelRegistry,
-				);
+			const sessionManager = SessionStore.inMemory();
+			const authStorage = AuthStorage.create(join(tempDir, "auth-explicit.json"));
+			const modelRegistry = await createModelRegistry(authStorage);
+			const runner = new PluginHost(
+				extensionsResult.extensions,
+				extensionsResult.runtime,
+				cwd,
+				sessionManager,
+				modelRegistry,
+			);
 
-				expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");
-				expect(runner.getCommand("deploy:2")?.description).toBe("global command");
-				expect(runner.getToolDefinition("duplicate-tool")?.description).toBe("explicit tool");
-			},
-		);
+			expect(runner.getCommand("deploy:1")?.description).toBe("explicit command");
+			expect(runner.getCommand("deploy:2")?.description).toBe("global command");
+			expect(runner.getToolDefinition("duplicate-tool")?.description).toBe("explicit tool");
+		});
 
 		it("leaves out replaced extensions", async () => {
 			const globalExtDir = join(agentDir, "extensions");
@@ -1169,55 +1167,53 @@ export default function(gama: ExtensionAPI) {
 		});
 
 		it("loads built-ins after file extensions", async () => {
-				const userExtDir = join(agentDir, "extensions");
-				mkdirSync(userExtDir, { recursive: true });
-				writeFileSync(join(userExtDir, "user.ts"), "export default function() {}");
-				mkdirSync(join(cwd, ".gama"), { recursive: true });
-				writeFileSync(
-					join(cwd, ".gama", "settings.json"),
-					JSON.stringify({ extensions: ["+builtin:mcp"] }),
-				);
-				const loader = new DefaultResourceLoader({
-					cwd,
-					agentDir,
-					extensionFactories: [{ name: "mcp", builtin: true, factory: () => {} }],
-				});
-				const expected = [join(userExtDir, "user.ts"), "builtin:mcp"];
+			const userExtDir = join(agentDir, "extensions");
+			mkdirSync(userExtDir, { recursive: true });
+			writeFileSync(join(userExtDir, "user.ts"), "export default function() {}");
+			mkdirSync(join(cwd, ".gama"), { recursive: true });
+			writeFileSync(
+				join(cwd, ".gama", "settings.json"),
+				JSON.stringify({ extensions: ["+builtin:mcp"] }),
+			);
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				extensionFactories: [{ name: "mcp", builtin: true, factory: () => {} }],
+			});
+			const expected = [join(userExtDir, "user.ts"), "builtin:mcp"];
 
-				await loader.reload({ resolveProjectTrust: async () => true });
-				expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual(
-					expected,
-				);
-				await loader.reload();
-				expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual(
-					expected,
-				);
-			},
-		);
+			await loader.reload({ resolveProjectTrust: async () => true });
+			expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual(
+				expected,
+			);
+			await loader.reload();
+			expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual(
+				expected,
+			);
+		});
 
 		it("loads built-ins with noExtensions", async () => {
-				const loaded: string[] = [];
-				const loader = new DefaultResourceLoader({
-					cwd,
-					agentDir,
-					noExtensions: true,
-					additionalExtensionPaths: ["builtin:mcp", "builtin:missing"],
-					extensionFactories: [
-						{ name: "mcp", builtin: true, factory: () => void loaded.push("mcp") },
-						{ name: "llama", builtin: true, factory: () => void loaded.push("llama") },
-					],
-				});
-				await loader.reload();
+			const loaded: string[] = [];
+			const loader = new DefaultResourceLoader({
+				cwd,
+				agentDir,
+				noExtensions: true,
+				additionalExtensionPaths: ["builtin:mcp", "builtin:missing"],
+				extensionFactories: [
+					{ name: "mcp", builtin: true, factory: () => void loaded.push("mcp") },
+					{ name: "llama", builtin: true, factory: () => void loaded.push("llama") },
+				],
+			});
+			await loader.reload();
 
-				expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual([
-					"builtin:mcp",
-				]);
-				expect(loader.getExtensions().errors).toEqual([
-					{ path: "builtin:missing", error: "Unknown built-in extension: builtin:missing" },
-				]);
-				expect(loaded).toEqual(["mcp"]);
-			},
-		);
+			expect(loader.getExtensions().extensions.map((extension) => extension.path)).toEqual([
+				"builtin:mcp",
+			]);
+			expect(loader.getExtensions().errors).toEqual([
+				{ path: "builtin:missing", error: "Unknown built-in extension: builtin:missing" },
+			]);
+			expect(loaded).toEqual(["mcp"]);
+		});
 
 		it("applies project built-in overrides after trust", async () => {
 			writeFileSync(

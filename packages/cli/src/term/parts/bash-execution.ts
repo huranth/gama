@@ -176,9 +176,7 @@ export class BashExecutionComponent extends Container {
 
 			const wasTruncated = this.truncationResult?.truncated || contextTruncation.truncated;
 			if (wasTruncated && this.fullOutputPath) {
-				statusParts.push(
-					theme.fg("warning", `Output truncated: ${this.fullOutputPath}`),
-				);
+				statusParts.push(theme.fg("warning", `Output truncated: ${this.fullOutputPath}`));
 			}
 
 			if (statusParts.length > 0) {

@@ -3,6 +3,7 @@ import { dirname, join, relative } from "node:path";
 import { CONFIG_DIR_NAME } from "../../config.ts";
 import { parseGitUrl } from "../../utils/git.ts";
 import { isLocalPath } from "../../utils/paths.ts";
+import { BUILTIN_PATH_PREFIX } from "../origin.ts";
 import {
 	applyAutoloadDisabledPatterns,
 	getNpmVersionRange,
@@ -13,19 +14,9 @@ import {
 	RESOURCE_TYPES,
 } from "../resource-scan.ts";
 import type { PackageSource } from "../settings.ts";
-import { BUILTIN_PATH_PREFIX } from "../origin.ts";
-import {
-	addAutoDiscoveredResources,
-	addResource,
-	collectPackageResources,
-	createAccumulator,
-	getTargetMap,
-	resolveLocalEntries,
-	toResolvedPaths,
-} from "./walk.ts";
-import { installGit, refreshTemporaryGitSource } from "./git.ts";
-import { getNpmPath, installNpm, installedNpmMatchesRange } from "./npm.ts";
 import { baseDirForScope, getGitInstallPath, resolveFromBase, resolveUserPath } from "./dirs.ts";
+import { installGit, refreshTemporaryGitSource } from "./git.ts";
+import { getNpmPath, installedNpmMatchesRange, installNpm } from "./npm.ts";
 import type {
 	ConfiguredPackage,
 	LocalSource,
@@ -38,6 +29,15 @@ import type {
 	ResourceAccumulator,
 	SourceScope,
 } from "./types.ts";
+import {
+	addAutoDiscoveredResources,
+	addResource,
+	collectPackageResources,
+	createAccumulator,
+	getTargetMap,
+	resolveLocalEntries,
+	toResolvedPaths,
+} from "./walk.ts";
 
 export function parseNpmSpec(spec: string): { name: string; version?: string } {
 	const match = spec.match(/^(@?[^@]+(?:\/[^@]+)?)(?:@(.+))?$/);
@@ -160,7 +160,8 @@ export function dedupePackages(
 		}
 		const existing = result[index];
 		if (existing?.scope === "project" && entry.scope === "user") {
-			if (typeof existing.pkg === "object" && existing.pkg.autoload === false) result.push(entry);
+			if (typeof existing.pkg === "object" && existing.pkg.autoload === false)
+				result.push(entry);
 		} else if (entry.scope === "project") {
 			result[index] = entry;
 		}
@@ -188,7 +189,9 @@ export function addSourceToSettings(
 		}
 		const nextPackages = [...currentPackages];
 		nextPackages[matchIndex] =
-			typeof existing === "string" ? normalizedSource : { ...existing, source: normalizedSource };
+			typeof existing === "string"
+				? normalizedSource
+				: { ...existing, source: normalizedSource };
 		if (scope === "project") {
 			ctx.settings.setProjectPackages(nextPackages);
 		} else {
@@ -395,7 +398,8 @@ export async function resolvePaths(
 				scope: projectEnabled === undefined ? "user" : "project",
 				origin: "top-level",
 			},
-			projectEnabled ?? isEnabledByOverrides(path, globalSettings.extensions ?? [], globalBaseDir),
+			projectEnabled ??
+				isEnabledByOverrides(path, globalSettings.extensions ?? [], globalBaseDir),
 		);
 	}
 
@@ -465,8 +469,7 @@ export async function resolvePackageSources(
 		if (parsed.type === "npm") {
 			let installedPath = getNpmPath(ctx, parsed, resolvedScope);
 			const needsInstall =
-				!existsSync(installedPath) ||
-				!(await installedNpmMatchesRange(parsed, installedPath));
+				!existsSync(installedPath) || !(await installedNpmMatchesRange(parsed, installedPath));
 			if (needsInstall) {
 				const installed = await installMissing();
 				if (!installed) continue;
@@ -555,4 +558,3 @@ async function installParsedSource(
 		return;
 	}
 }
-

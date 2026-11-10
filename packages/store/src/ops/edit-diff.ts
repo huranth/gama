@@ -175,9 +175,7 @@ export function applyReplacementsPreservingUnchangedLines(
 	const originalLines = splitLinesWithEndings(originalContent);
 	const baseLines = getLineSpans(baseContent);
 	if (originalLines.length !== baseLines.length) {
-		throw new Error(
-			"Line count differs",
-		);
+		throw new Error("Line count differs");
 	}
 
 	const groups: ChangeGroup[] = [];

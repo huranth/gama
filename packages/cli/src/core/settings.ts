@@ -242,13 +242,7 @@ const DEFAULT_CODE_BLOCK_INDENT = "  ";
 
 const DEFAULT_EDITORS = { windows: "notepad", unix: "nano" } as const;
 
-export const DEFAULT_TOOL_NAMES: readonly string[] = [
-	"read",
-	"bash",
-	"edit",
-	"write",
-	"fetch",
-];
+export const DEFAULT_TOOL_NAMES: readonly string[] = ["read", "bash", "edit", "write", "fetch"];
 
 function clamp(value: number, min: number, max: number): number {
 	return Math.max(min, Math.min(max, Math.floor(value)));

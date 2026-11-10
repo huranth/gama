@@ -474,9 +474,7 @@ describe("ActivityLineComponent", () => {
 				args: { action: "start", hands: [{ kind: "scout", input: {} }] },
 				status: "error",
 				result: {
-					content: [
-						{ type: "text", text: "Reason: bad role\nNext: Use a valid role." },
-					],
+					content: [{ type: "text", text: "Reason: bad role\nNext: Use a valid role." }],
 				},
 			}),
 			cwd: () => process.cwd(),

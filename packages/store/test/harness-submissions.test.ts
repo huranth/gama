@@ -12,8 +12,8 @@ import {
 	UserEntry,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import type { SessionImpl } from "../src/records/session.ts";
 import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
+import type { SessionImpl } from "../src/records/session.ts";
 import { allEntries, chatSetup, openChat, unanswered } from "./chat-support.ts";
 import { createTempDirs } from "./helpers.ts";
 import { ControlledStorage, context } from "./session-support.ts";

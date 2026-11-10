@@ -1,7 +1,7 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type { AssistantMessage, Message, TranscriptContext } from "@huranth/gama-ai";
-import { createModels } from "@huranth/gama-ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@huranth/gama-ai/catalog/faux";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	CompactionEntry,
 	type Conversation,

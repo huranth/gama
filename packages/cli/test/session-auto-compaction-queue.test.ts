@@ -2,17 +2,13 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Runner } from "@huranth/gama-agent-core";
-import {
-	type AssistantMessage,
-	createReplyStream,
-	fauxAssistantMessage,
-} from "@huranth/gama-ai";
+import { type AssistantMessage, createReplyStream, fauxAssistantMessage } from "@huranth/gama-ai";
 import { streamSimple } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	createModelRegistry,
 	getModelRuntime,
@@ -66,87 +62,84 @@ describe("RunSession auto-compaction queue resume", () => {
 		}
 	});
 
-	it(
-		"resumes after threshold compaction when only agent-level queued messages exist",
-		async () => {
-			settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
-			const model = session.model!;
-			const now = Date.now();
-			sessionManager.appendMessage({
-				role: "user",
-				content: [{ type: "text", text: "message to compact" }],
-				timestamp: now - 1000,
-			});
-			sessionManager.appendMessage({
-				role: "assistant",
-				content: [{ type: "text", text: "assistant response to compact" }],
-				api: model.api,
-				provider: model.provider,
-				model: model.id,
-				usage: {
-					input: 100,
-					output: 0,
-					cacheRead: 0,
-					cacheWrite: 0,
-					totalTokens: 100,
-					cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-				},
-				stopReason: "stop",
-				timestamp: now - 500,
-			});
-			session.agent.state.messages = sessionManager.buildSessionContext().messages;
-			session.agent.streamFunction = (summaryModel) => {
-				const stream = createReplyStream();
-				void Promise.resolve().then(() => {
-					stream.push({
-						type: "done",
-						reason: "stop",
-						message: {
-							...fauxAssistantMessage("compacted"),
-							api: summaryModel.api,
-							provider: summaryModel.provider,
-							model: summaryModel.id,
-							usage: {
-								input: 10,
-								output: 0,
-								cacheRead: 0,
-								cacheWrite: 0,
-								totalTokens: 10,
-								cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-							},
+	it("resumes after threshold compaction when only agent-level queued messages exist", async () => {
+		settingsManager.applyOverrides({ compaction: { keepRecentTokens: 1 } });
+		const model = session.model!;
+		const now = Date.now();
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "message to compact" }],
+			timestamp: now - 1000,
+		});
+		sessionManager.appendMessage({
+			role: "assistant",
+			content: [{ type: "text", text: "assistant response to compact" }],
+			api: model.api,
+			provider: model.provider,
+			model: model.id,
+			usage: {
+				input: 100,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 100,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: now - 500,
+		});
+		session.agent.state.messages = sessionManager.buildSessionContext().messages;
+		session.agent.streamFunction = (summaryModel) => {
+			const stream = createReplyStream();
+			void Promise.resolve().then(() => {
+				stream.push({
+					type: "done",
+					reason: "stop",
+					message: {
+						...fauxAssistantMessage("compacted"),
+						api: summaryModel.api,
+						provider: summaryModel.provider,
+						model: summaryModel.id,
+						usage: {
+							input: 10,
+							output: 0,
+							cacheRead: 0,
+							cacheWrite: 0,
+							totalTokens: 10,
+							cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 						},
-					});
+					},
 				});
-				return stream;
-			};
-
-			session.agent.followUp({
-				role: "custom",
-				customType: "test",
-				content: [{ type: "text", text: "Queued custom" }],
-				display: false,
-				timestamp: Date.now(),
 			});
+			return stream;
+		};
 
-			expect(session.pendingMessageCount).toBe(0);
-			expect(session.agent.hasQueuedMessages()).toBe(true);
+		session.agent.followUp({
+			role: "custom",
+			customType: "test",
+			content: [{ type: "text", text: "Queued custom" }],
+			display: false,
+			timestamp: Date.now(),
+		});
 
-			const continueSpy = vi.spyOn(session.agent, "continue").mockResolvedValue();
+		expect(session.pendingMessageCount).toBe(0);
+		expect(session.agent.hasQueuedMessages()).toBe(true);
 
-			const runAutoCompaction = (
-				session as unknown as {
-					_runAutoCompaction: (
-						reason: "overflow" | "threshold",
-						willRetry: boolean,
-					) => Promise<boolean>;
-				}
-			)._runAutoCompaction.bind(session);
+		const continueSpy = vi.spyOn(session.agent, "continue").mockResolvedValue();
 
-			await expect(runAutoCompaction("threshold", false)).resolves.toBe(true);
+		const runAutoCompaction = (
+			session as unknown as {
+				_runAutoCompaction: (
+					reason: "overflow" | "threshold",
+					willRetry: boolean,
+				) => Promise<boolean>;
+			}
+		)._runAutoCompaction.bind(session);
 
-			expect(continueSpy).not.toHaveBeenCalled();
-		},
-	);
+		await expect(runAutoCompaction("threshold", false)).resolves.toBe(true);
+
+		expect(continueSpy).not.toHaveBeenCalled();
+	});
 
 	it("not compact repeatedly after overflow recovery already attempted", async () => {
 		const model = session.model!;

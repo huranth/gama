@@ -1,6 +1,6 @@
 import * as bundledGamaAgentCore from "@huranth/gama-agent-core";
-import * as bundledGamaAiCompat from "@huranth/gama-ai/compat";
 import * as bundledGamaAiProviders from "@huranth/gama-ai/catalog/all";
+import * as bundledGamaAiCompat from "@huranth/gama-ai/compat";
 import * as bundledGamaTui from "@huranth/gama-tui";
 import * as bundledTypebox from "typebox";
 import * as bundledTypeboxCompile from "typebox/compile";

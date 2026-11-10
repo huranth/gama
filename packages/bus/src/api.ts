@@ -1,7 +1,7 @@
-import { FacetKernel } from "./plugins/host.ts";
-import { disposeLoadedFacets } from "./plugins/loader.ts";
 import { RemoteServiceBindingImpl } from "./peers/consumer.ts";
 import { attachReplicatedStateSource, MutableReplicatedStateImpl } from "./peers/state.ts";
+import { FacetKernel } from "./plugins/host.ts";
+import { disposeLoadedFacets } from "./plugins/loader.ts";
 import type {
 	AttachedReplicatedState,
 	Facet,

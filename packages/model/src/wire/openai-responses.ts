@@ -20,7 +20,6 @@ import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
 import { isRecord } from "../utils/record.ts";
-import { matchesHost } from "./openai-compat.ts";
 import {
 	getDeclaredTools,
 	resolveTranscript,
@@ -28,6 +27,7 @@ import {
 } from "../utils/transcript.ts";
 import { createGrammarToolInputProperties } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
+import { matchesHost } from "./openai-compat.ts";
 import {
 	clampOpenAIPromptCacheKey,
 	supportsExplicitOpenAIPromptCache,

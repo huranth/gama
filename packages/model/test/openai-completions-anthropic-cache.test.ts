@@ -183,9 +183,7 @@ describe("openai-completions anthropic cache control", () => {
 	});
 
 	describe("tool loop closers", () => {
-		it(
-			"ends an in-flight tool-loop request with a marked closer and leaves tool messages unmarked",
-			async () => {
+		it("ends an in-flight tool-loop request with a marked closer and leaves tool messages unmarked", async () => {
 			const sent = await captureSentMessages({
 				systemPrompt: "you are a test",
 				messages: [

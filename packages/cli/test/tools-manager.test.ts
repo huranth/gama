@@ -159,7 +159,10 @@ describe("ensureTool", () => {
 describe("download failures", () => {
 	it("cancels the response body when a download fails", async () => {
 		const response = new Response("missing", { status: 404 });
-		vi.stubGlobal("fetch", vi.fn(async () => response));
+		vi.stubGlobal(
+			"fetch",
+			vi.fn(async () => response),
+		);
 
 		await expect(
 			downloadFile("https://example.test/fd.zip", join(tmpdir(), `fd-${Date.now()}.zip`)),
@@ -172,7 +175,8 @@ describe("asset checksums", () => {
 	it("uses a valid sidecar digest without calling the release API", async () => {
 		const digest = "a".repeat(64);
 		const fetchMock = vi.fn(
-			async (_input: string | URL | Request) => new Response(`${digest}  fd.zip\n`, { status: 200 }),
+			async (_input: string | URL | Request) =>
+				new Response(`${digest}  fd.zip\n`, { status: 200 }),
 		);
 		vi.stubGlobal("fetch", fetchMock);
 
@@ -203,7 +207,8 @@ describe("asset checksums", () => {
 	it("ignores a malformed sidecar", async () => {
 		const digest = "c".repeat(64);
 		const fetchMock = vi.fn(async (input: string | URL | Request) => {
-			if (String(input).endsWith(".sha256")) return new Response("not-a-digest", { status: 200 });
+			if (String(input).endsWith(".sha256"))
+				return new Response("not-a-digest", { status: 200 });
 			return new Response(
 				JSON.stringify({ assets: [{ name: "fd.zip", digest: `sha256:${digest}` }] }),
 				{ status: 200 },

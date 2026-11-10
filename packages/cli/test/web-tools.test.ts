@@ -2,15 +2,15 @@ import { stripVTControlCharacters } from "node:util";
 import type { AgentToolResult } from "@huranth/gama-agent-core";
 import type { Component } from "@huranth/gama-tui";
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { ToolRenderContext } from "../src/core/ext/types.ts";
+import { createToolDefinitionFromAgentTool } from "../src/core/tools/tool-definition-wrapper.ts";
+import { webfetchRenderers } from "../src/core/tools/ui/web.ts";
+import { FETCH_KINDS, FetchError } from "../src/core/tools/web/read-url.ts";
 import {
 	createWebFetchTool,
 	createWebFetchToolDefinition,
 	webfetchToolSystemPromptContribution,
 } from "../src/core/tools/webfetch.ts";
-import { webfetchRenderers } from "../src/core/tools/ui/web.ts";
-import { FETCH_KINDS, FetchError } from "../src/core/tools/web/read-url.ts";
-import { createToolDefinitionFromAgentTool } from "../src/core/tools/tool-definition-wrapper.ts";
-import type { ToolRenderContext } from "../src/core/ext/types.ts";
 import { initTheme, theme } from "../src/term/theme/theme.ts";
 
 const fetchMod = vi.hoisted(() => ({ fetchPage: vi.fn() }));
@@ -121,12 +121,12 @@ describe("webfetch tool", () => {
 		await expect(
 			run(definition, { url: "https://example.com/docs", max_chars: 99_999 }),
 		).rejects.toThrow("Bad max_chars");
-		expect(definition.prepareArguments?.({
-			url: "x",
-			max_chars: Number.POSITIVE_INFINITY
-		})).not.toHaveProperty(
-			"max_chars",
-		);
+		expect(
+			definition.prepareArguments?.({
+				url: "x",
+				max_chars: Number.POSITIVE_INFINITY,
+			}),
+		).not.toHaveProperty("max_chars");
 		expect(definition.prepareArguments?.({ url: "x" })).not.toHaveProperty("max_chars");
 	});
 
@@ -154,16 +154,15 @@ describe("webfetch tool", () => {
 		const definition = createWebFetchToolDefinition("/tmp");
 		const out = await run(definition, { url: "https://example.com/docs" });
 
-		expect(firstText(out)).toBe(
-			"Docs\nhttps://example.com/docs\nA short guide\n\nhello world",
-		);
+		expect(firstText(out)).toBe("Docs\nhttps://example.com/docs\nA short guide\n\nhello world");
 		expect(out.details).toEqual({
 			url: "https://example.com/docs",
 			finalUrl: "https://example.com/docs",
 			title: "Docs",
 			truncated: false,
 			totalChars: 11,
-		});			expect(fetchMod.fetchPage).toHaveBeenCalledWith({
+		});
+		expect(fetchMod.fetchPage).toHaveBeenCalledWith({
 			url: "https://example.com/docs",
 			maxChars: 20_000,
 			fullText: true,
@@ -236,9 +235,7 @@ describe("webfetch tool", () => {
 
 	it("snaps a resumed offset to a word boundary", async () => {
 		const text = "alpha beta gamma delta";
-		fetchMod.fetchPage.mockResolvedValue(
-			page({ text, totalChars: text.length }),
-		);
+		fetchMod.fetchPage.mockResolvedValue(page({ text, totalChars: text.length }));
 		const definition = createWebFetchToolDefinition("/tmp");
 		const out = await run(definition, {
 			url: "https://example.com/snap",
@@ -265,9 +262,7 @@ describe("webfetch tool", () => {
 
 	it("keeps totalChars and nextOffset honest when capped", async () => {
 		const body = "x".repeat(3_000);
-		fetchMod.fetchPage.mockResolvedValue(
-			page({ text: body, totalChars: 3_000 }),
-		);
+		fetchMod.fetchPage.mockResolvedValue(page({ text: body, totalChars: 3_000 }));
 		const definition = createWebFetchToolDefinition("/tmp");
 		const out = await run(definition, {
 			url: "https://example.com/long",
@@ -282,9 +277,7 @@ describe("webfetch tool", () => {
 
 	it("fails clearly when the URL is empty", async () => {
 		const definition = createWebFetchToolDefinition("/tmp");
-		await expect(run(definition, { url: "   " })).rejects.toThrow(
-			"Bad URL",
-		);
+		await expect(run(definition, { url: "   " })).rejects.toThrow("Bad URL");
 		expect(fetchMod.fetchPage).not.toHaveBeenCalled();
 	});
 
@@ -304,9 +297,7 @@ describe("webfetch tool", () => {
 
 	it("retries a timeout once", async () => {
 		fetchMod.fetchPage
-			.mockRejectedValueOnce(
-				new FetchError(FETCH_KINDS.timeout, "Timed out after 30000 ms"),
-			)
+			.mockRejectedValueOnce(new FetchError(FETCH_KINDS.timeout, "Timed out after 30000 ms"))
 			.mockResolvedValueOnce(page({ totalChars: undefined }));
 
 		const definition = createWebFetchToolDefinition("/tmp");
@@ -339,9 +330,13 @@ describe("webfetch tool", () => {
 
 describe("fetch renderers", () => {
 	it("puts the URL in the call header even when args stream in late", () => {
-		const line = renderCall(webfetchRenderers.renderCall, {}, {
-			url: "https://www.postgresql.org/docs/current/indexes.html",
-		});
+		const line = renderCall(
+			webfetchRenderers.renderCall,
+			{},
+			{
+				url: "https://www.postgresql.org/docs/current/indexes.html",
+			},
+		);
 
 		expect(line).toContain("fetch");
 		expect(line).toContain("https://www.postgresql.org/docs/current/indexes.html");

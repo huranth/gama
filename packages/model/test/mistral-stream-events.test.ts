@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { stream } from "../src/wire/mistral-conversations.ts";
 import type { Context, Model, TranscriptContext } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream } from "../src/wire/mistral-conversations.ts";
 
 const model: Model<"mistral-conversations"> = {
 	id: "mistral-large-latest",

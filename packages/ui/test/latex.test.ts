@@ -264,15 +264,9 @@ c_n
 					`${" ".repeat(97)}⎩ 0    otherwise.`,
 			],
 			[String.raw`x=\frac{-b\pm\sqrt{b^2-4ac}}{2a}`, "x = (-b±√(b²-4ac))/(2a)"],
-			[
-				String.raw`\int_0^\infty e^{-x^2}\,dx=\frac{\sqrt{\pi}}{2}`,
-				"∫₀^∞ e^(-x²) dx = (√π)/2",
-			],
+			[String.raw`\int_0^\infty e^{-x^2}\,dx=\frac{\sqrt{\pi}}{2}`, "∫₀^∞ e^(-x²) dx = (√π)/2"],
 			[String.raw`e^{i\theta}=\cos\theta+i\sin\theta`, "e^(iθ) = cos θ+i sin θ"],
-			[
-				String.raw`\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}`,
-				"∑ₙ₌₁^∞1/(n²) = π²/6",
-			],
+			[String.raw`\sum_{n=1}^{\infty}\frac{1}{n^2}=\frac{\pi^2}{6}`, "∑ₙ₌₁^∞1/(n²) = π²/6"],
 			[String.raw`\lim_{x\to 0}\frac{\sin x}{x}=1`, "lim[x→0] (sin x)/x = 1"],
 			[
 				String.raw`\lim_{n\to\infty}
@@ -553,9 +547,7 @@ R\left(\frac{\pi}{4}\right)
 		const cases: Array<[string, string]> = [
 			[
 				String.raw`\frac{\frac{x^2+1}{x-1}-\frac{2x}{x+1}}{\frac{x}{x^2-1}}`,
-				"(x²+1)/(x-1)-2x/(x+1)\n" +
-					"─────────────────────\n" +
-					"      x/(x²-1)",
+				"(x²+1)/(x-1)-2x/(x+1)\n" + "─────────────────────\n" + "      x/(x²-1)",
 			],
 			[
 				String.raw`\lim_{x\to 0}\frac{\frac{\sin x}{x}-1}{\frac{e^x-1}{x}-1}=0`,

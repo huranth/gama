@@ -8,8 +8,8 @@ import {
 } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { agentLoop, agentLoopContinue, runAgentLoop, runToolCall } from "../src/run-loop.ts";
 import { setDefaultStreamFn } from "../src/index.ts";
+import { agentLoop, agentLoopContinue, runAgentLoop, runToolCall } from "../src/run-loop.ts";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -615,9 +615,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(executed).toEqual([[{ oldText: "before", newText: "after" }]]);
 	});
 
-	it(
-		"emits tool_execution_end in completion order but persists results in source order",
-		async () => {
+	it("emits tool_execution_end in completion order but persists results in source order", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let firstResolved = false;
 		let parallelObserved = false;
@@ -839,9 +837,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(sawInterruptInContext).toBe(true);
 	});
 
-	it(
-		"forces sequential execution for executionMode=sequential under default parallel config",
-		async () => {
+	it("forces sequential execution for executionMode=sequential under default parallel config", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		let firstResolved = false;
 		let parallelObserved = false;
@@ -931,9 +927,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(toolResultIds).toEqual(["tool-1", "tool-2"]);
 	});
 
-	it(
-		"forces sequential execution when one of multiple tools is executionMode=sequential",
-		async () => {
+	it("forces sequential execution when one of multiple tools is executionMode=sequential", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executionOrder: string[] = [];
 		let releaseSlow: (() => void) | undefined;
@@ -1227,9 +1221,7 @@ describe("agentLoop with AgentMessage", () => {
 					convertToLlm: identityConverter,
 					finishTurn: ({ toolResults }) => {
 						finishCalls++;
-						expect(toolResults).toMatchObject([
-							{ toolCallId: "call-open", isError: true },
-						]);
+						expect(toolResults).toMatchObject([{ toolCallId: "call-open", isError: true }]);
 					},
 				},
 				(event) => {
@@ -2394,9 +2386,7 @@ describe("runToolCall", () => {
 		expect(hookCalls).toEqual(["before a", "after a", "before c", "before e", "after e"]);
 	});
 
-	it(
-		"lets afterToolCall replace structured content and drop it when only content is replaced",
-		async () => {
+	it("lets afterToolCall replace structured content and drop it when only content is replaced", async () => {
 		const redacted = [{ type: "text" as const, text: "redacted" }];
 		const results = [
 			{ content: redacted },
@@ -2424,8 +2414,19 @@ describe("runToolCall", () => {
 });
 
 class ThrowingStream extends MockAssistantStream {
-	override async *[Symbol.asyncIterator](): AsyncIterator<AssistantMessageEvent> {
-		throw new Error("stream broke");
+	override [Symbol.asyncIterator](): AsyncIterator<AssistantMessageEvent> {
+		let threw = false;
+
+		return {
+			async next(): Promise<IteratorResult<AssistantMessageEvent>> {
+				if (!threw) {
+					threw = true;
+					throw new Error("stream broke");
+				}
+
+				return { done: true, value: undefined };
+			},
+		};
 	}
 }
 
@@ -2503,8 +2504,7 @@ describe("agent loop failures", () => {
 		for await (const event of stream) events.push(event);
 
 		const ends = events.filter(
-			(event): event is Extract<AgentEvent, { type: "agent_end" }> =>
-				event.type === "agent_end",
+			(event): event is Extract<AgentEvent, { type: "agent_end" }> => event.type === "agent_end",
 		);
 		expect(ends).toHaveLength(1);
 		expect(ends[0]?.messages).toHaveLength(2);

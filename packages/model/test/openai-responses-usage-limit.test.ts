@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
 import type { Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
 
 const usageLimitError = {
 	code: "subscription_sharing_usage_limit_exceeded",

@@ -1,7 +1,7 @@
 import { type Static, Type } from "typebox";
-import { getOrThrow } from "../system/index.ts";
 import { defineTool } from "../engine/define.ts";
 import type { ToolRegistration } from "../engine/types.ts";
+import { getOrThrow } from "../system/index.ts";
 import { requireEnv } from "./env.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToolPath } from "./path-utils.ts";

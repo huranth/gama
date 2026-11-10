@@ -1,6 +1,6 @@
 import { getAuthPath } from "../../config.ts";
-import { AuthStorage } from "../../core/vault.ts";
 import type { ExtensionAPI, ExtensionCommandContext } from "../../core/ext/types.ts";
+import { AuthStorage } from "../../core/vault.ts";
 import {
 	formatBytes,
 	LlamaClient,
@@ -199,8 +199,7 @@ export default function llamaExtension(gama: ExtensionAPI): void {
 		ui.showStatus("Loading details", parsed.repository);
 		const details = await huggingFace.details(parsed.repository);
 		if (details.gated) {
-			const approval =
-				details.gated === "manual" ? "Approval required" : "Accept terms";
+			const approval = details.gated === "manual" ? "Approval required" : "Accept terms";
 			const choice = await ui.select(
 				`Hugging Face access required\n${details.id}\n\n${approval} at:\n` +
 					`https://huggingface.co/${details.id}\n\n` +

@@ -1,4 +1,3 @@
-import type { Context, JsonValue } from "@huranth/gama-bus";
 import {
 	fauxAssistantMessage,
 	fauxText,
@@ -7,6 +6,7 @@ import {
 	type ToolResultMessage,
 	Type,
 } from "@huranth/gama-ai";
+import type { Context, JsonValue } from "@huranth/gama-bus";
 import {
 	type AgentEvent,
 	type Conversation,
@@ -35,8 +35,8 @@ import {
 import { afterEach, describe, expect, it } from "vitest";
 import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { allEntries, chatSetup, openChat, waitFor } from "./chat-support.ts";
-import { createTempDirs } from "./helpers.ts";
 import { addHooks, addTask, addTool } from "./harness-support.ts";
+import { createTempDirs } from "./helpers.ts";
 import { context } from "./session-support.ts";
 import { aborted, type Deferred, deferred, openTasks, settled } from "./task-support.ts";
 
@@ -481,12 +481,7 @@ describe("waiting", () => {
 		const { harness, root } = await openNodes();
 		const other = await start(root, "other");
 		const cases: [string, (runtime: NodeRuntime) => readonly TaskId[], JoinPolicy, string][] = [
-			[
-				"self",
-				(runtime) => [runtime.taskId],
-				"allSettled",
-				"Invalid wait",
-			],
+			["self", (runtime) => [runtime.taskId], "allSettled", "Invalid wait"],
 			["missing", () => [999_999 as TaskId], "allSettled", "Unknown task"],
 			["foreign", () => [other], "failFast", "Invalid failFast"],
 		];

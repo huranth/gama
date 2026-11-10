@@ -42,9 +42,7 @@ describe("SessionStore.newSession with custom id", () => {
 
 		for (const id of invalidIds) {
 			const session = SessionStore.inMemory();
-			expect(() => session.newSession({ id })).toThrow(
-				"Invalid session id",
-			);
+			expect(() => session.newSession({ id })).toThrow("Invalid session id");
 		}
 	});
 

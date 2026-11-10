@@ -6,9 +6,9 @@ import {
 	FACET_BUNDLE_FORMAT,
 	FACET_BUNDLE_FORMAT_VERSION,
 	FACET_BUNDLE_MANIFEST_FILE,
-	isReservedEntryName,
 	type FacetBundleEntry,
 	type FacetBundleManifest,
+	isReservedEntryName,
 } from "./manifest.ts";
 import { isMissingPath } from "./value.ts";
 
@@ -236,9 +236,7 @@ async function bundleEntry(input: {
 		.map((path) => resolve(input.workingDirectory, path))
 		.filter((path) => !allowedOutputs.has(path));
 	if (unexpectedOutputs.length > 0) {
-		throw new Error(
-			`Extra outputs: ${input.entryName}`,
-		);
+		throw new Error(`Extra outputs: ${input.entryName}`);
 	}
 	const contents = await readFile(absoluteOutputPath);
 	if (sourceMap !== undefined) {

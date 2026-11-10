@@ -1,10 +1,10 @@
-import type { Context } from "@huranth/gama-bus";
 import type { Message, SystemMessage, Tool, ToolReference } from "@huranth/gama-ai";
 import {
 	declarationsEqual,
 	getCurrentTools,
 	toToolDeclaration,
 } from "@huranth/gama-ai/utils/transcript";
+import type { Context } from "@huranth/gama-bus";
 import { SystemEntry } from "../messages.ts";
 import type { ContextEdit, TypedEntryDraft } from "../types.ts";
 import type { ContextView, PromptInput, PromptSection, ToolRegistration } from "./types.ts";

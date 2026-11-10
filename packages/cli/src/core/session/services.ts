@@ -4,6 +4,11 @@ import type { Model } from "@huranth/gama-ai";
 import { getAgentDir } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import type { SessionStartEvent, ToolDefinition } from "../ext/index.ts";
+import {
+	type CreateAgentSessionOptions,
+	type CreateAgentSessionResult,
+	createAgentSession,
+} from "../kit.ts";
 import { ModelHub } from "../model-run.ts";
 import {
 	DefaultResourceLoader,
@@ -11,11 +16,6 @@ import {
 	type ResourceLoader,
 	type ResourceLoaderReloadOptions,
 } from "../resource-loader.ts";
-import {
-	type CreateAgentSessionOptions,
-	type CreateAgentSessionResult,
-	createAgentSession,
-} from "../kit.ts";
 import type { SessionStore } from "../sessions.ts";
 import { SettingsStore } from "../settings.ts";
 

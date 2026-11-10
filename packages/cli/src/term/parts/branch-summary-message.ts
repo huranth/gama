@@ -1,11 +1,4 @@
-import {
-	Box,
-	Container,
-	Markdown,
-	type MarkdownTheme,
-	MouseRegion,
-	Text,
-} from "@huranth/gama-tui";
+import { Box, Container, Markdown, type MarkdownTheme, MouseRegion, Text } from "@huranth/gama-tui";
 import type { BranchSummaryMessage } from "../../core/msg.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 

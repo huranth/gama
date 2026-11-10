@@ -1,14 +1,14 @@
 import type { AgentMessage, ThinkingLevel } from "@huranth/gama-agent-core";
 import type { ImageContent, Model } from "@huranth/gama-ai";
+import type { BashResult } from "../core/bash-executor.ts";
+import type { CompactionResult } from "../core/comp/index.ts";
+import type { SourceInfo } from "../core/origin.ts";
 import type {
 	PromptDisposition,
 	QueuedInputDisposition,
 	SessionStats,
 } from "../core/session/session.ts";
-import type { BashResult } from "../core/bash-executor.ts";
-import type { CompactionResult } from "../core/comp/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../core/sessions.ts";
-import type { SourceInfo } from "../core/origin.ts";
 
 export type RpcCommand =
 	| {

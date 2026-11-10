@@ -1,6 +1,6 @@
 import type { Api, Model, ProviderHeaders } from "@huranth/gama-ai";
-import type { SettingsStore } from "./settings.ts";
 import { isInstallTelemetryEnabled } from "./ping.ts";
+import type { SettingsStore } from "./settings.ts";
 
 const OPENROUTER_HOST = "openrouter.ai";
 

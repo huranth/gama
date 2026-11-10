@@ -2,9 +2,9 @@ import { mkdirSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { processFileArguments } from "../src/start/files.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 import { createReadTool } from "../src/core/tools/read.ts";
+import { processFileArguments } from "../src/start/files.ts";
 
 const TINY_PNG_BASE64 =
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==";
@@ -107,18 +107,15 @@ describe("blockImages setting", () => {
 			rmSync(testDir, { recursive: true, force: true });
 		});
 
-		it(
-			"alwaysways process images (filtering happens at " + "convertToLlm layer)",
-			async () => {
-				const imagePath = join(testDir, "test.png");
-				writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
+		it("alwaysways process images (filtering happens at " + "convertToLlm layer)", async () => {
+			const imagePath = join(testDir, "test.png");
+			writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 
-				const result = await processFileArguments([imagePath]);
+			const result = await processFileArguments([imagePath]);
 
-				expect(result.images).toHaveLength(1);
-				expect(result.images[0].type).toBe("image");
-			},
-		);
+			expect(result.images).toHaveLength(1);
+			expect(result.images[0].type).toBe("image");
+		});
 
 		it("process BMP images from disk as PNG attachments", async () => {
 			const imagePath = join(testDir, "test.bmp");

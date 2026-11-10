@@ -27,6 +27,13 @@ import type {
 } from "./ext/types.ts";
 import { findGitPaths } from "./footer-data-provider.ts";
 import {
+	BUILTIN_PATH_PREFIX,
+	createSourceInfo,
+	getSyntheticPathSource,
+	isSyntheticPath,
+	type SourceInfo,
+} from "./origin.ts";
+import {
 	DefaultPackageManager,
 	type PathMetadata,
 	type ResolvedResource,
@@ -36,13 +43,6 @@ import { loadPromptTemplates } from "./prompt-templates.ts";
 import { SettingsStore } from "./settings.ts";
 import type { Skill } from "./skills.ts";
 import { loadSkills } from "./skills.ts";
-import {
-	BUILTIN_PATH_PREFIX,
-	createSourceInfo,
-	getSyntheticPathSource,
-	isSyntheticPath,
-	type SourceInfo,
-} from "./origin.ts";
 import { resetTimings } from "./timings.ts";
 
 const HOST_PROVIDED_EXTENSION_PACKAGES = new Set([
@@ -270,10 +270,7 @@ function findReplacement(
 	return undefined;
 }
 
-function omitReplacedExtensions(
-	extensions: Extension[],
-	warnings?: Warning[],
-): Extension[] {
+function omitReplacedExtensions(extensions: Extension[], warnings?: Warning[]): Extension[] {
 	const taken = new Map(
 		extensions
 			.filter((extension) => !extension.replaceable)

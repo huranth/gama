@@ -1,5 +1,5 @@
-import type { Context } from "@huranth/gama-bus";
 import type { AssistantMessage, Message, ToolCall, ToolResultMessage } from "@huranth/gama-ai";
+import type { Context } from "@huranth/gama-bus";
 import type { SessionImpl } from "../records/session.ts";
 import type {
 	ContextEdit,

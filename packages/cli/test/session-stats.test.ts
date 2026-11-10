@@ -7,10 +7,10 @@ import {
 } from "@huranth/gama-ai/compat";
 import { describe, expect, it } from "vitest";
 import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 import { getUsageCostBreakdown } from "../src/core/usage.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	createInMemoryModelRegistry,
 	getModelRuntime,

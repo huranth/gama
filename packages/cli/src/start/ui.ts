@@ -1,9 +1,9 @@
 import {
+	MainScreen,
 	ProcessTerminal,
 	setCapabilityOverrides,
 	setKeybindings,
 	type TUI,
-	MainScreen,
 } from "@huranth/gama-tui";
 import { getAgentDir } from "../config.ts";
 import { Keymap } from "../core/hotkeys.ts";

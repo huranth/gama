@@ -31,9 +31,8 @@ describe("issue #7829 invalid settings warning", () => {
 				outputPad: 1,
 				ui: { requestRender: vi.fn() },
 				version: "test",
-				showWarning: (
-					TermApp.prototype as unknown as { showWarning(message: string): void }
-				).showWarning,
+				showWarning: (TermApp.prototype as unknown as { showWarning(message: string): void })
+					.showWarning,
 				session: harness.session,
 				checkForGamaUpdate: vi.fn(),
 				checkForPackageUpdates: vi.fn().mockResolvedValue([]),
@@ -41,9 +40,8 @@ describe("issue #7829 invalid settings warning", () => {
 				maybeWarnAboutAnthropicSubscriptionAuth: vi.fn(),
 				getUserInput: vi.fn(() => new Promise<string>(() => {})),
 			};
-			const run = (
-				TermApp.prototype as unknown as { run(this: typeof context): Promise<void> }
-			).run;
+			const run = (TermApp.prototype as unknown as { run(this: typeof context): Promise<void> })
+				.run;
 
 			void run.call(context);
 

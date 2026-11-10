@@ -86,8 +86,7 @@ export const cjkBreakRegex = new RegExp(
 );
 
 export const cjkPunctuationRegex = new RegExp(
-	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|` +
-		`[，．：；！？（）［］｛｝“”‘’…—])`,
+	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|[，．：；！？（）［］｛｝""''…—])`,
 	"u",
 );
 
@@ -921,8 +920,7 @@ export function wrapTextWithAnsi(text: string, width: number): string[] {
 }
 
 function clampWrappedLineToWidth(width: number): (line: string) => string {
-	return (line) =>
-		visibleWidth(line) <= width ? line : truncateToWidth(line, width, "");
+	return (line) => (visibleWidth(line) <= width ? line : truncateToWidth(line, width, ""));
 }
 
 function wrapSingleLine(line: string, width: number): string[] {

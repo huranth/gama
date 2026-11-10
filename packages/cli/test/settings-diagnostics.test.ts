@@ -2,11 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import {
-	collectSettingsDiagnostics,
-	deduplicateDiagnostics,
-} from "../src/core/settings-err.ts";
-import { SettingsStore, type SettingsStorage } from "../src/core/settings.ts";
+import { type SettingsStorage, SettingsStore } from "../src/core/settings.ts";
+import { collectSettingsDiagnostics, deduplicateDiagnostics } from "../src/core/settings-err.ts";
 
 describe("settings diagnostics", () => {
 	it("includes the settings file path for file-backed storage", () => {

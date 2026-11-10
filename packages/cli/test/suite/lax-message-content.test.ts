@@ -2,10 +2,7 @@ import type { AgentMessage, AgentToolResult } from "@huranth/gama-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import {
-	type SessionEntry,
-	sessionEntryToContextMessages,
-} from "../../src/core/sessions.ts";
+import { type SessionEntry, sessionEntryToContextMessages } from "../../src/core/sessions.ts";
 import type { ExtensionFactory } from "../../src/index.ts";
 import { createHarness } from "./harness.ts";
 

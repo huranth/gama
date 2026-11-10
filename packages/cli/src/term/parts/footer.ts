@@ -1,17 +1,13 @@
 import type { Usage } from "@huranth/gama-ai/compat";
 import { type Component, padLine, truncateToWidth, visibleWidth } from "@huranth/gama-tui";
-import type { RunSession } from "../../core/session/session.ts";
 import type { CacheSnapshot } from "../../core/cache/index.ts";
 import { formatMoney, formatPercent, hitTone } from "../../core/cache/view.ts";
 import { reasoningLevelName } from "../../core/defaults.ts";
 import { areExperimentalFeaturesEnabled } from "../../core/experimental.ts";
 import type { ContextUsage } from "../../core/ext/types.ts";
 import type { ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
-import {
-	addUsageToTotals,
-	createUsageTotals,
-	type UsageTotals,
-} from "../../core/usage.ts";
+import type { RunSession } from "../../core/session/session.ts";
+import { addUsageToTotals, createUsageTotals, type UsageTotals } from "../../core/usage.ts";
 import { ANSI_RESET, theme } from "../theme/theme.ts";
 
 const CTX_WARN = 70;

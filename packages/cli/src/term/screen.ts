@@ -1,5 +1,5 @@
 import type { Terminal, WheelScrollLines } from "@huranth/gama-tui";
-import { ProcessTerminal, type TUI, AltScreen, MainScreen } from "@huranth/gama-tui";
+import { AltScreen, MainScreen, ProcessTerminal, type TUI } from "@huranth/gama-tui";
 import { copyToClipboard } from "../utils/clipboard.ts";
 import { openBrowser } from "../utils/open-browser.ts";
 import { theme } from "./theme/theme.ts";

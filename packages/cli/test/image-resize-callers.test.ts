@@ -9,9 +9,9 @@ vi.mock("../src/utils/image-resize.js", () => ({
 	formatDimensionNote: vi.fn(() => undefined),
 }));
 
-import { processFileArguments } from "../src/start/files.ts";
 import type { ExtensionToolContext } from "../src/core/ext/types.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
+import { processFileArguments } from "../src/start/files.ts";
 import { resizeImage } from "../src/utils/image-resize.ts";
 
 const TINY_PNG_BASE64 =
@@ -43,9 +43,7 @@ describe("image resize callers", () => {
 		expect((result.content[0] as { type: "text"; text: string }).text).toContain("Image omitted");
 	});
 
-	it(
-		"file processor omits image attachments when auto-resize cannot produce a safe image",
-		async () => {
+	it("file processor omits image attachments when auto-resize cannot produce a safe image", async () => {
 		const imagePath = join(testDir, "test.png");
 		writeFileSync(imagePath, Buffer.from(TINY_PNG_BASE64, "base64"));
 

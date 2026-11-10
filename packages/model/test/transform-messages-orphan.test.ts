@@ -1,5 +1,5 @@
-import type { Model, ToolResultMessage } from "../src/types.ts";
 import { describe, expect, it } from "vitest";
+import type { Model, ToolResultMessage } from "../src/types.ts";
 import { transformMessages } from "../src/wire/transform-messages.ts";
 
 const model: Model<"openai-responses"> = {

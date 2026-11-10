@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	createFacetHost,
@@ -11,6 +10,7 @@ import {
 	type RemoteServiceSource,
 	type ReplicatedState,
 } from "../src/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import { createLoopbackServiceTransport } from "./helpers.ts";
 
 interface Source {
@@ -72,9 +72,7 @@ describe("facet host", () => {
 			setup(env) {
 				trace.push("setup projection");
 				sourceHandle = env.use(Source);
-				expect(() => sourceHandle!.read(BACKGROUND_CONTEXT)).toThrow(
-					"Facet state: setting_up",
-				);
+				expect(() => sourceHandle!.read(BACKGROUND_CONTEXT)).toThrow("Facet state: setting_up");
 				env.provide(Projection, {
 					read: (context) => sourceHandle!.read(context),
 				});
@@ -299,9 +297,7 @@ describe("facet host", () => {
 		await host.reload([provider("B")]);
 		await vi.waitFor(() => expect(observed).toHaveLength(2));
 		expect(first.context.abortSignal?.aborted).toBe(true);
-		expect(() => first.service.read()).toThrow(
-			`Observation closed: ${LocalKeyedValue.id}`,
-		);
+		expect(() => first.service.read()).toThrow(`Observation closed: ${LocalKeyedValue.id}`);
 		expect(observed[1]!.service.read()).toBe("B");
 		expect(observed[1]!.service.metadata.get("value")).toBe("B");
 
@@ -347,9 +343,7 @@ describe("facet host", () => {
 		expect(revisions).toEqual([1, 2]);
 
 		await host.dispose();
-		expect(() => retainedState.value).toThrow(
-			"Facet state: dead",
-		);
+		expect(() => retainedState.value).toThrow("Facet state: dead");
 	});
 
 	test("scopes singleton service views to each facet lifecycle", async () => {
@@ -363,9 +357,7 @@ describe("facet host", () => {
 					const source = env.use(Source);
 					expect(env.use(Source)).toBe(source);
 					consumerHandles.push(source);
-					expect(() => source.read(BACKGROUND_CONTEXT)).toThrow(
-						"Facet state: setting_up",
-					);
+					expect(() => source.read(BACKGROUND_CONTEXT)).toThrow("Facet state: setting_up");
 					env.onDeactivate(async () => {
 						cleanupValues.push(`${generation}:${await source.read(BACKGROUND_CONTEXT)}`);
 					});
@@ -394,23 +386,15 @@ describe("facet host", () => {
 		await host.reload([consumer("B")]);
 		expect(cleanupValues).toEqual(["A:value"]);
 		expect(Object.is(consumerHandles[1], consumerHandles[0])).toBe(false);
-		expect(() => consumerHandles[0]!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet state: dead",
-		);
-		expect(() => retainedOldRead(BACKGROUND_CONTEXT)).toThrow(
-			"Facet state: dead",
-		);
+		expect(() => consumerHandles[0]!.read(BACKGROUND_CONTEXT)).toThrow("Facet state: dead");
+		expect(() => retainedOldRead(BACKGROUND_CONTEXT)).toThrow("Facet state: dead");
 		await expect(consumerHandles[1]!.read(BACKGROUND_CONTEXT)).resolves.toBe("value");
 		await expect(peerHandle!.read(BACKGROUND_CONTEXT)).resolves.toBe("value");
 
 		await host.dispose();
 		expect(cleanupValues).toEqual(["A:value", "B:value"]);
-		expect(() => consumerHandles[1]!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet state: dead",
-		);
-		expect(() => peerHandle!.read(BACKGROUND_CONTEXT)).toThrow(
-			"Facet state: dead",
-		);
+		expect(() => consumerHandles[1]!.read(BACKGROUND_CONTEXT)).toThrow("Facet state: dead");
+		expect(() => peerHandle!.read(BACKGROUND_CONTEXT)).toThrow("Facet state: dead");
 	});
 
 	test("owns resources registered during activation", async () => {
@@ -456,9 +440,7 @@ describe("facet host", () => {
 			id: "host-service-consumer",
 			setup(env) {
 				const hostValues = env.use(HostValues);
-				expect(() => hostValues.use).toThrow(
-					"Facet state: setting_up",
-				);
+				expect(() => hostValues.use).toThrow("Facet state: setting_up");
 				env.onActivate(() => {
 					expect(hostValues).not.toBe(values);
 					expect(hostValues.name).toBe("session");
@@ -657,9 +639,7 @@ describe("facet host", () => {
 				});
 			},
 		});
-		await expect(createFacetHost({ facets: [missing] })).rejects.toThrow(
-			"Missing service",
-		);
+		await expect(createFacetHost({ facets: [missing] })).rejects.toThrow("Missing service");
 		expect(activated).toBe(false);
 
 		const first = defineFacet({

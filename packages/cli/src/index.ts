@@ -1,5 +1,3 @@
-export { type Args, parseArgs } from "./start/args.ts";
-
 export {
 	CONFIG_DIR_NAME,
 	getAgentDir,
@@ -9,23 +7,7 @@ export {
 	getReadmePath,
 	VERSION,
 } from "./config.ts";
-
-export {
-	RunSession,
-	type AgentSessionConfig,
-	type SessionEvent,
-	type AgentSessionEventListener,
-	type ModelCycleResult,
-	type ParsedSkillBlock,
-	type PromptOptions,
-	parseSkillBlock,
-	type SessionStats,
-} from "./core/session/session.ts";
-
-export { readStoredCredential } from "./core/vault.ts";
-
 export * from "./core/cache/index.ts";
-
 export {
 	type BranchPreparation,
 	type BranchSummaryResult,
@@ -49,9 +31,7 @@ export {
 	serializeConversation,
 	shouldCompact,
 } from "./core/comp/index.ts";
-
 export { createEventBus, type EventBus, type EventBusController } from "./core/event-bus.ts";
-
 export type {
 	AfterProviderResponseEvent,
 	AgentActivityOutcome,
@@ -194,12 +174,10 @@ export type {
 	WorkingIndicatorOptions,
 	WriteToolCallEvent,
 } from "./core/ext/index.ts";
-
 export {
 	createExtensionRuntime,
 	defineTool,
 	discoverAndLoadExtensions,
-	PluginHost,
 	isBashToolResult,
 	isEditToolResult,
 	isFindToolResult,
@@ -209,54 +187,20 @@ export {
 	isReadToolResult,
 	isToolCallEventType,
 	isWriteToolResult,
+	PluginHost,
 	wrapRegisteredTool,
 	wrapRegisteredTools,
 } from "./core/ext/index.ts";
-
+export {
+	type ModelRoute,
+	type ModelRouteReason,
+	type ModelRouteRequest,
+	VIRTUAL_MODEL_STATE_ENTRY,
+	type VirtualModelDefinition,
+	type VirtualModelStateData,
+} from "./core/fake-models.ts";
 export type { ReadonlyFooterDataProvider } from "./core/footer-data-provider.ts";
-
-export { convertToLlm } from "./core/msg.ts";
-
-export { ModelRegistry } from "./core/roster.ts";
-
 export {
-	type ModelScopeDiagnostic,
-	type ResolveCliModelResult,
-	type ResolveModelScopeResult,
-	resolveCliModel,
-	resolveModelScopeWithDiagnostics,
-	type ScopedModel,
-} from "./core/pick.ts";
-
-export {
-	type CreateModelRuntimeOptions,
-	CredentialSynchronizationError,
-	type CredentialSynchronizationOperation,
-	ModelHub,
-	type ModelRuntimeAuthOverrides,
-} from "./core/model-run.ts";
-
-export type {
-	PackageManager,
-	PathMetadata,
-	ProgressCallback,
-	ProgressEvent,
-	ResolvedPaths,
-	ResolvedResource,
-} from "./core/package-manager.ts";
-
-export { DefaultPackageManager } from "./core/package-manager.ts";
-
-export type {
-	ResourceCollision,
-	ResourceDiagnostic,
-	ResourceLoader,
-} from "./core/resource-loader.ts";
-
-export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
-
-export {
-	SessionRuntime,
 	type AgentSessionRuntimeDiagnostic,
 	type AgentSessionServices,
 	type CreateAgentSessionFromServicesOptions,
@@ -281,7 +225,53 @@ export {
 	createWebFetchTool,
 	createWriteTool,
 	type PromptTemplate,
+	SessionRuntime,
 } from "./core/kit.ts";
+export {
+	type CreateModelRuntimeOptions,
+	CredentialSynchronizationError,
+	type CredentialSynchronizationOperation,
+	ModelHub,
+	type ModelRuntimeAuthOverrides,
+} from "./core/model-run.ts";
+
+export { convertToLlm } from "./core/msg.ts";
+export { createSyntheticSourceInfo } from "./core/origin.ts";
+export type {
+	PackageManager,
+	PathMetadata,
+	ProgressCallback,
+	ProgressEvent,
+	ResolvedPaths,
+	ResolvedResource,
+} from "./core/package-manager.ts";
+export { DefaultPackageManager } from "./core/package-manager.ts";
+export {
+	type ModelScopeDiagnostic,
+	type ResolveCliModelResult,
+	type ResolveModelScopeResult,
+	resolveCliModel,
+	resolveModelScopeWithDiagnostics,
+	type ScopedModel,
+} from "./core/pick.ts";
+export type {
+	ResourceCollision,
+	ResourceDiagnostic,
+	ResourceLoader,
+} from "./core/resource-loader.ts";
+export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
+export { ModelRegistry } from "./core/roster.ts";
+export {
+	type AgentSessionConfig,
+	type AgentSessionEventListener,
+	type ModelCycleResult,
+	type ParsedSkillBlock,
+	type PromptOptions,
+	parseSkillBlock,
+	RunSession,
+	type SessionEvent,
+	type SessionStats,
+} from "./core/session/session.ts";
 
 export {
 	type BranchSummaryEntry,
@@ -307,9 +297,9 @@ export {
 	type SessionHeader,
 	type SessionInfo,
 	type SessionInfoEntry,
-	SessionStore,
 	type SessionMessageEntry,
 	type SessionProjection,
+	SessionStore,
 	type SessionTreeNode,
 	sessionEntryToContextMessages,
 	type ThinkingLevelChangeEntry,
@@ -324,8 +314,8 @@ export {
 	type PackageSource,
 	type QuietStartup,
 	type RetrySettings,
-	SettingsStore,
 	type SettingsManagerCreateOptions,
+	SettingsStore,
 	type TuiMode,
 } from "./core/settings.ts";
 
@@ -338,15 +328,11 @@ export {
 	type Skill,
 	type SkillFrontmatter,
 } from "./core/skills.ts";
-
-export { createSyntheticSourceInfo } from "./core/origin.ts";
-
 export {
 	type EditDiffResult,
 	generateDiffString,
 	generateUnifiedPatch,
 } from "./core/tools/edit-diff.ts";
-
 export {
 	type BashOperations,
 	type BashSpawnContext,
@@ -404,7 +390,6 @@ export {
 	type WriteToolOptions,
 	withFileMutationQueue,
 } from "./core/tools/index.ts";
-
 export {
 	hasTrustRequiringProjectResources,
 	type ProjectTrustDecision,
@@ -412,37 +397,21 @@ export {
 	type ProjectTrustStoreEntry,
 	type ProjectTrustUpdate,
 } from "./core/trust-manager.ts";
-
-export {
-	type ModelRoute,
-	type ModelRouteReason,
-	type ModelRouteRequest,
-	VIRTUAL_MODEL_STATE_ENTRY,
-	type VirtualModelDefinition,
-	type VirtualModelStateData,
-} from "./core/fake-models.ts";
-
+export { readStoredCredential } from "./core/vault.ts";
 export { type CodemodeExtensionOptions, createCodemodeExtension } from "./ext/codemode/index.ts";
-
 export type { CodemodeStoreEntryData, CodemodeToolDetails } from "./ext/codemode/tool.ts";
-
 export { createToolSearchExtension } from "./ext/search/index.ts";
+export type { JsonAgentSessionEvent } from "./json-event.ts";
 
 export { type MainOptions, main } from "./main.ts";
-
-export { type JsonAgentSessionEvent } from "./json-event.ts";
-
 export { type PrintModeOptions, runPrintMode } from "./print.ts";
-
 export {
 	type ModelInfo,
 	RpcClient,
 	type RpcClientOptions,
 	type RpcEventListener,
 } from "./rpc/client.ts";
-
 export { runRpcMode } from "./rpc/server.ts";
-
 export type {
 	RpcCommand,
 	RpcExtensionUIRequest,
@@ -450,7 +419,8 @@ export type {
 	RpcResponse,
 	RpcSessionState,
 } from "./rpc/types.ts";
-
+export { type Args, parseArgs } from "./start/args.ts";
+export { type InteractiveModeOptions, TermApp } from "./term/app.ts";
 export {
 	AssistantMessageComponent,
 	BashExecutionComponent,
@@ -484,8 +454,6 @@ export {
 	UserMessageSelectorComponent,
 	type VisualTruncateResult,
 } from "./term/parts/index.ts";
-
-export { TermApp, type InteractiveModeOptions } from "./term/app.ts";
 
 export {
 	getLanguageFromPath,

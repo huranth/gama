@@ -1,7 +1,7 @@
 import type { CredentialStore, Model } from "@huranth/gama-ai";
-import { ModelRegistry } from "../src/core/roster.ts";
 import { ModelHub } from "../src/core/model-run.ts";
 import { InMemoryCodingAgentModelsStore } from "../src/core/models-store.ts";
+import { ModelRegistry } from "../src/core/roster.ts";
 
 export const testAnthropicModel: Model<"anthropic-messages"> = {
 	id: "claude-sonnet-4-5",

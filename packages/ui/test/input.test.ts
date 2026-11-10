@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { Input } from "../src/view/input.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
+import { Input } from "../src/view/input.ts";
 
 describe("Input component", () => {
 	it("submits value including backslash on Enter", () => {

@@ -1,3 +1,4 @@
+import type { SimpleStreamOptions, StreamFunction } from "./types.ts";
 import { anthropicMessagesApi } from "./wire/anthropic-messages.lazy.ts";
 import type { AnthropicOptions } from "./wire/anthropic-messages.ts";
 import { azureOpenAIResponsesApi } from "./wire/azure-openai-responses.lazy.ts";
@@ -14,7 +15,6 @@ import { openAICompletionsApi } from "./wire/openai-completions.lazy.ts";
 import type { OpenAICompletionsOptions } from "./wire/openai-completions.ts";
 import { openAIResponsesApi } from "./wire/openai-responses.lazy.ts";
 import type { OpenAIResponsesOptions } from "./wire/openai-responses.ts";
-import type { SimpleStreamOptions, StreamFunction } from "./types.ts";
 
 const anthropicMessagesStreams = anthropicMessagesApi();
 

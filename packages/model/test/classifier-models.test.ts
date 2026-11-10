@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { typesafeSystemOneApi } from "../src/wire/typesafe-system-one.lazy.ts";
 import { createModels, createProvider, getModelType } from "../src/registry.ts";
 import type {
 	Api,
@@ -10,6 +9,7 @@ import type {
 	Model,
 } from "../src/types.ts";
 import { ReplyStream } from "../src/utils/event-stream.ts";
+import { typesafeSystemOneApi } from "../src/wire/typesafe-system-one.lazy.ts";
 
 function classifierModel(provider: string, id: string): ClassifierModel<ClassifierApi> {
 	return {

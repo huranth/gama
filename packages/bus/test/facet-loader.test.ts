@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	combineFacetLoaders,
@@ -10,6 +9,7 @@ import {
 	defineService,
 	type FacetLoader,
 } from "../src/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import { createLoopbackServiceTransport } from "./helpers.ts";
 
 interface GenerationValue {
@@ -169,9 +169,7 @@ describe("facet loader", () => {
 					},
 				}),
 			]),
-		).rejects.toThrow(
-			"Changed services",
-		);
+		).rejects.toThrow("Changed services");
 		await expect(localRead(BACKGROUND_CONTEXT)).resolves.toBe("A");
 		await expect(remoteRead(BACKGROUND_CONTEXT)).resolves.toBe("A");
 

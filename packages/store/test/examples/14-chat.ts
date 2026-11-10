@@ -1,6 +1,6 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
-import { createModels } from "@huranth/gama-ai/models";
 import { fauxAssistantMessage, fauxProvider } from "@huranth/gama-ai/catalog/faux";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	AssistantEntry,
 	createRegistry,

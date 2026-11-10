@@ -1,11 +1,6 @@
 import { constants, copyFileSync, existsSync, mkdirSync, rmSync } from "node:fs";
 import { basename, join, parse, resolve } from "node:path";
 import { resolvePath } from "../../utils/paths.ts";
-import type { RunSession } from "./session.ts";
-import type {
-	AgentSessionRuntimeDiagnostic,
-	AgentSessionServices,
-} from "./services.ts";
 import type {
 	ProjectTrustContext,
 	ReplacedSessionContext,
@@ -16,6 +11,8 @@ import { emitSessionShutdownEvent } from "../ext/runner.ts";
 import type { CreateAgentSessionResult } from "../kit.ts";
 import { assertSessionCwdExists } from "../session-cwd.ts";
 import { SessionStore } from "../sessions.ts";
+import type { AgentSessionRuntimeDiagnostic, AgentSessionServices } from "./services.ts";
+import type { RunSession } from "./session.ts";
 
 export interface CreateAgentSessionRuntimeResult extends CreateAgentSessionResult {
 	services: AgentSessionServices;
@@ -302,7 +299,12 @@ export class SessionRuntime {
 			await this.finishSessionReplacement(options?.withSession);
 		} catch (error) {
 			try {
-				await this.startSession("resume", previousSessionManager, this.cwd, previousSessionFile);
+				await this.startSession(
+					"resume",
+					previousSessionManager,
+					this.cwd,
+					previousSessionFile,
+				);
 				await this.finishSessionReplacement();
 			} catch (restoreError) {
 				throw new AggregateError([error, restoreError], "Session replacement failed");

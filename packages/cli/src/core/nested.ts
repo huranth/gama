@@ -217,17 +217,22 @@ export class NestedToolCallRunner {
 		let outcome: AgentToolCallOutcome;
 
 		try {
-			outcome = await this.host.runToolCall(toolCall, callerId, options.signal, async (result) => {
-				options.onUpdate?.(result);
-				await this.host.emit({
-					type: "tool_execution_update",
-					toolCallId: toolCall.id,
-					toolName: name,
-					args: toolCall.arguments,
-					partialResult: result,
-					parentToolCallId: callerId,
-				});
-			});
+			outcome = await this.host.runToolCall(
+				toolCall,
+				callerId,
+				options.signal,
+				async (result) => {
+					options.onUpdate?.(result);
+					await this.host.emit({
+						type: "tool_execution_update",
+						toolCallId: toolCall.id,
+						toolName: name,
+						args: toolCall.arguments,
+						partialResult: result,
+						parentToolCallId: callerId,
+					});
+				},
+			);
 		} finally {
 			this.scopes.delete(toolCall.id);
 			release?.();

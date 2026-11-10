@@ -200,8 +200,7 @@ export class CommittedWatch<T = ObservedDocumentValue> implements WatchHandle<T>
 	}
 
 	observeCancellation(signal: AbortSignal): void {
-		if (this.#cancellationSignal !== undefined)
-			throw new Error("Watch cancelled");
+		if (this.#cancellationSignal !== undefined) throw new Error("Watch cancelled");
 		if (this.#end !== undefined) return;
 		this.#cancellationSignal = signal;
 		this.#cancellationListener = () => this.cancel();

@@ -1,5 +1,5 @@
-import { awaitWithContext, BACKGROUND_CONTEXT } from "../scope/index.ts";
 import type { Op } from "../patch/index.ts";
+import { awaitWithContext, BACKGROUND_CONTEXT } from "../scope/index.ts";
 import type {
 	Context,
 	JsonValue,
@@ -83,8 +83,7 @@ function validateResetSnapshot(
 			throw new Error("Invalid address");
 		}
 		if (instance.instance !== undefined) {
-			if (keys.has(instance.instance.key))
-				throw new Error("Duplicate key");
+			if (keys.has(instance.instance.key)) throw new Error("Duplicate key");
 			keys.add(instance.instance.key);
 		}
 		for (const member of instance.members) {
@@ -281,9 +280,7 @@ class ServiceFacade {
 
 	update(member: string, sequence: number, ops: readonly Op[], context: Context): void {
 		if (this.#descriptions.get(member) !== "state") {
-			throw new Error(
-				`Non-state member: ${this.#serviceId}.${member}`,
-			);
+			throw new Error(`Non-state member: ${this.#serviceId}.${member}`);
 		}
 		this.#slot(member).update(sequence, ops, context);
 	}
@@ -491,8 +488,7 @@ class KeyedBinding<T> {
 					break;
 				}
 				case "state": {
-					if (update.instance === undefined)
-						throw new Error("Missing address");
+					if (update.instance === undefined) throw new Error("Missing address");
 					const instance = this.#instances.get(update.instance.key);
 					if (instance?.generation !== update.instance.generation) return;
 					instance.facade.update(update.member, update.sequence, update.ops, context);

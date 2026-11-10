@@ -1,4 +1,3 @@
-import type { Context, Draft } from "@huranth/gama-bus";
 import type {
 	AssistantMessage,
 	Message,
@@ -7,6 +6,7 @@ import type {
 } from "@huranth/gama-ai";
 import { calculateContextTokens, estimateMessageTokens } from "@huranth/gama-ai/utils/estimate";
 import { isRetryableAssistantError, retryDelayMs } from "@huranth/gama-ai/utils/retry";
+import type { Context, Draft } from "@huranth/gama-bus";
 import { CompactionEntry } from "../messages.ts";
 import { defineTask } from "../tasks.ts";
 import type {

@@ -343,7 +343,9 @@ function render(facts: Facts, fileOps: FileOperations, maxChars: number): string
 	if (facts.answers.length > 0) {
 		const lines = facts.answers
 			.slice(-MAX_ANSWERS)
-			.map((answer) => `- ${truncateMiddle(answer.text.replace(/\s+/g, " "), ANSWER_MAX_CHARS)}`);
+			.map(
+				(answer) => `- ${truncateMiddle(answer.text.replace(/\s+/g, " "), ANSWER_MAX_CHARS)}`,
+			);
 		append(`\n## Answers\n${lines.join("\n")}\n`);
 	}
 

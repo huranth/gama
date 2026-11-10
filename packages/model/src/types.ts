@@ -1,5 +1,7 @@
 import type { TelemetryContext } from "@huranth/gama-telemetry";
 import type { TSchema } from "typebox";
+import type { AssistantMessageDiagnostic } from "./utils/diagnostics.ts";
+import type { ReplyStream } from "./utils/event-stream.ts";
 import type { AnthropicOptions } from "./wire/anthropic-messages.ts";
 import type { AzureOpenAIResponsesOptions } from "./wire/azure-openai-responses.ts";
 import type { BedrockOptions } from "./wire/bedrock-converse-stream.ts";
@@ -10,8 +12,6 @@ import type { MistralOptions } from "./wire/mistral-conversations.ts";
 import type { OpenAICodexResponsesOptions } from "./wire/openai-codex-responses.ts";
 import type { OpenAICompletionsOptions } from "./wire/openai-completions.ts";
 import type { OpenAIResponsesOptions } from "./wire/openai-responses.ts";
-import type { AssistantMessageDiagnostic } from "./utils/diagnostics.ts";
-import type { ReplyStream } from "./utils/event-stream.ts";
 
 export type { ReplyStream } from "./utils/event-stream.ts";
 
@@ -201,11 +201,7 @@ export type ApiStreamOptions<TApi extends Api> = TApi extends keyof ApiOptionsMa
 	: StreamOptions & Record<string, unknown>;
 
 export interface ProviderStreams {
-	stream(
-		model: Model<Api>,
-		context: TranscriptContext,
-		options?: StreamOptions,
-	): ReplyStream;
+	stream(model: Model<Api>, context: TranscriptContext, options?: StreamOptions): ReplyStream;
 	streamSimple(
 		model: Model<Api>,
 		context: TranscriptContext,
@@ -265,11 +261,7 @@ export interface SimpleStreamOptions extends StreamOptions {
 export type StreamFunction<
 	TApi extends Api = Api,
 	TOptions extends StreamOptions = StreamOptions,
-> = (
-	model: Model<TApi>,
-	context: TranscriptContext,
-	options?: TOptions,
-) => ReplyStream;
+> = (model: Model<TApi>, context: TranscriptContext, options?: TOptions) => ReplyStream;
 
 export type ImagesFunction<TOptions extends ImagesOptions = ImagesOptions> = (
 	model: ImageModel<ImageApi>,

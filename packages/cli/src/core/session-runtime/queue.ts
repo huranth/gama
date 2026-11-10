@@ -1,10 +1,7 @@
 import type { Runner } from "@huranth/gama-agent-core";
 import type { ImageContent, TextContent } from "@huranth/gama-ai/compat";
 import type { InputSource } from "../ext/index.ts";
-import {
-	expandPromptTemplate,
-	type PromptTemplate,
-} from "../prompt-templates.ts";
+import { expandPromptTemplate, type PromptTemplate } from "../prompt-templates.ts";
 
 export type QueuedInputDisposition = "handled" | "queued";
 
@@ -30,7 +27,7 @@ export function consumeQueuedText(queue: readonly string[], text: string): numbe
 }
 
 export function consumeQueuedMessage(queue: string[], text: string): number {
-	let removed = consumeQueuedText(queue, text);
+	const removed = consumeQueuedText(queue, text);
 	if (removed > 0) {
 		queue.splice(0, removed);
 		return removed;

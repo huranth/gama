@@ -13,11 +13,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { Args } from "../src/start/args.ts";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 import { assertValidSessionId, SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 import { createSessionManager } from "../src/main.ts";
+import type { Args } from "../src/start/args.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
 const sourceResolverUrl = pathToFileURL(resolve(__dirname, "../src/dev/source-resolver.ts")).href;

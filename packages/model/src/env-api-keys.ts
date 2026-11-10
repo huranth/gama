@@ -129,8 +129,7 @@ function hasVertexConfig(env?: ProviderEnv): boolean {
 
 function hasAwsConfig(env?: ProviderEnv): boolean {
 	const hasKeys =
-		getProviderEnvValue(AWS_ACCESS_KEY_ENV, env) &&
-		getProviderEnvValue(AWS_SECRET_KEY_ENV, env);
+		getProviderEnvValue(AWS_ACCESS_KEY_ENV, env) && getProviderEnvValue(AWS_SECRET_KEY_ENV, env);
 
 	if (hasKeys) return true;
 

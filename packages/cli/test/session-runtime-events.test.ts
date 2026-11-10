@@ -3,15 +3,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fauxAssistantMessage, registerFauxProvider } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
+import { ModelHub } from "../src/core/model-run.ts";
 import {
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
 } from "../src/core/session/runtime.ts";
-import { AuthStorage } from "../src/core/vault.ts";
-import { ModelHub } from "../src/core/model-run.ts";
 import { SessionStore } from "../src/core/sessions.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import type {
 	ExtensionFactory,
 	SessionBeforeForkEvent,

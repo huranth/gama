@@ -1,9 +1,9 @@
 import { createProvider, type Model } from "@huranth/gama-ai";
 import { complete, getApiProvider, resetApiProviders } from "@huranth/gama-ai/compat";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
-import { ModelRegistry } from "../src/core/roster.ts";
 import { ModelHub } from "../src/core/model-run.ts";
+import { ModelRegistry } from "../src/core/roster.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 interface CapturedRequest {
 	url: string;

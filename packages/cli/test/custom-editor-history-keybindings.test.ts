@@ -1,4 +1,4 @@
-import { setKeybindings, MainScreen } from "@huranth/gama-tui";
+import { MainScreen, setKeybindings } from "@huranth/gama-tui";
 import { afterEach, describe, expect, it } from "vitest";
 import { defaultEditorTheme } from "../../ui/test/test-themes.ts";
 import { VirtualTerminal } from "../../ui/test/virtual-terminal.ts";

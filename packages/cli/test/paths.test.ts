@@ -49,7 +49,6 @@ describe("canonicalizePath", () => {
 		const nonexistent = join(dir, "no-such-file");
 		expect(canonicalizePath(nonexistent)).toBe(nonexistent);
 	});
-
 });
 
 describe("getCwdRelativePath", () => {

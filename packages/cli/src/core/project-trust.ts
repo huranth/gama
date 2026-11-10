@@ -76,7 +76,9 @@ export async function resolveProjectTrusted(
 			projectTrustContext,
 		);
 		for (const error of errors) {
-			onExtensionError?.(`Extension "${error.extensionPath}" project_trust error: ${error.error}`);
+			onExtensionError?.(
+				`Extension "${error.extensionPath}" project_trust error: ${error.error}`,
+			);
 		}
 
 		if (result) {

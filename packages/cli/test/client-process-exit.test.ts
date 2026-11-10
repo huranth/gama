@@ -33,9 +33,7 @@ process.stdin.resume();
 
 		await client.start();
 
-		await expect(client.getCommands()).rejects.toThrow(
-			/Agent exited: code 43/,
-		);
+		await expect(client.getCommands()).rejects.toThrow(/Agent exited: code 43/);
 	});
 
 	test("rejects waitForIdle when the child exits before settling", async () => {
@@ -48,9 +46,7 @@ setTimeout(() => process.exit(46), 200);
 
 		await client.start();
 
-		await expect(client.waitForIdle(5_000)).rejects.toThrow(
-			/Agent exited: code 46/,
-		);
+		await expect(client.waitForIdle(5_000)).rejects.toThrow(/Agent exited: code 46/);
 	});
 
 	test("cleans up the event collector when prompt fails", async () => {

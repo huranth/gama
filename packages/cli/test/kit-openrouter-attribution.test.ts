@@ -11,10 +11,10 @@ import {
 	type SimpleStreamOptions,
 } from "@huranth/gama-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { createAgentSession } from "../src/core/kit.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createInMemoryModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 describe("createAgentSession provider attribution headers", () => {

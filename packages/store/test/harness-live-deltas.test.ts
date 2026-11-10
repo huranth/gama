@@ -1,5 +1,5 @@
-import type { Op } from "@huranth/gama-bus/delta";
 import { fauxAssistantMessage, fauxText, fauxToolCall, Type } from "@huranth/gama-ai";
+import type { Op } from "@huranth/gama-bus/delta";
 import {
 	type CommitPublication,
 	defineTool,

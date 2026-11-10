@@ -5,8 +5,8 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { parseFrontmatter } from "../utils/frontmatter.ts";
 import { canonicalizePath, resolvePath, toPosixPath } from "../utils/paths.ts";
 import type { ResourceDiagnostic } from "./diagnostics.ts";
-import { addIgnoreRules, markDirectoryVisited } from "./resource-scan.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./origin.ts";
+import { addIgnoreRules, markDirectoryVisited } from "./resource-scan.ts";
 
 type IgnoreMatcher = ReturnType<typeof ignore>;
 

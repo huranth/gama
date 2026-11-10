@@ -1,7 +1,6 @@
+import type { Message, Models } from "@huranth/gama-ai";
 import type { AttachedReplicatedState, Context, Draft, JsonValue } from "@huranth/gama-bus";
 import type { Op } from "@huranth/gama-bus/delta";
-import type { Message, Models } from "@huranth/gama-ai";
-import type { ExecutionEnv } from "./system/index.ts";
 import type {
 	Agent,
 	ContextView,
@@ -10,6 +9,7 @@ import type {
 	Settings,
 	SettledTask,
 } from "./engine/types.ts";
+import type { ExecutionEnv } from "./system/index.ts";
 
 declare const idBrand: unique symbol;
 

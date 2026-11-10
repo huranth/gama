@@ -89,8 +89,7 @@ describe("RunSession tree navigation e2e", () => {
 		expect(sessionManager.getLeafId()).toBe(result.summaryEntry?.id);
 	}, 120000);
 
-	it("attach summary to correct parent when navigating " +
-		"to nested user message", async () => {
+	it("attach summary to correct parent when navigating " + "to nested user message", async () => {
 		const { session, sessionManager } = ctx;
 
 		await session.prompt("Message one");
@@ -124,8 +123,7 @@ describe("RunSession tree navigation e2e", () => {
 		expect(childTypes).toContain("message");
 	}, 120000);
 
-	it("attach summary to selected node when navigating " +
-		"to assistant message", async () => {
+	it("attach summary to selected node when navigating " + "to assistant message", async () => {
 		const { session, sessionManager } = ctx;
 
 		await session.prompt("Hello");

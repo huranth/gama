@@ -1,5 +1,5 @@
-import { colorToOkhsl, mixColors, okhslColor, type Color } from "@huranth/gama-tui";
-import { theme, type ThemeColor } from "../theme/theme.ts";
+import { type Color, colorToOkhsl, mixColors, okhslColor } from "@huranth/gama-tui";
+import { type ThemeColor, theme } from "../theme/theme.ts";
 
 const STATUS_LIGHTNESS = { dark: 0.7, light: 0.46 };
 
@@ -13,11 +13,7 @@ const SPOTLIGHT_STRENGTH = 0.3;
 
 function statusColor(color: ThemeColor): Color {
 	const { h, s } = colorToOkhsl(theme.colors[color]);
-	return okhslColor(
-		h,
-		Math.max(s, STATUS_MIN_SATURATION),
-		STATUS_LIGHTNESS[theme.appearance],
-	);
+	return okhslColor(h, Math.max(s, STATUS_MIN_SATURATION), STATUS_LIGHTNESS[theme.appearance]);
 }
 
 export function handKindColor(kind: string | undefined): ThemeColor {

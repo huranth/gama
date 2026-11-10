@@ -1,9 +1,9 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
-import { type GamaMessagesOptions, stream, streamSimple } from "../src/wire/gama-messages.ts";
 import type { Api, AssistantMessageEvent, Context, Model, StopReason } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { type GamaMessagesOptions, stream, streamSimple } from "../src/wire/gama-messages.ts";
 
 type RecordedRequest = {
 	url: string;

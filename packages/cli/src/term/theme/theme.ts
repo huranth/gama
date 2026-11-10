@@ -588,9 +588,7 @@ function getCustomThemeInfos(): ThemeInfo[] {
 
 function assertThemeNameIsValid(name: string): void {
 	if (name.includes("/")) {
-		throw new Error(
-			`Invalid theme name "${name}"`,
-		);
+		throw new Error(`Invalid theme name "${name}"`);
 	}
 }
 

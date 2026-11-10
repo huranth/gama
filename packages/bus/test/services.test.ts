@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	type Context,
 	createRemoteServiceBinding,
@@ -13,6 +12,7 @@ import {
 	replicatedState,
 	type ServiceProviderUpdate,
 } from "../src/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import { createLoopbackServiceTransport } from "./helpers.ts";
 
 type ModelRef = { provider: string; modelId: string };

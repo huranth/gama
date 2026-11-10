@@ -1,7 +1,7 @@
 import type { Context, JsonValue } from "@huranth/gama-bus";
-import type { FileError, FileSystem } from "../../system/index.ts";
 import { asStorageRejected } from "../../errors.ts";
 import { idFromNumber, seqFromNumber } from "../../ids.ts";
+import type { FileError, FileSystem } from "../../system/index.ts";
 import type {
 	ConversationId,
 	ConversationQuery,
@@ -347,8 +347,7 @@ export class JsonlStorage implements Storage {
 		if (!marker.ok) throw this.poison(errorFromFile(`append to ${MAIN_FILE}`, marker.error));
 		if (this.fsync && reclamations.size === 0) {
 			const flushed = await this.fs.flushFile(this.mainPath, context);
-			if (!flushed.ok)
-				throw this.poison(errorFromFile(`flush of ${MAIN_FILE}`, flushed.error));
+			if (!flushed.ok) throw this.poison(errorFromFile(`flush of ${MAIN_FILE}`, flushed.error));
 		}
 		const seq = prepared.apply();
 		this.adoptSidecarState(prepared.writes);
@@ -963,8 +962,7 @@ export class JsonlStorage implements Storage {
 
 			if (valid) {
 				const repaired = await fs.appendFile(path, "\n", context);
-				if (!repaired.ok)
-					throw errorFromFile(`newline repair of ${name}`, repaired.error);
+				if (!repaired.ok) throw errorFromFile(`newline repair of ${name}`, repaired.error);
 			} else {
 				const truncated = await fs.truncateFile(path, completeSize, context);
 				if (!truncated.ok)

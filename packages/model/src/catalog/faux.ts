@@ -1,13 +1,13 @@
 import { createProvider, type Provider } from "../registry.ts";
 import type {
 	AssistantMessage,
-	ReplyStream,
 	DeferredCancelOptions,
 	DeferredFetchOptions,
 	DeferredHandle,
 	ImageContent,
 	Message,
 	Model,
+	ReplyStream,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
@@ -714,8 +714,7 @@ export function createFauxCore(options: RegisterFauxProviderOptions) {
 				) {
 					throw new Error(`Unknown response: ${handle.id}`);
 				}
-				if (entry.cancelled)
-					throw new Error(`Response cancelled: ${handle.id}`);
+				if (entry.cancelled) throw new Error(`Response cancelled: ${handle.id}`);
 
 				if (entry.pendingFetches > 0) {
 					entry.pendingFetches--;

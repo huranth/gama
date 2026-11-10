@@ -1,8 +1,8 @@
+import { type ChildProcess, spawn } from "node:child_process";
 import { constants } from "node:fs";
 import { access as fsAccess, stat as fsStat } from "node:fs/promises";
 import { constants as osConstants } from "node:os";
 import type { AgentTool, AgentToolUpdateCallback } from "@huranth/gama-agent-core";
-import { type ChildProcess, spawn } from "node:child_process";
 import { type Static, Type } from "typebox";
 import { waitForChildProcess } from "../../utils/child-process.ts";
 import {
@@ -419,9 +419,7 @@ function createOutputThrottle(output: OutputAccumulator, onUpdate: OutputUpdate 
 	return { emit, clear, schedule };
 }
 
-export function createLocalShellOperations(
-	resolveShellConfig: () => ShellConfig,
-): BashOperations {
+export function createLocalShellOperations(resolveShellConfig: () => ShellConfig): BashOperations {
 	return {
 		exec: async (command, cwd, { onData, signal, timeout, env }) => {
 			const timeoutMs = resolveTimeoutMs(timeout);

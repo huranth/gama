@@ -5,8 +5,8 @@ import { pipeline, Readable, Transform, type TransformCallback } from "node:stre
 import zlib from "node:zlib";
 import {
 	type AddressPolicy,
-	type HostLookup,
 	decodeIpv4Literal,
+	type HostLookup,
 	isBlockedAddress,
 	unwrapHost,
 	validatingLookup,
@@ -130,8 +130,7 @@ export function pinnedFetch(
 	const blocked = init.isBlocked ?? isBlockedAddress;
 
 	// Literal check
-	const literal =
-		net.isIP(host) !== 0 ? host : decodeIpv4Literal(host);
+	const literal = net.isIP(host) !== 0 ? host : decodeIpv4Literal(host);
 	if (literal && blocked(literal)) {
 		return Promise.reject(new Error("Private address blocked"));
 	}

@@ -1,5 +1,5 @@
-import { copyJson, type Draft, type JsonRepresentation } from "@huranth/gama-bus";
 import type { Usage } from "@huranth/gama-ai";
+import { copyJson, type Draft, type JsonRepresentation } from "@huranth/gama-bus";
 import { defineDoc } from "../docs.ts";
 import type { ConversationId, Tx } from "../types.ts";
 

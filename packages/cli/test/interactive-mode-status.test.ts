@@ -2,12 +2,12 @@ import { homedir } from "node:os";
 import * as path from "node:path";
 import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@huranth/gama-tui";
 import { beforeAll, describe, expect, test, vi } from "vitest";
-import { type Component, Container, type Focusable, type TUI } from "../../ui/src/screen.ts";
 import { MainScreen } from "../../ui/src/main-screen.ts";
+import { type Component, Container, type Focusable, type TUI } from "../../ui/src/screen.ts";
 import { VirtualTerminal } from "../../ui/test/virtual-terminal.ts";
 import type { AutocompleteProviderFactory } from "../src/core/ext/types.ts";
-import type { QuietStartup } from "../src/core/settings.ts";
 import type { SourceInfo } from "../src/core/origin.ts";
+import type { QuietStartup } from "../src/core/settings.ts";
 import { TermApp } from "../src/term/app.ts";
 import { initTheme } from "../src/term/theme/theme.ts";
 
@@ -600,16 +600,9 @@ describe("TermApp.showLoadedResources", () => {
 			getCompactPathLabel: (p: string, sourceInfo?: SourceInfo) =>
 				(TermApp as any).prototype.getCompactPathLabel.call(fakeThis, p, sourceInfo),
 			getCompactPackageSourceLabel: (sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getCompactPackageSourceLabel.call(
-					fakeThis,
-					sourceInfo,
-				),
+				(TermApp as any).prototype.getCompactPackageSourceLabel.call(fakeThis, sourceInfo),
 			getCompactExtensionLabel: (p: string, sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getCompactExtensionLabel.call(
-					fakeThis,
-					p,
-					sourceInfo,
-				),
+				(TermApp as any).prototype.getCompactExtensionLabel.call(fakeThis, p, sourceInfo),
 			getCompactDisplayPathSegments: (p: string) =>
 				(TermApp as any).prototype.getCompactDisplayPathSegments.call(fakeThis, p),
 			getCompactNonPackageExtensionLabel: (
@@ -635,11 +628,7 @@ describe("TermApp.showLoadedResources", () => {
 			fakeThis.buildScopeGroups = (items: Array<{ path: string; sourceInfo?: SourceInfo }>) =>
 				(TermApp as any).prototype.buildScopeGroups.call(fakeThis, items);
 			fakeThis.formatScopeGroups = (groups: unknown, formatOptions: unknown) =>
-				(TermApp as any).prototype.formatScopeGroups.call(
-					fakeThis,
-					groups,
-					formatOptions,
-				);
+				(TermApp as any).prototype.formatScopeGroups.call(fakeThis, groups, formatOptions);
 		}
 
 		return fakeThis;
@@ -729,7 +718,8 @@ describe("TermApp.showLoadedResources", () => {
 				),
 			},
 			{
-				path: "/tmp/project/.gama/git/github.com/HazAT/gama-interactive-subagents/extensions/subagent" +
+				path:
+					"/tmp/project/.gama/git/github.com/HazAT/gama-interactive-subagents/extensions/subagent" +
 					"s/index.ts",
 				sourceInfo: createSourceInfo(
 					"/tmp/project/.gama/git/github.com/HazAT/gama-interactive-subagents/extensions/subagents/ind" +
@@ -1318,9 +1308,7 @@ describe("TermApp.showLoadedResources", () => {
 
 		expect(fakeThis.loadedResourcesContainer.children).toHaveLength(0);
 		expect((TermApp as any).prototype.shouldShowStartupHeader.call(fakeThis)).toBe(true);
-		expect((TermApp as any).prototype.shouldShowStartupDetails.call(fakeThis)).toBe(
-			false,
-		);
+		expect((TermApp as any).prototype.shouldShowStartupDetails.call(fakeThis)).toBe(false);
 	});
 
 	test("hides the startup header with full quiet startup unless verbose", () => {

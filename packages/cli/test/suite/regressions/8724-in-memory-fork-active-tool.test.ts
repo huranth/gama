@@ -3,10 +3,10 @@ import { fauxAssistantMessage, fauxToolCall } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-	SessionRuntime,
 	type AgentSessionServices,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
+	SessionRuntime,
 } from "../../../src/core/session/runtime.ts";
 import { createHarness } from "../harness.ts";
 

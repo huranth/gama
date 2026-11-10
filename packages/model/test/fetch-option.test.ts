@@ -1,4 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Api, FetchFunction, ImageModel, Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import { streamSimple as streamAnthropic } from "../src/wire/anthropic-messages.ts";
 import { streamSimple as streamAzureOpenAIResponses } from "../src/wire/azure-openai-responses.ts";
 import { streamSimple as streamGamaMessages } from "../src/wire/gama-messages.ts";
@@ -9,8 +11,6 @@ import { streamSimple as streamOpenAICodexResponses } from "../src/wire/openai-c
 import { streamSimple as streamOpenAICompletions } from "../src/wire/openai-completions.ts";
 import { streamSimple as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
 import { generateImages } from "../src/wire/openrouter-images.ts";
-import type { Api, FetchFunction, ImageModel, Model } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 const context = normalizeContext({
 	messages: [{ role: "user", content: "hello", timestamp: 1 }],
@@ -133,12 +133,8 @@ describe("fetch stream option", () => {
 			fetch: custom,
 		}).result();
 
-		expect(google.errorMessage).toContain(
-			"Custom fetch unsupported",
-		);
-		expect(vertex.errorMessage).toContain(
-			"Custom fetch unsupported",
-		);
+		expect(google.errorMessage).toContain("Custom fetch unsupported");
+		expect(vertex.errorMessage).toContain("Custom fetch unsupported");
 		expect(custom).not.toHaveBeenCalled();
 		expect(fallback).not.toHaveBeenCalled();
 		expect(globalThis.fetch).toBe(fallback);

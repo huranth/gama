@@ -63,9 +63,7 @@ describe("wrapTextWithAnsi", () => {
 			}
 		});
 
-		it(
-			"reset underline but preserve background when wrapping underlined text inside background",
-			() => {
+		it("reset underline but preserve background when wrapping underlined text inside background", () => {
 			const underlineOn = "\x1b[4m";
 			const underlineOff = "\x1b[24m";
 			const reset = "\x1b[0m";
@@ -142,8 +140,7 @@ describe("wrapTextWithAnsi", () => {
 			const red = "\x1b[31m";
 			const reset = "\x1b[0m";
 			const text =
-				`${red}This is an example 中文汉字测试段` +
-				`落内容中文汉字测试段落内容.${reset}`;
+				`${red}This is an example 中文汉字测试段` + `落内容中文汉字测试段落内容.${reset}`;
 			const wrapped = wrapTextWithAnsi(text, 40);
 
 			assert.strictEqual(wrapped.length, 2);

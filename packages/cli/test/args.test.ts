@@ -66,9 +66,7 @@ describe("parseArgs", () => {
 			expect(result.thinking).toBeUndefined();
 			expect(result.print).toBe(true);
 			expect(result.messages).toEqual([]);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Level required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Level required" }]);
 		});
 	});
 
@@ -208,18 +206,14 @@ describe("parseArgs", () => {
 			expect(result.version).toBe(true);
 			expect(result.messages).toEqual([]);
 			expect(result.unknownFlags.size).toBe(0);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: `Invalid mode: ${mode}` },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: `Invalid mode: ${mode}` }]);
 		});
 
 		test("reports a missing --mode value", () => {
 			const result = parseArgs(["--mode"]);
 			expect(result.mode).toBeUndefined();
 			expect(result.unknownFlags.size).toBe(0);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Mode required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Mode required" }]);
 		});
 
 		test("does not consume another option as a --mode value", () => {
@@ -227,16 +221,12 @@ describe("parseArgs", () => {
 			expect(result.mode).toBeUndefined();
 			expect(result.version).toBe(true);
 			expect(result.unknownFlags.size).toBe(0);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Mode required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Mode required" }]);
 		});
 
 		test("reports an invalid --mode value after a valid one", () => {
 			const result = parseArgs(["--mode", "json", "--mode", "yaml"]);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Invalid mode: yaml" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Invalid mode: yaml" }]);
 		});
 	});
 
@@ -263,9 +253,7 @@ describe("parseArgs", () => {
 
 		test("reports missing value", () => {
 			const result = parseArgs(["--name"]);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Name required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Name required" }]);
 		});
 
 		test("works alongside other flags", () => {
@@ -375,9 +363,7 @@ describe("parseArgs", () => {
 			const result = parseArgs(["--use-theme", "--print"]);
 			expect(result.useTheme).toBeUndefined();
 			expect(result.print).toBe(true);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "Theme required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "Theme required" }]);
 		});
 	});
 
@@ -475,9 +461,7 @@ describe("parseArgs", () => {
 
 		test("requires a mode", () => {
 			const result = parseArgs(["--tui-mode"]);
-			expect(result.diagnostics).toEqual([
-				{ type: "error", message: "TUI mode required" },
-			]);
+			expect(result.diagnostics).toEqual([{ type: "error", message: "TUI mode required" }]);
 		});
 
 		test("does not recognize the old --ui-mode flag", () => {

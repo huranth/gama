@@ -5,12 +5,12 @@ import { createEditTool, createEditToolDefinition, type EditToolOptions } from "
 import type { FileReadTracker } from "./file-read-tracker.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
+import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import {
 	createOutlineTool,
 	createOutlineToolDefinition,
 	type OutlineToolOptions,
 } from "./outline.ts";
-import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import {
 	createPowerShellTool,
 	createPowerShellToolDefinition,
@@ -178,7 +178,9 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
-	return buildRecord(ALL_TOOL_NAMES, cwd, options, (name, dir, opts) => pick(name).tool(dir, opts));
+	return buildRecord(ALL_TOOL_NAMES, cwd, options, (name, dir, opts) =>
+		pick(name).tool(dir, opts),
+	);
 }
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
@@ -231,16 +233,6 @@ export {
 	type GrepToolInput,
 	type GrepToolOptions,
 } from "./grep.ts";
-
-export {
-	createOutlineTool,
-	createOutlineToolDefinition,
-	type OutlineEntry,
-	type OutlineToolDetails,
-	type OutlineToolInput,
-	type OutlineToolOptions,
-} from "./outline.ts";
-
 export {
 	createLsTool,
 	createLsToolDefinition,
@@ -249,6 +241,14 @@ export {
 	type LsToolInput,
 	type LsToolOptions,
 } from "./ls.ts";
+export {
+	createOutlineTool,
+	createOutlineToolDefinition,
+	type OutlineEntry,
+	type OutlineToolDetails,
+	type OutlineToolInput,
+	type OutlineToolOptions,
+} from "./outline.ts";
 
 export {
 	createLocalPowerShellOperations,

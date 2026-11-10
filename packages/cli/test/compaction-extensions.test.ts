@@ -5,8 +5,6 @@ import { Runner } from "@huranth/gama-agent-core";
 import { fauxAssistantMessage } from "@huranth/gama-ai";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import {
 	createExtensionRuntime,
 	type Extension,
@@ -14,9 +12,11 @@ import {
 	type SessionCompactEvent,
 	type SessionEvent,
 } from "../src/core/ext/index.ts";
+import { createSyntheticSourceInfo } from "../src/core/origin.ts";
+import { RunSession } from "../src/core/session/session.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
-import { createSyntheticSourceInfo } from "../src/core/origin.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createCodingTools } from "../src/index.ts";
 import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 import { createTestResourceLoader } from "./test-helpers.ts";

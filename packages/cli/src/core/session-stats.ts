@@ -2,11 +2,7 @@ import type { AssistantMessage } from "@huranth/gama-ai/compat";
 import type { CacheSnapshot } from "./cache/index.ts";
 import { calculateContextTokens, estimateProjectedContextTokens } from "./comp/index.ts";
 import type { ContextUsage } from "./ext/index.ts";
-import {
-	getLatestCompactionEntry,
-	type SessionEntry,
-	type SessionProjection,
-} from "./sessions.ts";
+import { getLatestCompactionEntry, type SessionEntry, type SessionProjection } from "./sessions.ts";
 import { addUsageToTotals, createUsageTotals, type UsageTotals } from "./usage.ts";
 
 export interface SessionStats {

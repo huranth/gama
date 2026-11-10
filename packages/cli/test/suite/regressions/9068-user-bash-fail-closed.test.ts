@@ -1,10 +1,10 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
-import type { SessionRuntime } from "../../../src/core/session/runtime.ts";
 import type {
 	ExtensionAPI,
 	UserBashEvent,
 	UserBashEventResult,
 } from "../../../src/core/ext/types.ts";
+import type { SessionRuntime } from "../../../src/core/session/runtime.ts";
 import { runRpcMode } from "../../../src/rpc/server.ts";
 import { TermApp } from "../../../src/term/app.ts";
 import { createHarness, type Harness } from "../harness.ts";

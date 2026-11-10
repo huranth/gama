@@ -1,6 +1,6 @@
+import { createModels, Type } from "@huranth/gama-ai";
 import type { Context } from "@huranth/gama-bus";
 import { withCancel } from "@huranth/gama-bus/context";
-import { createModels, Type } from "@huranth/gama-ai";
 import {
 	type Conversation,
 	createRegistry,
@@ -609,9 +609,7 @@ describe("task runtime", () => {
 		expect(seen).toEqual(["two", "one", 1, 2, 1234]);
 		expect(reports).toEqual([new Error("reported")]);
 		await flush();
-		await expect(captured!.snapshot(Notes, root.id, context)).rejects.toThrow(
-			"Task ended",
-		);
+		await expect(captured!.snapshot(Notes, root.id, context)).rejects.toThrow("Task ended");
 		await expect(captured!.context(root.id, context)).rejects.toThrow("Task ended");
 		await harness.close(context);
 	});
@@ -953,10 +951,7 @@ describe("task abort", () => {
 			reason: "mark",
 		});
 		expect(memoRead).toBe(1);
-		expect(errors).toEqual([
-			`Task aborted: ${id}`,
-			`Task aborted: ${id}`,
-		]);
+		expect(errors).toEqual([`Task aborted: ${id}`, `Task aborted: ${id}`]);
 		expect(abortRuntimes).toHaveLength(1);
 		expect(abortRuntimes[0]).not.toBe(runRuntime);
 		await harness.close(context);

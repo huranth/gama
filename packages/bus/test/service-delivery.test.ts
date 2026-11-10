@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 import {
 	type Context,
 	createRemoteServiceBinding,
@@ -15,6 +14,7 @@ import {
 	type ServiceProviderUpdate,
 } from "../src/index.ts";
 import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
+import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 
 interface Counter {
 	readonly state: ReplicatedState<{ value: number }>;

@@ -308,13 +308,10 @@ export class MemoryStorage implements Storage {
 			if (write.type !== "document.copy") return write;
 			try {
 				if (changedDocumentIds.has(write.source.id)) {
-					throw new Error(
-						`Changed source: ${write.source.id}`,
-					);
+					throw new Error(`Changed source: ${write.source.id}`);
 				}
 				const stored = this.materializeDocument(write.source.id, write.source.at);
-				if (stored === undefined)
-					throw new Error(`Unreadable source: ${write.source.id}`);
+				if (stored === undefined) throw new Error(`Unreadable source: ${write.source.id}`);
 				if (
 					stored.record.scope.kind !== "conversation" ||
 					write.record.scope.kind !== "conversation" ||
@@ -323,9 +320,7 @@ export class MemoryStorage implements Storage {
 					stored.record.history !== write.record.history ||
 					stored.record.fork !== write.record.fork
 				) {
-					throw new Error(
-						`Source mismatch: ${write.source.id}`,
-					);
+					throw new Error(`Source mismatch: ${write.source.id}`);
 				}
 				return {
 					type: "document.create",
@@ -832,8 +827,7 @@ export class MemoryStorage implements Storage {
 					action.content = write.content;
 					break;
 				case "document.change":
-					if (action.content !== undefined)
-						throw new Error(`Duplicate content: ${id}`);
+					if (action.content !== undefined) throw new Error(`Duplicate content: ${id}`);
 					action.content = write.content;
 					break;
 				case "document.retire":

@@ -1,15 +1,3 @@
-import { anthropicMessagesApi } from "./wire/anthropic-messages.lazy.ts";
-import { azureOpenAIResponsesApi } from "./wire/azure-openai-responses.lazy.ts";
-import { bedrockConverseStreamApi } from "./wire/bedrock-converse-stream.lazy.ts";
-import { gamaMessagesApi } from "./wire/gama-messages.lazy.ts";
-import { googleGenerativeAIApi } from "./wire/google-generative-ai.lazy.ts";
-import { googleVertexApi } from "./wire/google-vertex.lazy.ts";
-import { mistralConversationsApi } from "./wire/mistral-conversations.lazy.ts";
-import { openAICodexResponsesApi } from "./wire/openai-codex-responses.lazy.ts";
-import { openAICompletionsApi } from "./wire/openai-completions.lazy.ts";
-import { openAIResponsesApi } from "./wire/openai-responses.lazy.ts";
-import { getEnvApiKey } from "./env-api-keys.ts";
-import type { ModelsApiStreamOptions } from "./registry.ts";
 import {
 	builtinModels,
 	getBuiltinModel,
@@ -21,53 +9,50 @@ import {
 	type FauxProviderRegistration,
 	type RegisterFauxProviderOptions,
 } from "./catalog/faux.ts";
+import { getEnvApiKey } from "./env-api-keys.ts";
+import type { ModelsApiStreamOptions } from "./registry.ts";
 import type {
 	Api,
 	ApiStreamOptions,
 	AssistantMessage,
-	ReplyStream,
 	Context,
 	Model,
 	ProviderStreamOptions,
 	ProviderStreams,
+	ReplyStream,
 	SimpleStreamOptions,
 	StreamFunction,
 	StreamOptions,
 	TranscriptContext,
 } from "./types.ts";
 import { normalizeContext } from "./utils/transcript.ts";
-
-export * from "./wire/anthropic-messages.lazy.ts";
-
-export * from "./wire/azure-openai-responses.lazy.ts";
-
-export * from "./wire/bedrock-converse-stream.lazy.ts";
-
-export * from "./wire/gama-messages.lazy.ts";
-
-export * from "./wire/google-generative-ai.lazy.ts";
-
-export * from "./wire/google-vertex.lazy.ts";
-
-export * from "./wire/mistral-conversations.lazy.ts";
-
-export * from "./wire/openai-codex-responses.lazy.ts";
-
-export * from "./wire/openai-completions.lazy.ts";
-
-export * from "./wire/openai-responses.lazy.ts";
-
-export * from "./env-api-keys.ts";
-
-export * from "./images.ts";
-
-export * from "./images-api-registry.ts";
-
-export * from "./index.ts";
-
-export * from "./legacy-api-aliases.ts";
+import { anthropicMessagesApi } from "./wire/anthropic-messages.lazy.ts";
+import { azureOpenAIResponsesApi } from "./wire/azure-openai-responses.lazy.ts";
+import { bedrockConverseStreamApi } from "./wire/bedrock-converse-stream.lazy.ts";
+import { gamaMessagesApi } from "./wire/gama-messages.lazy.ts";
+import { googleGenerativeAIApi } from "./wire/google-generative-ai.lazy.ts";
+import { googleVertexApi } from "./wire/google-vertex.lazy.ts";
+import { mistralConversationsApi } from "./wire/mistral-conversations.lazy.ts";
+import { openAICodexResponsesApi } from "./wire/openai-codex-responses.lazy.ts";
+import { openAICompletionsApi } from "./wire/openai-completions.lazy.ts";
+import { openAIResponsesApi } from "./wire/openai-responses.lazy.ts";
 
 export type { BuiltinProvider } from "./catalog/all.ts";
+export * from "./env-api-keys.ts";
+export * from "./images.ts";
+export * from "./images-api-registry.ts";
+export * from "./index.ts";
+export * from "./legacy-api-aliases.ts";
+export * from "./wire/anthropic-messages.lazy.ts";
+export * from "./wire/azure-openai-responses.lazy.ts";
+export * from "./wire/bedrock-converse-stream.lazy.ts";
+export * from "./wire/gama-messages.lazy.ts";
+export * from "./wire/google-generative-ai.lazy.ts";
+export * from "./wire/google-vertex.lazy.ts";
+export * from "./wire/mistral-conversations.lazy.ts";
+export * from "./wire/openai-codex-responses.lazy.ts";
+export * from "./wire/openai-completions.lazy.ts";
+export * from "./wire/openai-responses.lazy.ts";
 
 export type ApiStreamFunction = (
 	model: Model<Api>,

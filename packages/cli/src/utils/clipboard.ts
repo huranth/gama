@@ -57,10 +57,7 @@ function copyCommands(platformName: string, env: NodeJS.ProcessEnv): Command[] {
 	if (env.TERMUX_VERSION) commands.push(["termux-clipboard-set", []]);
 	if (env.WAYLAND_DISPLAY) commands.push(["wl-copy", []]);
 	if (env.DISPLAY) {
-		commands.push(
-			["xclip", ["-selection", "clipboard"]],
-			["xsel", ["--clipboard", "--input"]],
-		);
+		commands.push(["xclip", ["-selection", "clipboard"]], ["xsel", ["--clipboard", "--input"]]);
 	}
 
 	return commands;

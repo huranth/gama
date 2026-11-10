@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { convertMessages, requiresToolCallId } from "../src/wire/google-shared.ts";
 import type { Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { convertMessages, requiresToolCallId } from "../src/wire/google-shared.ts";
 
 function makeGemini3Model<TApi extends "google-generative-ai" | "google-vertex">(
 	api: TApi,

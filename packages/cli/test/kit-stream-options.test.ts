@@ -14,12 +14,12 @@ import {
 } from "@huranth/gama-ai";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import type { ExtensionFactory } from "../src/core/ext/types.ts";
-import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/kit.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { type Settings, SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 describe("createAgentSession stream options", () => {

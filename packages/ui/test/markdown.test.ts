@@ -2,10 +2,10 @@ import assert from "node:assert";
 import { afterEach, describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
 import { Chalk } from "chalk";
-import { Markdown, type MarkdownTheme } from "../src/view/markdown.ts";
-import { resetCapabilitiesCache, setCapabilities } from "../src/terminal-image.ts";
-import type { Component, TUI } from "../src/screen.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
+import { resetCapabilitiesCache, setCapabilities } from "../src/terminal-image.ts";
+import { Markdown, type MarkdownTheme } from "../src/view/markdown.ts";
 import { defaultMarkdownTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
@@ -363,10 +363,7 @@ describe("Markdown component", () => {
 
 			const lines = markdown.render(24).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, [
-				"•   alpha beta gamma",
-				"  delta epsilon zeta",
-			]);
+			assert.deepStrictEqual(lines, ["•   alpha beta gamma", "  delta epsilon zeta"]);
 		});
 	});
 
@@ -1025,11 +1022,7 @@ A=
 			const markdown = new Markdown(source, 0, 0, defaultMarkdownTheme);
 			const lines = markdown.render(80).map((line) => stripAnsi(line).trimEnd());
 
-			assert.deepStrictEqual(lines, [
-				"Escaped $x-y$.",
-				"",
-				"  $\\mathbb{C}^3$",
-			]);
+			assert.deepStrictEqual(lines, ["Escaped $x-y$.", "", "  $\\mathbb{C}^3$"]);
 		});
 
 		it("allows LaTeX rendering to be disabled", () => {
@@ -1242,13 +1235,7 @@ code block
 
 more text`,
 			];
-			const expectedLines = [
-				"hello this is text",
-				"",
-				"  code block",
-				"",
-				"more text",
-			];
+			const expectedLines = ["hello this is text", "", "  code block", "", "more text"];
 
 			for (const text of cases) {
 				const markdown = new Markdown(text, 0, 0, defaultMarkdownTheme);

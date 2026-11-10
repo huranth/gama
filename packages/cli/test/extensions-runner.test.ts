@@ -3,7 +3,6 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { createEventBus } from "../src/core/event-bus.ts";
 import {
 	createExtensionRuntime,
@@ -11,7 +10,7 @@ import {
 	loadExtensionFromFactory,
 	loadExtensions,
 } from "../src/core/ext/loader.ts";
-import { PluginHost, emitProjectTrustEvent } from "../src/core/ext/runner.ts";
+import { emitProjectTrustEvent, PluginHost } from "../src/core/ext/runner.ts";
 import type {
 	ExtensionActions,
 	ExtensionContextActions,
@@ -19,11 +18,12 @@ import type {
 	ExtensionUIContext,
 	ProviderConfig,
 } from "../src/core/ext/types.ts";
-import { Keymap, type KeyId } from "../src/core/hotkeys.ts";
-import type { ModelRegistry } from "../src/core/roster.ts";
+import { type KeyId, Keymap } from "../src/core/hotkeys.ts";
 import type { ScopedModel } from "../src/core/pick.ts";
+import type { ModelRegistry } from "../src/core/roster.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createInMemoryModelRegistry } from "./model-run-test-utils.ts";
 
 describe("PluginHost", () => {
@@ -837,7 +837,7 @@ describe("PluginHost", () => {
 			["an incomplete result", '{ result: { output: "handled" } }'],
 			[
 				"operations and a result",
-				'{ operations: { exec: async () => ({ exitCode: 0 }) }, ' +
+				"{ operations: { exec: async () => ({ exitCode: 0 }) }, " +
 					'result: { output: "handled", exitCode: 0, cancelled: false, truncated: false } }',
 			],
 		])(
@@ -1459,9 +1459,7 @@ describe("PluginHost", () => {
 			runner.onError((error) => errors.push(`${error.extensionPath}: ${error.error}`));
 
 			expect(() => runner.bindCore(extensionActions, extensionContextActions)).not.toThrow();
-			expect(errors).toEqual([
-				"/tmp/broken-extension.ts: Missing API: broken-provider",
-			]);
+			expect(errors).toEqual(["/tmp/broken-extension.ts: Missing API: broken-provider"]);
 			await expect(modelRegistry.refresh()).resolves.toMatchObject({ aborted: false });
 		});
 

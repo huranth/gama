@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { convertMessages } from "../src/wire/google-shared.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { convertMessages } from "../src/wire/google-shared.ts";
 
 function makeModel(id = "gemini-3-pro-preview"): Model<"google-generative-ai"> {
 	return {

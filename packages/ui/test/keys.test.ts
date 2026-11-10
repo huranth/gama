@@ -97,8 +97,7 @@ describe("matchesKey", () => {
 		});
 
 		it(
-			"normalize Kitty keypad functional keys " +
-				"to logical digits, symbols, and navigation",
+			"normalize Kitty keypad functional keys " + "to logical digits, symbols, and navigation",
 			() => {
 				setKittyProtocolActive(true);
 				assert.strictEqual(matchesKey("\x1b[57400u", "1"), true);

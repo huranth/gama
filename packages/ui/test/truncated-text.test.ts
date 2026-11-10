@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
 import { Chalk } from "chalk";
-import { TruncatedText } from "../src/view/truncated-text.ts";
 import { visibleWidth } from "../src/utils.ts";
+import { TruncatedText } from "../src/view/truncated-text.ts";
 
 const chalk = new Chalk({ level: 3 });
 

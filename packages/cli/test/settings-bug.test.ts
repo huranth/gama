@@ -85,8 +85,7 @@ describe("SettingsStore - External Edit Preservation", () => {
 	);
 
 	it(
-		"preserveeserve external project settings changes when " +
-			"updating unrelated project field",
+		"preserveeserve external project settings changes when " + "updating unrelated project field",
 		async () => {
 			const projectSettingsPath = join(projectDir, ".gama", "settings.json");
 			writeFileSync(
@@ -113,8 +112,7 @@ describe("SettingsStore - External Edit Preservation", () => {
 	);
 
 	it(
-		"lett in-memory project changes override external " +
-			"changes for the same project field",
+		"lett in-memory project changes override external " + "changes for the same project field",
 		async () => {
 			const projectSettingsPath = join(projectDir, ".gama", "settings.json");
 			writeFileSync(

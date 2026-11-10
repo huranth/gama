@@ -1,6 +1,6 @@
 import { type Context, copyJson, type JsonRepresentation } from "@huranth/gama-bus";
-import { UserEntry } from "../messages.ts";
 import { ConversationBusy } from "../errors.ts";
+import { UserEntry } from "../messages.ts";
 import type { SessionImpl } from "../records/session.ts";
 import type {
 	CommitPublication,
@@ -41,9 +41,7 @@ export async function admitSubmission(
 		const existing = await tx.submissionByRequest(conversationId, draft.requestId);
 		if (existing !== undefined) {
 			if (existing.type !== draft.type) {
-				throw new Error(
-					`Duplicate request: ${draft.requestId}`,
-				);
+				throw new Error(`Duplicate request: ${draft.requestId}`);
 			}
 			return existing.id;
 		}

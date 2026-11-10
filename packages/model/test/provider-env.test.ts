@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { StringEnum } from "../src/utils/typebox-helpers.ts";
 import { getProviderEnvValue } from "../src/utils/provider-env.ts";
+import { StringEnum } from "../src/utils/typebox-helpers.ts";
 
 const NAME = "GAMA_TEST_PROVIDER_ENV";
 

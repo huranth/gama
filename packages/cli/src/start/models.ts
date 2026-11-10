@@ -33,9 +33,7 @@ export async function listModels(
 ): Promise<void> {
 	const loadError = modelRuntime.getError();
 	if (loadError) {
-		console.error(
-			chalk.yellow(`Warning: ${formatNotice(`Models failed: ${loadError}`)}`),
-		);
+		console.error(chalk.yellow(`Warning: ${formatNotice(`Models failed: ${loadError}`)}`));
 	}
 
 	const models = [...(await modelRuntime.getAvailable(undefined, { signal }))];
@@ -82,7 +80,10 @@ export async function listModels(
 	const widths = {} as Record<Column, number>;
 
 	for (const column of COLUMNS) {
-		widths[column] = columnWidth(headers[column], rows.map((row) => row[column]));
+		widths[column] = columnWidth(
+			headers[column],
+			rows.map((row) => row[column]),
+		);
 	}
 
 	const formatLine = (row: Row): string =>

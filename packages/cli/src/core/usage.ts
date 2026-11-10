@@ -64,7 +64,7 @@ export function getUsageCostBreakdown(entries: SessionEntry[]): UsageCostBreakdo
 		const read = readUsageEntry(entry);
 		if (!read) continue;
 
-			let totals = totalsByKey.get(read.key);
+		let totals = totalsByKey.get(read.key);
 
 		if (!totals) {
 			totals = createUsageTotals();

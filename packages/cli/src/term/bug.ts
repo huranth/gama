@@ -1,6 +1,5 @@
 import * as path from "node:path";
 import type { Container, EditorComponent, TUI } from "@huranth/gama-tui";
-import type { RunSession } from "../core/session/session.ts";
 import {
 	BUG_REPORT_CUSTOM_ENTRY_TYPE,
 	type BugReportBundle,
@@ -11,8 +10,9 @@ import {
 	writeBugReportArchive,
 } from "../core/bug-report.ts";
 import { clearCrashLog, readCrashLog } from "../core/crash-log.ts";
-import type { Keymap } from "../core/hotkeys.ts";
 import { serializeSessionBranch } from "../core/dump.ts";
+import type { Keymap } from "../core/hotkeys.ts";
+import type { RunSession } from "../core/session/session.ts";
 import { BorderedLoader } from "./parts/bordered-loader.ts";
 import { ExtensionEditorComponent } from "./parts/extension-editor.ts";
 import { ExtensionSelectorComponent } from "./parts/extension-selector.ts";

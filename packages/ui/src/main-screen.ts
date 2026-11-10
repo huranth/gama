@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
-import { deleteKittyImage, isImageLine } from "./terminal-image.ts";
 import {
 	type TUI,
 	TuiBase,
@@ -10,6 +9,7 @@ import {
 	type TuiMouseEventType,
 	type TuiStopOptions,
 } from "./screen.ts";
+import { deleteKittyImage, isImageLine } from "./terminal-image.ts";
 import { visibleWidth } from "./utils.ts";
 
 const ENABLE_MOUSE = "\x1b[?1000h\x1b[?1006h";

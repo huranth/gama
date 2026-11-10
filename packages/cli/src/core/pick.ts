@@ -49,22 +49,17 @@ function isAlias(id: string): boolean {
 	return !datePattern.test(id);
 }
 
-function filterConfiguredAuth(
-	models: readonly Model<Api>[],
-	modelRuntime: ModelHub,
-): Model<Api>[] {
+function filterConfiguredAuth(models: readonly Model<Api>[], modelRuntime: ModelHub): Model<Api>[] {
 	return models.filter((model) => modelRuntime.hasConfiguredAuth(model.provider));
 }
 
-function findModelsByIdReference(
-	models: readonly Model<Api>[],
-	reference: string,
-): Model<Api>[] {
+function findModelsByIdReference(models: readonly Model<Api>[], reference: string): Model<Api>[] {
 	const lower = reference.toLowerCase();
 
 	return models.filter(
 		(model) =>
-			model.id.toLowerCase() === lower || `${model.provider}/${model.id}`.toLowerCase() === lower,
+			model.id.toLowerCase() === lower ||
+			`${model.provider}/${model.id}`.toLowerCase() === lower,
 	);
 }
 

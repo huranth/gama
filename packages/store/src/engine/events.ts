@@ -1,6 +1,6 @@
+import type { AssistantMessage, Message, Usage } from "@huranth/gama-ai";
 import type { Context, JsonValue } from "@huranth/gama-bus";
 import type { Op, Path } from "@huranth/gama-bus/delta";
-import type { AssistantMessage, Message, Usage } from "@huranth/gama-ai";
 import { CommittedWatch } from "../records/observation.ts";
 import type {
 	CommitChange,
@@ -300,10 +300,7 @@ function translate(
 	}
 
 	const idle =
-		viewOps.length === 0 &&
-		entries.length === 0 &&
-		tasks.size === 0 &&
-		submissions.length === 0;
+		viewOps.length === 0 && entries.length === 0 && tasks.size === 0 && submissions.length === 0;
 	if (idle) return [];
 	submissions.sort((a, b) => a.id - b.id);
 	const was = parts(before);

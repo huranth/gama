@@ -4,17 +4,17 @@ import { join } from "node:path";
 import { fauxAssistantMessage } from "@huranth/gama-ai";
 import { registerFauxProvider } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { RunSession } from "../src/core/session/session.ts";
+import { ModelHub } from "../src/core/model-run.ts";
 import {
-	type SessionRuntime,
 	type CreateAgentSessionRuntimeFactory,
 	createAgentSessionFromServices,
 	createAgentSessionRuntime,
 	createAgentSessionServices,
+	type SessionRuntime,
 } from "../src/core/session/runtime.ts";
-import { AuthStorage } from "../src/core/vault.ts";
-import { ModelHub } from "../src/core/model-run.ts";
+import type { RunSession } from "../src/core/session/session.ts";
 import { SessionStore } from "../src/core/sessions.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 // Turns
 const conversation = (target: RunSession) =>
@@ -50,9 +50,7 @@ describe("RunSession forking", () => {
 			fauxAssistantMessage("two"),
 			fauxAssistantMessage("three"),
 		]);
-		sessionManager = noSession
-			? SessionStore.inMemory(tempDir)
-			: SessionStore.create(tempDir);
+		sessionManager = noSession ? SessionStore.inMemory(tempDir) : SessionStore.create(tempDir);
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		await authStorage.modify(model.provider, async () => ({ type: "api_key", key: "faux-key" }));
 

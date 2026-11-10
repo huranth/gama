@@ -140,9 +140,7 @@ export function diffSystemPromptSections(
 	return Object.keys(patch).length > 0 ? patch : undefined;
 }
 
-function cloneGuidelines(
-	guidelines: Record<string, string[]>,
-): Record<string, string[]> {
+function cloneGuidelines(guidelines: Record<string, string[]>): Record<string, string[]> {
 	const cloned: Record<string, string[]> = {};
 
 	for (const [name, list] of Object.entries(guidelines)) {

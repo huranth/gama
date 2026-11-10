@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { runUpdateCommand } from "../src/start/update.ts";
 import type { SelfUpdateCommand } from "../src/config.ts";
+import { runUpdateCommand } from "../src/start/update.ts";
 
 const npmCommand: SelfUpdateCommand = {
 	command: "npm",

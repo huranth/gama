@@ -1,5 +1,4 @@
 import { dirname } from "node:path";
-import type { JsonValue } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	fauxAssistantMessage,
@@ -8,6 +7,7 @@ import {
 	type ToolResultMessage,
 	Type,
 } from "@huranth/gama-ai";
+import type { JsonValue } from "@huranth/gama-bus";
 import {
 	defineTool,
 	type EntryRecord,
@@ -20,10 +20,10 @@ import {
 	ToolTask,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
-import type { ExecutionEnv } from "../src/system/index.ts";
-import { NodeExecutionEnv } from "../src/system/node.ts";
 import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { createBashTool } from "../src/ops/index.ts";
+import type { ExecutionEnv } from "../src/system/index.ts";
+import { NodeExecutionEnv } from "../src/system/node.ts";
 import { allEntries, type ChatSetup, chatSetup, openChat, waitFor } from "./chat-support.ts";
 import { addHooks, addTool, type Installed } from "./harness-support.ts";
 import { createTempDirs } from "./helpers.ts";

@@ -468,9 +468,7 @@ export async function fetchEndpointModels(
 		} catch (error) {
 			if (options.signal?.aborted) throw error;
 			lastError = new Error(
-				signal?.aborted && timeoutMs > 0
-					? `Timed out: ${url}`
-					: `Unreachable: ${url}`,
+				signal?.aborted && timeoutMs > 0 ? `Timed out: ${url}` : `Unreachable: ${url}`,
 			);
 			continue;
 		}

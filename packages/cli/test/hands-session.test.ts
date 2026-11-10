@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { getModel } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { HAND_KINDS, HAND_SYSTEM_PROMPT, handKindLabel } from "../src/core/hands.ts";
-import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/kit.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 
@@ -80,9 +80,7 @@ describe("hands session wiring", () => {
 		expect(session.systemPrompt).toContain("Route by role");
 		expect(session.systemPrompt).toContain("start critics on the highest-impact");
 		expect(session.systemPrompt).toContain("one subsystem or one question");
-		expect(session.getToolDefinition("hands")?.description).toContain(
-			"role-bound workers",
-		);
+		expect(session.getToolDefinition("hands")?.description).toContain("role-bound workers");
 		expect(session.getToolDefinition("hands")?.description).toContain("after a scout or digger");
 		expect(session.getToolDefinition("hands")?.description).toContain("Action talk");
 		expect(session.getToolDefinition("hands")?.description).toContain("scout hand");

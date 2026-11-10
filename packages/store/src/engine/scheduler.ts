@@ -1,9 +1,9 @@
+import type { Models } from "@huranth/gama-ai";
 import { type Context, copyJson, type JsonValue } from "@huranth/gama-bus";
 import { awaitWithContext, withAbortSignal } from "@huranth/gama-bus/context";
-import type { Models } from "@huranth/gama-ai";
-import type { ExecutionEnv } from "../system/index.ts";
 import type { SessionImpl } from "../records/session.ts";
 import type { Transaction } from "../records/transaction.ts";
+import type { ExecutionEnv } from "../system/index.ts";
 import type {
 	CommitPublication,
 	ConversationId,
@@ -198,9 +198,7 @@ function sessionMethod(
 }
 
 function missingMigration(record: AnyTaskRecord): Error {
-	return new Error(
-		`Missing migration: ${record.kind}`,
-	);
+	return new Error(`Missing migration: ${record.kind}`);
 }
 
 function erased(task: AnyTask): ErasedDefinition {
@@ -336,10 +334,7 @@ export class TaskScheduler {
 								}),
 							);
 						}
-						if (
-							record.state.status === "waiting" &&
-							record.state.policy === "failFast"
-						) {
+						if (record.state.status === "waiting" && record.state.policy === "failFast") {
 							this.#failFastChecks.add(record.id);
 						}
 					}
@@ -1002,12 +997,7 @@ export class TaskScheduler {
 			if (state.reported === undefined || state.reported.task !== next) {
 				state.reported = { task: next };
 				const cause = next === undefined ? "missing_task" : "incompatible_task";
-				this.#report(
-					new Error(
-						`Outdated task: ${current.id}`,
-						{ cause },
-					),
-				);
+				this.#report(new Error(`Outdated task: ${current.id}`, { cause }));
 			}
 		}
 		return true;
@@ -1102,8 +1092,7 @@ export class TaskScheduler {
 		on: readonly TaskId[],
 		policy: string,
 	): Promise<void> {
-		if (invocation.mode === "abort")
-			throw new Error(`Abort blocked: ${current.id}`);
+		if (invocation.mode === "abort") throw new Error(`Abort blocked: ${current.id}`);
 		const overlay = overlayOf(tx);
 		await this.#loadChain(parentOf(current));
 		const owners = new Set<TaskId>();
@@ -1120,9 +1109,7 @@ export class TaskScheduler {
 				(await this.#storage.task(id, this.#context));
 			if (member === undefined) throw new Error(`Unknown task: ${id}`);
 			if (policy === "failFast" && member.owner !== current.id) {
-				throw new Error(
-					`Invalid failFast: ${id}`,
-				);
+				throw new Error(`Invalid failFast: ${id}`);
 			}
 		}
 	}
@@ -1248,8 +1235,7 @@ export class TaskScheduler {
 						const outcomes: TaskOutcome<JsonValue>[] = [];
 						for (const id of ids) {
 							const state = (await this.#storage.task(id, context))?.state;
-							if (state?.status !== "terminal")
-								throw new Error(`Task running: ${id}`);
+							if (state?.status !== "terminal") throw new Error(`Task running: ${id}`);
 							outcomes.push(state.outcome);
 						}
 						return outcomes;

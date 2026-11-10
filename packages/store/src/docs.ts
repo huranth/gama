@@ -196,14 +196,10 @@ export function checkRecordVersion(
 	version: number,
 ): void {
 	if (version > definition.version) {
-		throw new Error(
-			`Newer document: ${record.id}`,
-		);
+		throw new Error(`Newer document: ${record.id}`);
 	}
 	if (version < definition.version && definition.migrate === undefined) {
-		throw new Error(
-			`Migration needed: ${record.id}`,
-		);
+		throw new Error(`Migration needed: ${record.id}`);
 	}
 }
 

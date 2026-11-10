@@ -1,10 +1,10 @@
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { createModels } from "@huranth/gama-ai/models";
-import { createRegistry, defineExtension, defineTask, Harness } from "../../src/index.ts";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
+import { createRegistry, defineExtension, defineTask, Harness } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;
 

@@ -67,8 +67,9 @@ describe("issue #3302 find returns no results for path-based glob patterns", () 
 	it.runIf(process.platform === "win32")(
 		"matches a literal bracket with a character class",
 		async () => {
-		writeFileSync(join(tempRoot, "q[1].txt"), "");
-		const files = await runFind("q[[]1[]].txt");
-		expect(files).toEqual(["q[1].txt"]);
-	});
+			writeFileSync(join(tempRoot, "q[1].txt"), "");
+			const files = await runFind("q[[]1[]].txt");
+			expect(files).toEqual(["q[1].txt"]);
+		},
+	);
 });

@@ -1,7 +1,7 @@
 // Manual tool
 
 import type { AssistantMessage } from "@huranth/gama-ai";
-import { ProcessTerminal, type TUI, MainScreen } from "@huranth/gama-tui";
+import { MainScreen, ProcessTerminal, type TUI } from "@huranth/gama-tui";
 import { readFileSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";

@@ -9,10 +9,10 @@ import {
 	type AutocompleteSuggestions,
 	CombinedAutocompleteProvider,
 } from "../src/autocomplete.ts";
-import { Editor, wordWrapLine } from "../src/view/editor.ts";
-import type { TUI } from "../src/screen.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import type { TUI } from "../src/screen.ts";
 import { visibleWidth } from "../src/utils.ts";
+import { Editor, wordWrapLine } from "../src/view/editor.ts";
 import { defaultEditorTheme } from "./test-themes.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
@@ -672,9 +672,7 @@ describe("Editor component", () => {
 			);
 		});
 
-		it(
-			"keeps truncated scroll indicators within width and preserves their color (issue #6962)",
-			() => {
+		it("keeps truncated scroll indicators within width and preserves their color (issue #6962)", () => {
 			const width = 10;
 			const borderColor = (text: string) => `\x1b[35m${text}\x1b[39m`;
 			const editor = new Editor(createTestTUI(width), { ...defaultEditorTheme, borderColor });
@@ -2520,9 +2518,7 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.isShowingAutocomplete(), true);
 		});
 
-		it(
-			"re-queries the autocomplete picker when the cursor moves back into the command name",
-			async () => {
+		it("re-queries the autocomplete picker when the cursor moves back into the command name", async () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			const mockProvider: AutocompleteProvider = {
@@ -2736,9 +2732,7 @@ describe("Editor component", () => {
 			assert.strictEqual(editor.isShowingAutocomplete(), false);
 		});
 
-		it(
-			"applies exact typed slash-argument value on Enter even when first item is highlighted",
-			async () => {
+		it("applies exact typed slash-argument value on Enter even when first item is highlighted", async () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 
 			const mockProvider: AutocompleteProvider = {
@@ -3861,9 +3855,7 @@ describe("Editor component", () => {
 			assert.strictEqual(submitted, pasteA + pasteB);
 		});
 
-		it(
-			"renumbers the paste registry in ascending id order when markers are out of order in text",
-			() => {
+		it("renumbers the paste registry in ascending id order when markers are out of order in text", () => {
 			const editor = new Editor(createTestTUI(), defaultEditorTheme);
 			let submitted = "";
 			editor.onSubmit = (t) => {

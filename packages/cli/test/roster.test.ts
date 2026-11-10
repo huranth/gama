@@ -10,13 +10,13 @@ import type {
 } from "@huranth/gama-ai/compat";
 import { getApiProvider, getSupportedThinkingLevels } from "@huranth/gama-ai/compat";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import type { ModelsJsonModel, ModelsJsonProvider } from "../src/core/model-config.ts";
 import {
 	clearApiKeyCache,
 	type ModelRegistry,
 	type ProviderConfigInput,
 } from "../src/core/roster.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createModelRegistry } from "./model-run-test-utils.ts";
 
 describe("ModelRegistry", () => {
@@ -1661,9 +1661,7 @@ describe("ModelRegistry", () => {
 				);
 			});
 
-			test(
-				"models plus baseUrl override replaces registered provider models after refresh",
-				async () => {
+			test("models plus baseUrl override replaces registered provider models after refresh", async () => {
 				const registry = await createModelRegistry(authStorage, modelsJsonPath);
 
 				registry.registerProvider("anthropic", {
@@ -2004,7 +2002,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+				const command =
+					`!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
 					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
@@ -2024,7 +2023,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+				const command =
+					`!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
 					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
@@ -2060,7 +2060,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+				const command =
+					`!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
 					`"; exit 1'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
@@ -2239,7 +2240,8 @@ describe("ModelRegistry", () => {
 				writeFileSync(counterFile, "0");
 
 				const counterPath = toShPath(counterFile);
-				const command = `!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
+				const command =
+					`!sh -c 'count=$(cat "${counterPath}"); echo $((count + 1)) > "${counterPath}` +
 					`"; echo "key-value"'`;
 				writeRawModelsJson({
 					"custom-provider": providerWithApiKey(command),
@@ -2369,7 +2371,9 @@ describe("ModelRegistry", () => {
 				const auth = await registry.getApiKeyAndHeaders(model!);
 				expect(auth.ok).toBe(false);
 				if (!auth.ok) {
-					expect(auth.error).toContain('Command failed: API key for provider "custom-provider"');
+					expect(auth.error).toContain(
+						'Command failed: API key for provider "custom-provider"',
+					);
 				}
 			});
 		});

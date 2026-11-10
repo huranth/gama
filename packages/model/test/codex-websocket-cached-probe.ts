@@ -6,12 +6,6 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Type } from "typebox";
 import { ModelHub } from "../../cli/src/core/model-run.ts";
-import {
-	closeOpenAICodexWebSocketSessions,
-	getOpenAICodexWebSocketDebugStats,
-	resetOpenAICodexWebSocketDebugStats,
-	stream as streamOpenAICodexResponses,
-} from "../src/wire/openai-codex-responses.ts";
 import { getModel, normalizeContext } from "../src/compat.ts";
 import type {
 	AssistantMessage,
@@ -21,6 +15,12 @@ import type {
 	ToolResultMessage,
 	Transport,
 } from "../src/types.ts";
+import {
+	closeOpenAICodexWebSocketSessions,
+	getOpenAICodexWebSocketDebugStats,
+	resetOpenAICodexWebSocketDebugStats,
+	stream as streamOpenAICodexResponses,
+} from "../src/wire/openai-codex-responses.ts";
 
 type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
 

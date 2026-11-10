@@ -269,11 +269,7 @@ export class AssistantMessageComponent extends Container {
 		if (message.stopReason === "length") {
 			this.contentContainer.addChild(new Spacer(1));
 			this.contentContainer.addChild(
-				new Text(
-					theme.fg("error", "Response truncated"),
-					this.outputPad,
-					0,
-				),
+				new Text(theme.fg("error", "Response truncated"), this.outputPad, 0),
 			);
 			return;
 		}

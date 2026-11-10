@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { Runner, type AgentEvent, type AgentTool } from "@huranth/gama-agent-core";
+import { type AgentEvent, type AgentTool, Runner } from "@huranth/gama-agent-core";
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
@@ -10,9 +10,9 @@ import {
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import {
 	createModelRegistry,
 	getModelRuntime,

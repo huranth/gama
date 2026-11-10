@@ -1,8 +1,8 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { MainScreen } from "../src/main-screen.ts";
 import type { Component, Focusable } from "../src/screen.ts";
 import { Container, type TUI } from "../src/screen.ts";
-import { MainScreen } from "../src/main-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class StaticOverlay implements Component {

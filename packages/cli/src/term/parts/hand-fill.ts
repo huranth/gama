@@ -1,11 +1,11 @@
 import {
 	backgroundAnsi,
+	type Color,
 	padLine,
 	sliceByColumn,
-	type Color,
 	visibleWidth,
 } from "@huranth/gama-tui";
-import { ANSI_NO_BACKGROUND, ANSI_RESET, theme, type ThemeBg } from "../theme/theme.ts";
+import { ANSI_NO_BACKGROUND, ANSI_RESET, type ThemeBg, theme } from "../theme/theme.ts";
 
 export type HandFillBg = ThemeBg | Color;
 

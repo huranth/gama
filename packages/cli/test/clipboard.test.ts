@@ -185,9 +185,7 @@ describe("copyToClipboard", () => {
 			mocks.platform.mockReturnValue("linux");
 			vi.stubEnv("DISPLAY", ":0");
 			mocks.command.mockResolvedValue(undefined);
-			await expect(copyToClipboard("hello")).rejects.toThrow(
-				"Clipboard unavailable",
-			);
+			await expect(copyToClipboard("hello")).rejects.toThrow("Clipboard unavailable");
 			expect(mocks.command.mock.calls.map(([name]) => name)).toEqual(["xclip", "xsel"]);
 			expect(osc52Writes).toHaveLength(0);
 		},
@@ -267,9 +265,7 @@ describe("copyToClipboard", () => {
 		vi.stubEnv("WAYLAND_DISPLAY", "wayland-0");
 		vi.stubEnv("DISPLAY", ":0");
 		mocks.command.mockResolvedValue(undefined);
-		await expect(copyToClipboard("hello")).rejects.toThrow(
-			"Clipboard unavailable",
-		);
+		await expect(copyToClipboard("hello")).rejects.toThrow("Clipboard unavailable");
 		expect(mocks.command.mock.calls.map(([name]) => name)).toEqual(["wl-copy", "xclip", "xsel"]);
 	});
 	test("uses OSC 52 when native and command writes fail in a remote session", async () => {
@@ -283,9 +279,7 @@ describe("copyToClipboard", () => {
 		vi.stubEnv("SSH_CONNECTION", "client server");
 		mocks.clipboard.setText.mockRejectedValue(new Error("native failed"));
 		mocks.command.mockResolvedValue(undefined);
-		await expect(copyToClipboard("x".repeat(80_000))).rejects.toThrow(
-			"Clipboard too large",
-		);
+		await expect(copyToClipboard("x".repeat(80_000))).rejects.toThrow("Clipboard too large");
 		expect(osc52Writes).toHaveLength(0);
 	});
 });

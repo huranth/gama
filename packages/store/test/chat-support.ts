@@ -1,4 +1,3 @@
-import type { Context } from "@huranth/gama-bus";
 import {
 	createModels,
 	type FauxProviderHandle,
@@ -8,6 +7,7 @@ import {
 	type Models,
 	type RegisterFauxProviderOptions,
 } from "@huranth/gama-ai";
+import type { Context } from "@huranth/gama-bus";
 import {
 	type Conversation,
 	createRegistry,

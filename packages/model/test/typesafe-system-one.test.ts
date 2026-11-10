@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
-import { classify } from "../src/wire/typesafe-system-one.ts";
 import type { ClassifierContext, ClassifierModel } from "../src/types.ts";
+import { classify } from "../src/wire/typesafe-system-one.ts";
 
 const model: ClassifierModel<"typesafe-system-one"> = {
 	type: "classifier",

@@ -385,9 +385,7 @@ describe("generateSummary reasoning options", () => {
 			totalTokens: 40,
 			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 		});
-		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([
-			2000, 2000,
-		]);
+		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([2000, 2000]);
 	});
 
 	it("asks for the handoff checkpoint format", async () => {

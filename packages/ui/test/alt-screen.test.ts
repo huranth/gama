@@ -1,22 +1,9 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import {
-	AltScreenSearchComponent,
-	AltScreenSearchIndex,
-} from "../src/alt-screen-search.ts";
-import {
-	getKeybindings,
-	Keymap,
-	setKeybindings,
-	TUI_KEYBINDINGS,
-} from "../src/keybindings.ts";
-import { HStack } from "../src/view/h-stack.ts";
-import { Image } from "../src/view/image.ts";
-import { MouseRegion } from "../src/view/mouse-region.ts";
-import { ScrollView } from "../src/view/scroll-view.ts";
-import { SelectList } from "../src/view/select-list.ts";
-import { Text } from "../src/view/text.ts";
-import { VStack } from "../src/view/v-stack.ts";
+import { AltScreen } from "../src/alt-screen.ts";
+import { AltScreenSearchComponent, AltScreenSearchIndex } from "../src/alt-screen-search.ts";
+import { getKeybindings, Keymap, setKeybindings, TUI_KEYBINDINGS } from "../src/keybindings.ts";
+import type { TuiMouseEvent } from "../src/screen.ts";
 import {
 	encodeKitty,
 	hyperlink,
@@ -24,9 +11,14 @@ import {
 	resetCapabilitiesCache,
 	setCapabilities,
 } from "../src/terminal-image.ts";
-import type { TuiMouseEvent } from "../src/screen.ts";
-import { AltScreen } from "../src/alt-screen.ts";
 import { stripTerminalSequences, visibleWidth } from "../src/utils.ts";
+import { HStack } from "../src/view/h-stack.ts";
+import { Image } from "../src/view/image.ts";
+import { MouseRegion } from "../src/view/mouse-region.ts";
+import { ScrollView } from "../src/view/scroll-view.ts";
+import { SelectList } from "../src/view/select-list.ts";
+import { Text } from "../src/view/text.ts";
+import { VStack } from "../src/view/v-stack.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 const OSC133_ZONE_START = "\x1b]133;A\x07";
@@ -105,9 +97,7 @@ describe("AltScreen", () => {
 		tui.stop();
 	});
 
-	it(
-		"shows a clickable jump-to-end indicator on the transcript's last row while scrolled up",
-		async () => {
+	it("shows a clickable jump-to-end indicator on the transcript's last row while scrolled up", async () => {
 		const terminal = new VirtualTerminal(30, 6);
 		const tui = new AltScreen(terminal, undefined, undefined, {
 			scrollToEndIndicator: () => "\x1b[7m ↓ Jump to end \x1b[27m",
@@ -148,9 +138,7 @@ describe("AltScreen", () => {
 		tui.stop();
 	});
 
-	it(
-		"keeps the jump-to-end indicator centered as the auto scrollbar hides and reappears",
-		async () => {
+	it("keeps the jump-to-end indicator centered as the auto scrollbar hides and reappears", async () => {
 		const terminal = new VirtualTerminal(80, 6);
 		const label = " ↓ Jump to latest message · End ";
 		const tui = new AltScreen(terminal, undefined, undefined, {
@@ -228,9 +216,7 @@ describe("AltScreen", () => {
 		},
 	);
 
-	it(
-		"never shows the jump-to-end indicator for a primary scroll view without follow-end",
-		async () => {
+	it("never shows the jump-to-end indicator for a primary scroll view without follow-end", async () => {
 		const terminal = new VirtualTerminal(30, 3);
 		const tui = new AltScreen(terminal, undefined, undefined, {
 			scrollToEndIndicator: () => " ↓ Jump to end ",
@@ -612,9 +598,7 @@ describe("AltScreen", () => {
 		tui.stop();
 	});
 
-	it(
-		"supports configurable keyboard viewport navigation with four rows of page overlap",
-		async () => {
+	it("supports configurable keyboard viewport navigation with four rows of page overlap", async () => {
 		const terminal = new VirtualTerminal(20, 8);
 		const tui = new AltScreen(terminal);
 		tui.addChild(
@@ -674,9 +658,8 @@ describe("AltScreen", () => {
 		assert.deepStrictEqual(
 			new AltScreenSearchIndex().search(
 				["\x1b[31mfoo  bar\x1b[0m", "A界🙂éZ"],
-				 "oo   bar\nA界🙂é",
-			)
-				.matches,
+				"oo   bar\nA界🙂é",
+			).matches,
 			[
 				{
 					segments: [
@@ -745,9 +728,7 @@ describe("AltScreen", () => {
 		assert.ok(!populated.some((line) => line.includes("Find in transcript")));
 	});
 
-	it(
-		"navigates transcript search with hoverable arrow buttons and toggles it with its shortcut",
-		async () => {
+	it("navigates transcript search with hoverable arrow buttons and toggles it with its shortcut", async () => {
 		const terminal = new RecordingTerminal(120, 6);
 		const tui = new AltScreen(terminal, undefined, undefined, {
 			searchNavigationButtonStyle: (text, hovered) =>
@@ -774,7 +755,8 @@ describe("AltScreen", () => {
 			terminal.events
 				.slice(hoverEventCount)
 				.some(
-					(event) => event.type === "write" && event.data.includes("\x1b[45mNext Enter\x1b[49m"),
+					(event) =>
+						event.type === "write" && event.data.includes("\x1b[45mNext Enter\x1b[49m"),
 				),
 		);
 		terminal.sendInput(`\x1b[<0;${arrowColumn + 1};${arrowRow + 1}M`);
@@ -789,7 +771,9 @@ describe("AltScreen", () => {
 		terminal.sendInput(`\x1b[<0;${arrowColumn + 1};${arrowRow + 1}M`);
 		await terminal.waitForRender();
 		assert.ok(terminal.getViewport().some((line) => line.includes("1/2")));
-		assert.ok(terminal.getViewport().some((line) => line.includes("Prev Shift+Enter  Next Enter")));
+		assert.ok(
+			terminal.getViewport().some((line) => line.includes("Prev Shift+Enter  Next Enter")),
+		);
 
 		terminal.sendInput("\x1b[102;6u");
 		await terminal.waitForRender();
@@ -809,11 +793,9 @@ describe("AltScreen", () => {
 					"middle",
 					"needle two",
 					"filler",
-					"┌────────────────────" +
-						"────────────────────┐",
+					"┌────────────────────" + "────────────────────┐",
 					"│ box                                    │",
-					"└────────────────────" +
-						"────────────────────┘",
+					"└────────────────────" + "────────────────────┘",
 					"end",
 				].join("\n"),
 				0,
@@ -1399,9 +1381,7 @@ describe("AltScreen", () => {
 		}
 	});
 
-	it(
-		"evicts offscreen Kitty images when decoded raster memory exceeds the cache quota",
-		async () => {
+	it("evicts offscreen Kitty images when decoded raster memory exceeds the cache quota", async () => {
 		setCapabilities({ images: "kitty", trueColor: true, hyperlinks: true });
 		try {
 			const terminal = new RecordingTerminal(20, 1);
@@ -1446,9 +1426,7 @@ describe("AltScreen", () => {
 		}
 	});
 
-	it(
-		"opens an OSC 8 hyperlink with specific or generic release codes, but not on drag",
-		async () => {
+	it("opens an OSC 8 hyperlink with specific or generic release codes, but not on drag", async () => {
 		const terminal = new RecordingTerminal(20, 3);
 		const openedUrls: string[] = [];
 		const tui = new AltScreen(terminal, undefined, undefined, {
@@ -1492,9 +1470,7 @@ describe("AltScreen", () => {
 		tui.stop();
 	});
 
-	it(
-		"selects visible text with the mouse and copies it with OSC 52 after a generic release",
-		async () => {
+	it("selects visible text with the mouse and copies it with OSC 52 after a generic release", async () => {
 		const terminal = new RecordingTerminal(20, 4);
 		const tui = new AltScreen(terminal);
 		tui.addChild(new Text("\x1b[1mal\x1b[0mpha\nbeta\ngamma\ndelta", 0, 0));
@@ -1956,7 +1932,11 @@ describe("AltScreen", () => {
 		await terminal.waitForRender();
 
 		const selectionTop = tui.viewportTop;
-		assert.strictEqual(selectionTop, 0, `expected fast auto-scroll to the top, got ${selectionTop}`);
+		assert.strictEqual(
+			selectionTop,
+			0,
+			`expected fast auto-scroll to the top, got ${selectionTop}`,
+		);
 		terminal.sendInput("\x1b[<0;1;1m");
 		await terminal.waitForRender();
 
@@ -2133,9 +2113,7 @@ describe("AltScreen", () => {
 		tui.stop();
 	});
 
-	it(
-		"sends one leave when motion changes mouse regions or enters empty and overlay areas",
-		async () => {
+	it("sends one leave when motion changes mouse regions or enters empty and overlay areas", async () => {
 		const terminal = new VirtualTerminal(20, 3);
 		const tui = new AltScreen(terminal);
 		const events: Array<{ region: string; type: string; x: number; y: number }> = [];
@@ -2243,9 +2221,7 @@ describe("AltScreen", () => {
 		}
 	});
 
-	it(
-		"defers hover leave until after a captured drag ends without synthesizing a click",
-		async () => {
+	it("defers hover leave until after a captured drag ends without synthesizing a click", async () => {
 		const terminal = new VirtualTerminal(20, 2);
 		const tui = new AltScreen(terminal);
 		const events: string[] = [];

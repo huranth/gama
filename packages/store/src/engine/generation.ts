@@ -1,4 +1,3 @@
-import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/gama-bus";
 import type {
 	Api,
 	AssistantMessage,
@@ -12,6 +11,7 @@ import type {
 import { isContextOverflow } from "@huranth/gama-ai/utils/overflow";
 import { isRetryableAssistantError, retryDelayMs } from "@huranth/gama-ai/utils/retry";
 import { getCurrentTools } from "@huranth/gama-ai/utils/transcript";
+import { type Context, copyJson, type Draft, type JsonValue } from "@huranth/gama-bus";
 import { AssistantEntry, ResetEntry, SystemEntry, UserEntry } from "../messages.ts";
 import type { ExecutionEnv } from "../system/index.ts";
 import { defineTask } from "../tasks.ts";
@@ -635,8 +635,7 @@ export const GenerationTask = defineTask<
 				let cutoff = (await tx.scanEntries({ conversationId }, 1)).items[0]?.id;
 				for (const entry of entries)
 					cutoff = (await tx.appendEntry(SystemEntry, conversationId, entry)).id;
-				if (cutoff === undefined)
-					throw new Error(`Empty conversation: ${conversationId}`);
+				if (cutoff === undefined) throw new Error(`Empty conversation: ${conversationId}`);
 				if (
 					threshold === "background" &&
 					(await tx.doc(LiveDoc, conversationId)).compactions === undefined

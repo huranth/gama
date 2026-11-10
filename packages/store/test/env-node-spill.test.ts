@@ -53,43 +53,39 @@ afterEach(() => {
 });
 
 describe("NodeExecutionEnv spill backpressure", () => {
-	it(
-		"keeps the spill stream open past the exit grace period while a write is pending",
-		async () => {
-			const root = join(
-				tmpdir(),
-				`gama-durable-env-spill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
-			);
-			mkdirSync(root, { recursive: true });
-			tempDirs.push(root);
-			const env = new NodeExecutionEnv({ cwd: root });
-			const script =
-				"process.stdout.write('a'.repeat(20));" +
-				"setTimeout(() => process.stdout.write('b'.repeat(1000)), 200)";
-			const command = `${JSON.stringify(process.execPath)} -e "${script}"`;
+	it("keeps the spill stream open past the exit grace period while a write is pending", async () => {
+		const root = join(
+			tmpdir(),
+			`gama-durable-env-spill-${Date.now()}-${Math.random().toString(36).slice(2)}`,
+		);
+		mkdirSync(root, { recursive: true });
+		tempDirs.push(root);
+		const env = new NodeExecutionEnv({ cwd: root });
+		const script =
+			"process.stdout.write('a'.repeat(20));" +
+			"setTimeout(() => process.stdout.write('b'.repeat(1000)), 200)";
+		const command = `${JSON.stringify(process.execPath)} -e "${script}"`;
 
-			let output = "";
-			const result = getOrThrow(
-				await env.exec(
-					command,
-					{
-						spill: { afterBytes: 10, afterLines: 10 },
-						onOutput: (text) => {
-							output += text;
-						},
+		let output = "";
+		const result = getOrThrow(
+			await env.exec(
+				command,
+				{
+					spill: { afterBytes: 10, afterLines: 10 },
+					onOutput: (text) => {
+						output += text;
 					},
-					BACKGROUND_CONTEXT,
-				),
-			);
+				},
+				BACKGROUND_CONTEXT,
+			),
+		);
 
-			expect(spill.rejectedWrites).toBeGreaterThan(0);
-			expect(output).toHaveLength(1020);
-			expect(result.spillPath).toBeDefined();
-			tempDirs.push(join(result.spillPath!, ".."));
-			expect(getOrThrow(await env.readTextFile(result.spillPath!, BACKGROUND_CONTEXT))).toBe(
-				`${"a".repeat(20)}${"b".repeat(1000)}`,
-			);
-		},
-		10_000,
-	);
+		expect(spill.rejectedWrites).toBeGreaterThan(0);
+		expect(output).toHaveLength(1020);
+		expect(result.spillPath).toBeDefined();
+		tempDirs.push(join(result.spillPath!, ".."));
+		expect(getOrThrow(await env.readTextFile(result.spillPath!, BACKGROUND_CONTEXT))).toBe(
+			`${"a".repeat(20)}${"b".repeat(1000)}`,
+		);
+	}, 10_000);
 });

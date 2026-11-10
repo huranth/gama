@@ -683,9 +683,7 @@ function convertToolResultOutput<TApi extends Api>(
 	return output;
 }
 
-export function parseReasoningSignature(
-	signature: string,
-): ResponseReasoningItem | undefined {
+export function parseReasoningSignature(signature: string): ResponseReasoningItem | undefined {
 	try {
 		return JSON.parse(signature) as ResponseReasoningItem;
 	} catch {

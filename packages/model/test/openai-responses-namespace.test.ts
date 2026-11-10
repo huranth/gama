@@ -1,13 +1,13 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it } from "vitest";
+import type { Api, AssistantMessage, Model, ToolCall } from "../src/types.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import {
 	convertResponsesMessages,
 	parseReasoningSignature,
 	processResponsesStream,
 } from "../src/wire/openai-responses-shared.ts";
-import type { Api, AssistantMessage, Model, ToolCall } from "../src/types.ts";
-import { ReplyStream } from "../src/utils/event-stream.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 const model: Model<"openai-responses"> = {
 	id: "gpt-5.4",
@@ -117,12 +117,7 @@ function getToolCall(output: AssistantMessage): ToolCall {
 describe("OpenAI Responses terminal messages", () => {
 	it("omits an absent error message", async () => {
 		const output = createOutput();
-		await processResponsesStream(
-			createFunctionCallEvents(),
-			output,
-			new ReplyStream(),
-			model,
-		);
+		await processResponsesStream(createFunctionCallEvents(), output, new ReplyStream(), model);
 
 		expect(output).not.toHaveProperty("errorMessage");
 	});
@@ -142,12 +137,7 @@ describe("OpenAI Responses terminal messages", () => {
 describe("OpenAI Responses tool-call namespaces", () => {
 	it("round-trips a function namespace received only on output_item.done", async () => {
 		const output = createOutput();
-		await processResponsesStream(
-			createFunctionCallEvents(),
-			output,
-			new ReplyStream(),
-			model,
-		);
+		await processResponsesStream(createFunctionCallEvents(), output, new ReplyStream(), model);
 
 		const toolCall = getToolCall(output);
 		expect(toolCall).toMatchObject({
@@ -175,15 +165,9 @@ describe("OpenAI Responses tool-call namespaces", () => {
 	it("round-trips a custom-tool namespace received only on output_item.done", async () => {
 		const output = createOutput();
 		const grammarToolInputProperties = new Map([["query", "input"]]);
-		await processResponsesStream(
-			createCustomToolCallEvents(),
-			output,
-			new ReplyStream(),
-			model,
-			{
-				grammarToolInputProperties,
-			},
-		);
+		await processResponsesStream(createCustomToolCallEvents(), output, new ReplyStream(), model, {
+			grammarToolInputProperties,
+		});
 
 		const toolCall = getToolCall(output);
 		expect(toolCall).toMatchObject({

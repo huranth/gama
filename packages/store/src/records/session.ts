@@ -565,8 +565,7 @@ export class SessionImpl implements Session {
 		const record = await this.#storage.findDocument(address, "current", context);
 		if (record === undefined) return undefined;
 		const stored = await this.#storage.document(record.id, "current", context);
-		if (stored === undefined)
-			throw new Error(`Unreadable document: ${record.id}`);
+		if (stored === undefined) throw new Error(`Unreadable document: ${record.id}`);
 		const value = materializeDocument(definition, stored);
 		const loaded: LoadedDocument = {
 			addressId,
@@ -596,12 +595,9 @@ export class SessionImpl implements Session {
 
 	#assertHealthy(): void {
 		if (this.#poison !== undefined) {
-			throw new Error(
-				"Session poisoned",
-				{
-					cause: this.#poison.error,
-				},
-			);
+			throw new Error("Session poisoned", {
+				cause: this.#poison.error,
+			});
 		}
 	}
 }

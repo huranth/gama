@@ -200,13 +200,11 @@ export class AssistantMessageFrameEncoder {
 	private readonly blocks = new Map<number, EncoderBlockState>();
 
 	encode(event: AssistantMessageEvent): AssistantMessageFrame | undefined {
-		if (this.terminal)
-			throw new Error("Stream already ended");
+		if (this.terminal) throw new Error("Stream already ended");
 
 		switch (event.type) {
 			case "start":
-				if (this.started)
-					throw new Error("Duplicate start event");
+				if (this.started) throw new Error("Duplicate start event");
 				this.started = true;
 				return { type: "start", partial: cloneStartMessage(event.partial) };
 			case "done":
@@ -218,8 +216,7 @@ export class AssistantMessageFrameEncoder {
 				return undefined;
 		}
 
-		if (!this.started)
-			throw new Error(`Event before start: ${event.type}`);
+		if (!this.started) throw new Error(`Event before start: ${event.type}`);
 
 		switch (event.type) {
 			case "text_start": {
@@ -374,8 +371,7 @@ export class AssistantMessageFrameEncoder {
 	private block(contentIndex: number, kind: EncoderBlockState["kind"]): EncoderBlockState {
 		assertContentIndex(contentIndex);
 		const state = this.blocks.get(contentIndex);
-		if (state === undefined)
-			throw new Error(`Block not started: ${contentIndex}`);
+		if (state === undefined) throw new Error(`Block not started: ${contentIndex}`);
 		if (state.kind !== kind) {
 			throw new Error(`Wrong block kind: ${state.kind}`);
 		}
@@ -417,8 +413,7 @@ export function reduceAssistantMessageFrames(
 
 	for (const frame of frames) {
 		if (frame.type === "start") {
-			if (message)
-				throw new Error("Duplicate start frame");
+			if (message) throw new Error("Duplicate start frame");
 			if (frameBeforeStart !== undefined)
 				throw new Error(`Frame before start: ${frameBeforeStart}`);
 			message = structuredClone(frame.partial);

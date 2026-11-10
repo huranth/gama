@@ -20,11 +20,11 @@ export type ProcessImageResult =
 			data: string;
 			mimeType: string;
 			hints: string[];
-		}
+	  }
 	| {
 			ok: false;
 			message: string;
-		};
+	  };
 
 interface NormalizedImage {
 	bytes: Uint8Array;
@@ -100,7 +100,11 @@ export async function processImage(
 	}
 
 	if (autoResizeImages) {
-		const resized = await resizeImage(normalized.bytes, normalized.mimeType, options?.resizeOptions);
+		const resized = await resizeImage(
+			normalized.bytes,
+			normalized.mimeType,
+			options?.resizeOptions,
+		);
 		if (!resized) {
 			return { ok: false, message: oversizedImageMessage() };
 		}

@@ -7,10 +7,8 @@ export {
 	defineService,
 	replicatedState,
 } from "./api.ts";
-
-export type { Draft } from "./patch/index.ts";
-
 export { type CopyJsonOptions, copyJson, isJsonValue } from "./json.ts";
+export type { Draft } from "./patch/index.ts";
 
 export {
 	isRemoteServiceErrorCode,

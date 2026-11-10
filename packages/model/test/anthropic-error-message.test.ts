@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { stream } from "../src/wire/anthropic-messages.ts";
 import type { Context, Model, TranscriptContext } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream } from "../src/wire/anthropic-messages.ts";
 
 const model: Model<"anthropic-messages"> = {
 	id: "claude-sonnet-4-6",
@@ -53,6 +53,6 @@ describe("anthropic error messages", () => {
 			},
 		}).result();
 
-		expect(message.errorMessage).toBe("403: {\"error\":\"blocked by gateway WAF\"}");
+		expect(message.errorMessage).toBe('403: {"error":"blocked by gateway WAF"}');
 	});
 });

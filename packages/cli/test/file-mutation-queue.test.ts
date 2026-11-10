@@ -110,7 +110,6 @@ describe("withFileMutationQueue", () => {
 		expect(await resolvesWithin(outer, 500)).toBe(true);
 		expect(nestedRan).toBe(true);
 	});
-
 });
 
 describe("built-in edit and write tools", () => {

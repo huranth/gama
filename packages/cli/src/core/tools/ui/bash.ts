@@ -95,7 +95,10 @@ function getDisplayOutput(
 }
 
 function addOutput(component: Container, output: string, expanded: boolean, theme: Theme): void {
-	const styled = output.split("\n").map((line) => styleLine(line, theme)).join("\n");
+	const styled = output
+		.split("\n")
+		.map((line) => styleLine(line, theme))
+		.join("\n");
 
 	if (expanded) {
 		component.addChild(new Text(`\n${styled}`, 0, 0));
@@ -212,7 +215,14 @@ export function createShellRenderers(
 			const component =
 				context.lastComponent instanceof Container ? context.lastComponent : new Container();
 
-			rebuildShellResult(component, result as BashResult, options, context.showImages, state, theme);
+			rebuildShellResult(
+				component,
+				result as BashResult,
+				options,
+				context.showImages,
+				state,
+				theme,
+			);
 			component.invalidate();
 
 			return component;

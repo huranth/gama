@@ -1,8 +1,6 @@
 import { getLayoutNode } from "./layout-node.ts";
-import type { ScrollView } from "./view/scroll-view.ts";
-import { allocateStackSizes, visibleStackEntries } from "./view/stack.ts";
-import { cropKittyImageLine, getKittyImageMetadata, isImageLine } from "./terminal-image.ts";
 import { type Component, CURSOR_MARKER, compositeTuiLine } from "./screen.ts";
+import { cropKittyImageLine, getKittyImageMetadata, isImageLine } from "./terminal-image.ts";
 import {
 	extractAnsiCode,
 	getActiveBackgroundAnsi,
@@ -10,6 +8,8 @@ import {
 	sliceByColumn,
 	visibleWidth,
 } from "./utils.ts";
+import type { ScrollView } from "./view/scroll-view.ts";
+import { allocateStackSizes, visibleStackEntries } from "./view/stack.ts";
 
 export interface LayoutRect {
 	x: number;
@@ -336,8 +336,7 @@ function layoutComponent(
 		const viewportHeight = height === undefined ? contentHeight : Math.max(0, Math.floor(height));
 		node.state.updateLayout(contentHeight, viewportHeight, context.requestRender);
 
-		const slack =
-			node.state.align === "end" ? Math.max(0, viewportHeight - contentHeight) : 0;
+		const slack = node.state.align === "end" ? Math.max(0, viewportHeight - contentHeight) : 0;
 		translateBox(childBox, previousScrollTop - node.state.scrollTop + slack);
 		const scrollView = node.state as ScrollView;
 		if (node.state.primary || !context.primaryScrollView) context.primaryScrollView = scrollView;

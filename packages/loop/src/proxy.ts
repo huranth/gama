@@ -32,14 +32,14 @@ export type ProxyAssistantMessageEvent =
 			reason: Extract<StopReason, "stop" | "length" | "toolUse">;
 			usage: AssistantMessage["usage"];
 			providerThinkingLevel?: string;
-		}
+	  }
 	| {
 			type: "error";
 			reason: Extract<StopReason, "aborted" | "error">;
 			errorMessage?: string;
 			usage: AssistantMessage["usage"];
 			providerThinkingLevel?: string;
-		};
+	  };
 
 type ProxySerializableStreamOptions = Pick<
 	SimpleStreamOptions,
@@ -369,7 +369,8 @@ export function streamProxy(
 			if (!sawTerminalEvent) {
 				clearPartialJson(partial);
 				partial.stopReason = "error";
-				partial.errorMessage = "Connection closed by proxy server before the response completed";
+				partial.errorMessage =
+					"Connection closed by proxy server before the response completed";
 				stream.push({
 					type: "error",
 					reason: "error",

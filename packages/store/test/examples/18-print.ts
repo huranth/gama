@@ -1,15 +1,14 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type { AssistantMessage } from "@huranth/gama-ai";
 import { createProvider, envApiKeyAuth, type Model } from "@huranth/gama-ai";
-import { openAICompletionsApi } from "@huranth/gama-ai/compat";
-import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
 } from "@huranth/gama-ai/catalog/faux";
-import { NodeExecutionEnv } from "../../src/system/node.ts";
+import { openAICompletionsApi } from "@huranth/gama-ai/compat";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	AssistantEntry,
 	createRegistry,
@@ -19,6 +18,7 @@ import {
 	section,
 } from "../../src/index.ts";
 import { createBashTool, createReadTool } from "../../src/ops/index.ts";
+import { NodeExecutionEnv } from "../../src/system/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 const prompt = process.argv[2] ?? "What is in this directory?";

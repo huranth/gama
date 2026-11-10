@@ -2,7 +2,6 @@ import type {
 	Api,
 	AssistantImages,
 	AssistantMessage,
-	ReplyStream,
 	AuthOperationOptions,
 	AuthResult,
 	ClassifierApi,
@@ -24,10 +23,11 @@ import type {
 	ModelTypeMap,
 	Provider,
 	ProviderHeaders,
+	ReplyStream,
 } from "@huranth/gama-ai";
+import type { VirtualModelDefinition } from "./fake-models.ts";
 import type { ModelHub } from "./model-run.ts";
 import type { AuthStatus, ProviderConfigInput } from "./provider-composer.ts";
-import type { VirtualModelDefinition } from "./fake-models.ts";
 
 export type { ProviderConfigInput } from "./provider-composer.ts";
 

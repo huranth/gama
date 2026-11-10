@@ -27,9 +27,9 @@ import {
 	watchEvents,
 } from "@huranth/gama-durable";
 import { afterEach, describe, expect, it } from "vitest";
+import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import { selectCut, serializeConversation } from "../src/engine/compaction.ts";
 import { orderToolResults } from "../src/engine/context.ts";
-import { openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
 import {
 	allEntries,
 	type ChatSetup,

@@ -3,10 +3,10 @@ import zlib from "node:zlib";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { fetchPage } from "../src/core/tools/web/get.ts";
 import {
-	FetchError,
 	FETCH_KINDS,
-	readUrl,
+	FetchError,
 	type FetchLike,
+	readUrl,
 } from "../src/core/tools/web/read-url.ts";
 import { SsrfError } from "../src/core/tools/web/security/ssrf.ts";
 
@@ -737,9 +737,7 @@ describe("fetchPage edge cases", () => {
 	});
 
 	it("keeps cjk text through extraction and truncation", async () => {
-		const cjk =
-			"汉字与英文混合的内容，用于验证截断。" +
-			"更多汉字内容，继续追加。".repeat(160);
+		const cjk = `汉字与英文混合的内容，用于验证截断。${"更多汉字内容，继续追加。".repeat(160)}`;
 		const page = await fetchPage({
 			url: "https://example.com/cjk",
 			maxChars: 1000,

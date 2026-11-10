@@ -1235,7 +1235,7 @@ export class TermApp {
 	}
 
 	configurePromptSummary(component: UserMessageComponent, text: string): void {
-		return configurePromptSummary(this, component, text);
+		configurePromptSummary(this, component, text);
 	}
 
 	private formatDisplayPath(p: string): string {
@@ -2047,7 +2047,7 @@ export class TermApp {
 	}
 
 	renderCurrentSessionState(): void {
-		return renderCurrentSessionState(this);
+		renderCurrentSessionState(this);
 	}
 
 	getMarkdownTransformers(): MarkdownTransformer[] {
@@ -3113,7 +3113,7 @@ export class TermApp {
 	}
 
 	subscribeToAgent(): void {
-		return subscribeToAgent(this);
+		subscribeToAgent(this);
 	}
 
 	async handleEvent(event: SessionEvent): Promise<void> {
@@ -3121,27 +3121,27 @@ export class TermApp {
 	}
 
 	handleAgentStart(): void {
-		return handleAgentStart(this);
+		handleAgentStart(this);
 	}
 
 	handleTurnStart(): void {
-		return handleTurnStart(this);
+		handleTurnStart(this);
 	}
 
 	handleQueueUpdate(): void {
-		return handleQueueUpdate(this);
+		handleQueueUpdate(this);
 	}
 
 	handleEntryAppended(event: AgentEventOf<"entry_appended">): void {
-		return handleEntryAppended(this, event);
+		handleEntryAppended(this, event);
 	}
 
 	handleSessionInfoChanged(): void {
-		return handleSessionInfoChanged(this);
+		handleSessionInfoChanged(this);
 	}
 
 	handleThinkingLevelChanged(): void {
-		return handleThinkingLevelChanged(this);
+		handleThinkingLevelChanged(this);
 	}
 
 	estimateStreamingOutputTokens(message: AssistantMessage): number {
@@ -3149,55 +3149,55 @@ export class TermApp {
 	}
 
 	handleMessageStart(event: AgentEventOf<"message_start">): void {
-		return handleMessageStart(this, event);
+		handleMessageStart(this, event);
 	}
 
 	handleMessageUpdate(event: AgentEventOf<"message_update">): void {
-		return handleMessageUpdate(this, event);
+		handleMessageUpdate(this, event);
 	}
 
 	handleMessageEnd(event: AgentEventOf<"message_end">): void {
-		return handleMessageEnd(this, event);
+		handleMessageEnd(this, event);
 	}
 
 	maybeWarnAboutCacheCold(isAssistant: boolean): void {
-		return maybeWarnAboutCacheCold(this, isAssistant);
+		maybeWarnAboutCacheCold(this, isAssistant);
 	}
 
 	handleHandsStarted(event: AgentEventOf<"hands_started">): void {
-		return handleHandsStarted(this, event);
+		handleHandsStarted(this, event);
 	}
 
 	handleHandsUpdated(event: AgentEventOf<"hands_updated">): void {
-		return handleHandsUpdated(this, event);
+		handleHandsUpdated(this, event);
 	}
 
 	handleHandsFinished(event: AgentEventOf<"hands_finished">): void {
-		return handleHandsFinished(this, event);
+		handleHandsFinished(this, event);
 	}
 
 	openHand(handId: string): void {
-		return openHand(this, handId);
+		openHand(this, handId);
 	}
 
 	closeHand(): void {
-		return closeHand(this);
+		closeHand(this);
 	}
 
 	handleToolExecutionStart(event: AgentEventOf<"tool_execution_start">): void {
-		return handleToolExecutionStart(this, event);
+		handleToolExecutionStart(this, event);
 	}
 
 	handleToolExecutionUpdate(event: AgentEventOf<"tool_execution_update">): void {
-		return handleToolExecutionUpdate(this, event);
+		handleToolExecutionUpdate(this, event);
 	}
 
 	handleToolExecutionEnd(event: AgentEventOf<"tool_execution_end">): void {
-		return handleToolExecutionEnd(this, event);
+		handleToolExecutionEnd(this, event);
 	}
 
 	handleAgentEnd(event: AgentEventOf<"agent_end">): void {
-		return handleAgentEnd(this, event);
+		handleAgentEnd(this, event);
 	}
 
 	async handleAgentSettled(): Promise<void> {
@@ -3205,33 +3205,33 @@ export class TermApp {
 	}
 
 	handleCompactionStart(event: AgentEventOf<"compaction_start">): void {
-		return handleCompactionStart(this, event);
+		handleCompactionStart(this, event);
 	}
 
 	handleCompactionEnd(event: AgentEventOf<"compaction_end">): void {
-		return handleCompactionEnd(this, event);
+		handleCompactionEnd(this, event);
 	}
 
 	handleAutoRetryStart(event: AgentEventOf<"auto_retry_start">): void {
-		return handleAutoRetryStart(this, event);
+		handleAutoRetryStart(this, event);
 	}
 
 	handleAutoRetryEnd(event: AgentEventOf<"auto_retry_end">): void {
-		return handleAutoRetryEnd(this, event);
+		handleAutoRetryEnd(this, event);
 	}
 
 	handleSummarizationRetryScheduled(event: AgentEventOf<"summarization_retry_scheduled">): void {
-		return handleSummarizationRetryScheduled(this, event);
+		handleSummarizationRetryScheduled(this, event);
 	}
 
 	handleSummarizationRetryAttemptStart(
 		event: AgentEventOf<"summarization_retry_attempt_start">,
 	): void {
-		return handleSummarizationRetryAttemptStart(this, event);
+		handleSummarizationRetryAttemptStart(this, event);
 	}
 
 	handleSummarizationRetryFinished(): void {
-		return handleSummarizationRetryFinished(this);
+		handleSummarizationRetryFinished(this);
 	}
 
 	getUserMessageText(message: Message): string {
@@ -3239,11 +3239,11 @@ export class TermApp {
 	}
 
 	showStatus(message: string, tone: "dim" | "success" | "warning" | "error" = "dim"): void {
-		return showStatus(this, message, tone);
+		showStatus(this, message, tone);
 	}
 
 	addCustomEntryToChat(entry: Extract<SessionEntry, { type: "custom" }>): void {
-		return addCustomEntryToChat(this, entry);
+		addCustomEntryToChat(this, entry);
 	}
 
 	isSilentTool(toolName: string): boolean {
@@ -3251,11 +3251,11 @@ export class TermApp {
 	}
 
 	resetActivity(): void {
-		return resetActivity(this);
+		resetActivity(this);
 	}
 
 	trackActivity(toolCallId: string, name: string, args: unknown, timestamp = Date.now()): void {
-		return trackActivity(this, toolCallId, name, args, timestamp);
+		trackActivity(this, toolCallId, name, args, timestamp);
 	}
 
 	addChatChild(component: Component): Spacer | null {
@@ -3263,61 +3263,61 @@ export class TermApp {
 	}
 
 	dropChatChild(component: Component, spacer: Spacer | null): void {
-		return dropChatChild(this, component, spacer);
+		dropChatChild(this, component, spacer);
 	}
 
 	addToolLine(line: ActivityLineComponent): void {
-		return addToolLine(this, line);
+		addToolLine(this, line);
 	}
 
 	ensureCurrentActivity(): void {
-		return ensureCurrentActivity(this);
+		ensureCurrentActivity(this);
 	}
 
 	settleRunningActivities(message: string): void {
-		return settleRunningActivities(this, message);
+		settleRunningActivities(this, message);
 	}
 
 	settleCurrentActivity(): void {
-		return settleCurrentActivity(this);
+		settleCurrentActivity(this);
 	}
 
 	updateActivity(toolCallId: string, update: Partial<ActivityRecord>): void {
-		return updateActivity(this, toolCallId, update);
+		updateActivity(this, toolCallId, update);
 	}
 
 	addMessageToChat(message: AgentMessage, options?: { populateHistory?: boolean }): void {
-		return addMessageToChat(this, message, options);
+		addMessageToChat(this, message, options);
 	}
 
 	renderSessionItems(
 		items: readonly RenderSessionItem[],
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
-		return renderSessionItems(this, items, options);
+		renderSessionItems(this, items, options);
 	}
 
 	renderSessionEntries(
 		entries: SessionEntry[],
 		options: { updateFooter?: boolean; populateHistory?: boolean } = {},
 	): void {
-		return renderSessionEntries(this, entries, options);
+		renderSessionEntries(this, entries, options);
 	}
 
 	addCompactionCostNotice(notice: CompactionCostNotice): void {
-		return addCompactionCostNotice(this, notice);
+		addCompactionCostNotice(this, notice);
 	}
 
 	maybeShowThinkingDropNotice(message: AssistantMessage): void {
-		return maybeShowThinkingDropNotice(this, message);
+		maybeShowThinkingDropNotice(this, message);
 	}
 
 	renderInitialMessages(): void {
-		return renderInitialMessages(this);
+		renderInitialMessages(this);
 	}
 
 	renderProjectTrustWarningIfNeeded(): void {
-		return renderProjectTrustWarningIfNeeded(this);
+		renderProjectTrustWarningIfNeeded(this);
 	}
 
 	async getUserInput(): Promise<string> {
@@ -3335,15 +3335,15 @@ export class TermApp {
 	}
 
 	private rebuildChatFromMessages(): void {
-		return rebuildChatFromMessages(this);
+		rebuildChatFromMessages(this);
 	}
 
 	handleCtrlC(): void {
-		return handleCtrlC(this);
+		handleCtrlC(this);
 	}
 
 	private handleCtrlD(): void {
-		return handleCtrlD(this);
+		handleCtrlD(this);
 	}
 
 	isShuttingDown = false;
@@ -3365,15 +3365,15 @@ export class TermApp {
 	}
 
 	private registerSignalHandlers(): void {
-		return registerSignalHandlers(this);
+		registerSignalHandlers(this);
 	}
 
 	unregisterSignalHandlers(): void {
-		return unregisterSignalHandlers(this);
+		unregisterSignalHandlers(this);
 	}
 
 	private handleCtrlZ(): void {
-		return handleCtrlZ(this);
+		handleCtrlZ(this);
 	}
 
 	private async handleFollowUp(): Promise<void> {
@@ -3381,7 +3381,7 @@ export class TermApp {
 	}
 
 	private handleDequeue(): void {
-		return handleDequeue(this);
+		handleDequeue(this);
 	}
 
 	updateEditorBorderColor(): void {
@@ -3402,15 +3402,15 @@ export class TermApp {
 	}
 
 	private handleReasonCommand(argument: string | undefined): void {
-		return handleReasonCommand(this, argument);
+		handleReasonCommand(this, argument);
 	}
 
 	applyReasoningLevel(level: ThinkingLevel): void {
-		return applyReasoningLevel(this, level);
+		applyReasoningLevel(this, level);
 	}
 
 	private cycleThinkingLevel(): void {
-		return cycleThinkingLevel(this);
+		cycleThinkingLevel(this);
 	}
 
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
@@ -3418,19 +3418,19 @@ export class TermApp {
 	}
 
 	private toggleToolOutputExpansion(): void {
-		return toggleToolOutputExpansion(this);
+		toggleToolOutputExpansion(this);
 	}
 
 	setToolsExpanded(expanded: boolean): void {
-		return setToolsExpanded(this, expanded);
+		setToolsExpanded(this, expanded);
 	}
 
 	updateThinkingBlockVisibility(): void {
-		return updateThinkingBlockVisibility(this);
+		updateThinkingBlockVisibility(this);
 	}
 
 	toggleThinkingBlockVisibility(): void {
-		return toggleThinkingBlockVisibility(this);
+		toggleThinkingBlockVisibility(this);
 	}
 
 	private async handleOpenExternalEditor(): Promise<void> {
@@ -3472,11 +3472,11 @@ export class TermApp {
 	}
 
 	showError(errorMessage: string): void {
-		return showError(this, errorMessage);
+		showError(this, errorMessage);
 	}
 
 	showWarning(warningMessage: string): void {
-		return showWarning(this, warningMessage);
+		showWarning(this, warningMessage);
 	}
 
 	showNewVersionNotification(release: LatestGamaRelease): void {
@@ -3782,7 +3782,7 @@ export class TermApp {
 	}
 
 	queueCompactionMessage(text: string, mode: "steer" | "followUp"): void {
-		return queueCompactionMessage(this, text, mode);
+		queueCompactionMessage(this, text, mode);
 	}
 
 	isExtensionCommand(text: string): boolean {
@@ -3794,7 +3794,7 @@ export class TermApp {
 	}
 
 	private flushPendingBashComponents(): void {
-		return flushPendingBashComponents(this);
+		flushPendingBashComponents(this);
 	}
 
 	private setModalMouse(active: boolean): void {
@@ -3869,15 +3869,15 @@ export class TermApp {
 	}
 
 	showContextPanel(rows: ReadonlyArray<[string, string]>): void {
-		return showContextPanel(this, rows);
+		showContextPanel(this, rows);
 	}
 
 	private showCachePanel(): void {
-		return showCachePanel(this);
+		showCachePanel(this);
 	}
 
 	private showStatsPanel(): void {
-		return showStatsPanel(this);
+		showStatsPanel(this);
 	}
 
 	private parseContextWindowInput(raw: string): number | undefined {

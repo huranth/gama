@@ -1,12 +1,12 @@
 import chalk from "chalk";
 import { CombinedAutocompleteProvider } from "../src/autocomplete.ts";
+import { MainScreen } from "../src/main-screen.ts";
+import type { TUI } from "../src/screen.ts";
+import { ProcessTerminal } from "../src/terminal.ts";
 import { Editor } from "../src/view/editor.ts";
 import { Loader } from "../src/view/loader.ts";
 import { Markdown } from "../src/view/markdown.ts";
 import { Text } from "../src/view/text.ts";
-import { ProcessTerminal } from "../src/terminal.ts";
-import type { TUI } from "../src/screen.ts";
-import { MainScreen } from "../src/main-screen.ts";
 import { defaultEditorTheme, defaultMarkdownTheme } from "./test-themes.ts";
 
 const terminal = new ProcessTerminal();

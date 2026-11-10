@@ -72,12 +72,9 @@ describe("buildCompactionMemory", () => {
 			result(
 				"r1",
 				"read",
-				[
-					"// header",
-					"export function parse(input: string) {",
-					"\treturn input;",
-					"}",
-				].join("\n"),
+				["// header", "export function parse(input: string) {", "\treturn input;", "}"].join(
+					"\n",
+				),
 			),
 			call("e1", "edit", { path: "src/parser.ts" }),
 			result("e1", "edit", "ok"),

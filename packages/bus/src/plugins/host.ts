@@ -1,14 +1,11 @@
-import { BACKGROUND_CONTEXT } from "../scope/index.ts";
-import { toError } from "../peers/errors.ts";
 import { RemoteServiceBindingImpl } from "../peers/consumer.ts";
+import { toError } from "../peers/errors.ts";
 import { ServiceSlot } from "../peers/handle.ts";
 import { InstanceDirectory, type InstanceDirectoryEntry } from "../peers/instances.ts";
 import { createLoopbackServiceTransport } from "../peers/loopback.ts";
-import {
-	RemoteServiceProvider,
-	validateRemoteServiceImplementation,
-} from "../peers/provider.ts";
+import { RemoteServiceProvider, validateRemoteServiceImplementation } from "../peers/provider.ts";
 import { MutableReplicatedStateImpl } from "../peers/state.ts";
+import { BACKGROUND_CONTEXT } from "../scope/index.ts";
 import type {
 	Context,
 	Facet,
@@ -534,9 +531,7 @@ export class FacetKernel {
 				await this.#setupFacet(facet, record);
 				const previous = this.#facets.get(facet.id)!;
 				if (!sameFacetShape(previous, record)) {
-					throw new Error(
-						`Changed services: ${facet.id}`,
-					);
+					throw new Error(`Changed services: ${facet.id}`);
 				}
 				this.#validateReplacementProvisions(record.provisions);
 				candidates.push(record);
@@ -742,9 +737,7 @@ export class FacetKernel {
 		for (const { source, entries } of catalogues) {
 			for (const { serviceId, mode } of entries) {
 				if (offered.has(serviceId)) {
-					throw new Error(
-						`Duplicate service: ${serviceId}`,
-					);
+					throw new Error(`Duplicate service: ${serviceId}`);
 				}
 				offered.set(serviceId, { mode, source });
 			}
@@ -763,9 +756,7 @@ export class FacetKernel {
 						({ acceptsUnavailableServices }) => acceptsUnavailableServices,
 					);
 					if (deferred.length > 1) {
-						throw new Error(
-							`Duplicate source: ${requirement.serviceId}`,
-						);
+						throw new Error(`Duplicate source: ${requirement.serviceId}`);
 					}
 					if (deferred.length === 1) source = { mode: requirement.mode, source: deferred[0]! };
 				}
@@ -994,15 +985,11 @@ function validateFacets(
 			const provider = providers.get(requirement.serviceId);
 			if (provider === undefined) {
 				const missing = `local/${requirement.serviceId}/${requirement.mode}`;
-				throw new Error(
-					`Missing service: ${missing}`,
-				);
+				throw new Error(`Missing service: ${missing}`);
 			}
 			if (provider.mode !== undefined && provider.mode !== requirement.mode) {
 				const detail = `${requirement.serviceId} as ${requirement.mode}`;
-				throw new Error(
-					`Service mismatch: ${detail}`,
-				);
+				throw new Error(`Service mismatch: ${detail}`);
 			}
 			if (provider.facetId === undefined || provider.facetId === record.facetId) continue;
 			dependencies.get(record.facetId)!.add(provider.facetId);

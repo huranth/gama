@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-	describeCommandFailure,
-	formatCommandFailure,
-} from "../src/core/tools/command-failure.ts";
+import { describeCommandFailure, formatCommandFailure } from "../src/core/tools/command-failure.ts";
 
 describe("command failures", () => {
 	it("explains a missing git repository", () => {
@@ -47,10 +44,9 @@ describe("command failures", () => {
 	});
 
 	it("does not reuse an old error far from the end", () => {
-		const output = [
-			"permission denied",
-			...Array.from({ length: 12 }, () => "test failed"),
-		].join("\n");
+		const output = ["permission denied", ...Array.from({ length: 12 }, () => "test failed")].join(
+			"\n",
+		);
 
 		expect(describeCommandFailure(output, 1)).toEqual({
 			error: "Test failed",
@@ -102,22 +98,10 @@ describe("command failures", () => {
 			"Cannot connect to the Docker daemon at unix:///var/run/docker.sock.",
 			{ error: "Docker down", hint: "Start Docker" },
 		],
-		[
-			"HTTP 404 Not Found",
-			{ error: "HTTP 404", hint: "Check URL" },
-		],
-		[
-			"Access is denied.",
-			{ error: "Permission denied", hint: "Check permissions" },
-		],
-		[
-			"No space left on device",
-			{ error: "Disk full", hint: "Free disk space" },
-		],
-		[
-			"fatal: something new",
-			{ error: "fatal: something new", hint: "Check command" },
-		],
+		["HTTP 404 Not Found", { error: "HTTP 404", hint: "Check URL" }],
+		["Access is denied.", { error: "Permission denied", hint: "Check permissions" }],
+		["No space left on device", { error: "Disk full", hint: "Free disk space" }],
+		["fatal: something new", { error: "fatal: something new", hint: "Check command" }],
 	])("explains %s", (output, expected) => {
 		expect(describeCommandFailure(output, 1)).toEqual(expected);
 	});

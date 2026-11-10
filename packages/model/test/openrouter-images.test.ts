@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { generateImages as generateOpenRouterImages } from "../src/wire/openrouter-images.ts";
 import { generateImages } from "../src/images.ts";
 import { registerImagesApiProvider } from "../src/images-api-registry.ts";
 import type { ImageModel, ImagesContext } from "../src/types.ts";
+import { generateImages as generateOpenRouterImages } from "../src/wire/openrouter-images.ts";
 
 const defaultImages = [{ image_url: "data:image/png;base64,ZmFrZS1wbmc=" }];
 

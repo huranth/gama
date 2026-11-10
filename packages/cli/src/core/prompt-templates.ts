@@ -85,12 +85,7 @@ function isAllArgs(name: string): boolean {
 	return name === "@" || name === "ARGUMENTS";
 }
 
-function replaceDefault(
-	target: string,
-	fallback: string,
-	args: string[],
-	allArgs: string,
-): string {
+function replaceDefault(target: string, fallback: string, args: string[], allArgs: string): string {
 	const value = isAllArgs(target) ? allArgs : args[Number(target) - 1];
 
 	return value ? value : fallback;

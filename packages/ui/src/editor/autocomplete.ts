@@ -1,10 +1,10 @@
 import type { AutocompleteItem } from "../autocomplete.ts";
-import type { SelectListLayoutOptions } from "../view/select-list.ts";
 import {
 	autocompleteBoundaryRegex,
 	autocompleteSeparatorRegex,
 	isWhitespaceChar,
 } from "../utils.ts";
+import type { SelectListLayoutOptions } from "../view/select-list.ts";
 
 export const SLASH_COMMAND_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
 	minPrimaryColumnWidth: 12,

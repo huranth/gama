@@ -1,8 +1,8 @@
+import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@huranth/gama-ai";
+import { validateToolArguments } from "@huranth/gama-ai/utils/validation";
 import { type Context, copyJson, type JsonValue } from "@huranth/gama-bus";
 import { awaitWithContext } from "@huranth/gama-bus/context";
 import { overlap } from "@huranth/gama-bus/delta";
-import type { ImageContent, TextContent, ToolCall, ToolResultMessage } from "@huranth/gama-ai";
-import { validateToolArguments } from "@huranth/gama-ai/utils/validation";
 import { AssistantEntry, ToolResultEntry } from "../messages.ts";
 import { defineTask } from "../tasks.ts";
 import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, utf8ByteLength } from "../truncate.ts";
@@ -116,8 +116,7 @@ async function readCall(
 						content.type === "toolCall" && content.id === input.callId,
 				)
 			: undefined;
-	if (call === undefined)
-		throw new Error(`Missing call: ${input.callId}`);
+	if (call === undefined) throw new Error(`Missing call: ${input.callId}`);
 	return call;
 }
 

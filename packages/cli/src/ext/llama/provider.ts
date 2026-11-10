@@ -9,8 +9,8 @@ import {
 	type ProviderStreamOptions,
 	type RefreshModelsContext,
 } from "@huranth/gama-ai";
-import { llamaCppClassifyApi } from "@huranth/gama-ai/wire/llama-cpp-classify.lazy";
 import { stream, streamSimple } from "@huranth/gama-ai/compat";
+import { llamaCppClassifyApi } from "@huranth/gama-ai/wire/llama-cpp-classify.lazy";
 import {
 	LlamaClient,
 	type LlamaModelInfo,

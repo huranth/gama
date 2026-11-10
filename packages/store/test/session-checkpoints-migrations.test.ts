@@ -510,9 +510,7 @@ describe("Session document migrations", () => {
 		expect(migrations).toBe(1);
 	});
 
-	it(
-		"strict-checks migration results before ownership, staying usable after rejection",
-		async () => {
+	it("strict-checks migration results before ownership, staying usable after rejection", async () => {
 		const Old = defineDoc<{ count: number }>({
 			kind: "migration.invalid",
 			version: 1,

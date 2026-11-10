@@ -6,8 +6,8 @@ import { fauxAssistantMessage, fauxToolCall, type Model } from "@huranth/gama-ai
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ExtensionAPI, InputEvent } from "../../src/core/ext/index.ts";
-import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/origin.ts";
+import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createTestResourceLoader } from "../test-helpers.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
@@ -561,9 +561,7 @@ describe("RunSession prompt characterization", () => {
 		await compactionStarted;
 
 		try {
-			await expect(harness.session.prompt("third")).rejects.toThrow(
-				"Compaction running",
-			);
+			await expect(harness.session.prompt("third")).rejects.toThrow("Compaction running");
 		} finally {
 			releaseCompaction();
 			await compactPromise;
@@ -596,9 +594,7 @@ describe("RunSession prompt characterization", () => {
 		await hookEntered;
 
 		try {
-			await expect(harness.session.compact()).rejects.toThrow(
-				"Prompt preparing",
-			);
+			await expect(harness.session.compact()).rejects.toThrow("Prompt preparing");
 		} finally {
 			releaseHook();
 			await promptPromise;

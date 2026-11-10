@@ -30,6 +30,7 @@ import { combineUsage } from "../../core/usage.ts";
 import { pruneTempFiles } from "../../utils/temp-cleanup.ts";
 import { Bm25Ranker, createToolSearchDocument, DEFAULT_TOOL_SEARCH_LIMIT } from "../search/tool.ts";
 import {
+	CHARS_PER_TOKEN,
 	CODEMODE_STORE_ENTRY_TYPE,
 	type CodemodeModelRuntime,
 	type CodemodeNestedCall,
@@ -37,7 +38,6 @@ import {
 	type CodemodeToolDetails,
 	type CodemodeToolInput,
 	type CodemodeToolOptions,
-	CHARS_PER_TOKEN,
 	getCodemodeCallableTools,
 	toCodemodeDeclaration,
 } from "./tool.ts";
@@ -90,9 +90,7 @@ function textOf(result: AgentToolResult<unknown>): string {
 
 function toModelType(value: unknown): ModelType {
 	if (typeof value === "string" && MODEL_TYPES.has(value)) return value as ModelType;
-	throw new Error(
-		`Unknown model type: ${JSON.stringify(value)}`,
-	);
+	throw new Error(`Unknown model type: ${JSON.stringify(value)}`);
 }
 
 function toProvider(value: unknown): string | undefined {

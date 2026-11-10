@@ -5,8 +5,8 @@ import * as os from "node:os";
 import * as path from "node:path";
 import { type Container, type EditorComponent, hyperlink, type TUI } from "@huranth/gama-tui";
 import { getShareViewerUrl } from "../config.ts";
-import type { RunSession } from "../core/session/session.ts";
 import { exportSessionToJsonl } from "../core/dump.ts";
+import type { RunSession } from "../core/session/session.ts";
 import { BorderedLoader } from "./parts/bordered-loader.ts";
 import { theme } from "./theme/theme.ts";
 

@@ -1,7 +1,7 @@
 import { join } from "node:path";
 import {
-	Runner,
 	type AgentMessage,
+	Runner,
 	type StreamFn,
 	setDefaultStreamFn,
 	type ThinkingLevel,
@@ -15,7 +15,6 @@ import {
 } from "@huranth/gama-ai/compat";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
-import { RunSession } from "./session/session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import {
 	fingerprintPrompt,
@@ -25,11 +24,12 @@ import {
 import { CacheWarmer } from "./cache/warmer.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type {
-	PluginHost,
 	LoadExtensionsResult,
+	PluginHost,
 	SessionStartEvent,
 	ToolDefinition,
 } from "./ext/index.ts";
+import { getBranchSelection } from "./fake-models.ts";
 import {
 	createHandsTool,
 	HAND_KINDS,
@@ -37,12 +37,13 @@ import {
 	HANDS_TOOL_NAME,
 	type HandsEvent,
 } from "./hands.ts";
+import { ModelHub } from "./model-run.ts";
 import { convertToLlm } from "./msg.ts";
 import { findInitialModel } from "./pick.ts";
-import { ModelHub } from "./model-run.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
+import { RunSession } from "./session/session.ts";
 import { getDefaultSessionDir, SessionStore } from "./sessions.ts";
 import { DEFAULT_TOOL_NAMES, SettingsStore } from "./settings.ts";
 import { time } from "./timings.ts";
@@ -60,7 +61,6 @@ import {
 	createWriteTool,
 	withFileMutationQueue,
 } from "./tools/index.ts";
-import { getBranchSelection } from "./fake-models.ts";
 
 export type {
 	ExtensionAPI,
@@ -373,8 +373,7 @@ export async function createAgentSession(
 
 	const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
 	const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
-	const modelRuntime =
-		options.modelRuntime ?? (await ModelHub.create({ authPath, modelsPath }));
+	const modelRuntime = options.modelRuntime ?? (await ModelHub.create({ authPath, modelsPath }));
 	const settingsManager = options.settingsManager ?? SettingsStore.create(cwd, agentDir);
 	const sessionManager =
 		options.sessionManager ?? SessionStore.create(cwd, getDefaultSessionDir(cwd, agentDir));
@@ -487,9 +486,7 @@ export async function createAgentSession(
 							thinkingLevel: handThinkingLevel,
 							sessionManager: SessionStore.inMemory(cwd),
 							tools: hand.tools ? [...hand.tools] : undefined,
-							excludeTools: [
-								...new Set([...(options.excludeTools ?? []), HANDS_TOOL_NAME]),
-							],
+							excludeTools: [...new Set([...(options.excludeTools ?? []), HANDS_TOOL_NAME])],
 							appendSystemPrompt: `${HAND_SYSTEM_PROMPT}\n\n${hand.prompt}`,
 							enableHands: false,
 						});
@@ -518,7 +515,8 @@ export async function createAgentSession(
 		allowedToolNames: loadout.allowed,
 		excludedToolNames: loadout.excluded,
 		extensionRunnerRef: runnerRef,
-		sessionStartEvent: options.sessionStartEvent,		});
+		sessionStartEvent: options.sessionStartEvent,
+	});
 	parentSession = session;
 	publishHandsEvent = (event) => session.publishHandsEvent(event);
 	let wakeQueue: Promise<void> = Promise.resolve();

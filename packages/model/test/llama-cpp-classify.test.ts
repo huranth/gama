@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { ClassifierContext, ClassifierModel, ClassifierOptions } from "../src/types.ts";
 import {
 	answerFromProbabilities,
 	classify,
@@ -7,7 +8,6 @@ import {
 	peakConfidence,
 	renderQuestion,
 } from "../src/wire/llama-cpp-classify.ts";
-import type { ClassifierContext, ClassifierModel, ClassifierOptions } from "../src/types.ts";
 
 let serverCount = 0;
 
@@ -274,9 +274,7 @@ describe("llama.cpp classifier", () => {
 		const failed = await classify(model(), { state: {}, questions }, { fetch: never.fetch });
 		expect(failed.stopReason).toBe("error");
 		expect(failed.answers).toEqual({});
-		expect(failed.errorMessage).toContain(
-			"Missing labels: B",
-		);
+		expect(failed.errorMessage).toContain("Missing labels: B");
 		expect(completionDepths(never.requests)).toEqual([256, 4096, 32768]);
 	});
 

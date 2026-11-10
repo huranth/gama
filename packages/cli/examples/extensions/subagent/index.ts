@@ -849,8 +849,7 @@ export default function (gama: ExtensionAPI) {
 							: item.text.split("\n").slice(0, 3).join("\n");
 						text += `${theme.fg("toolOutput", preview)}\n`;
 					} else {
-						text +=
-							`${theme.fg("muted", "> ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
+						text += `${theme.fg("muted", "> ") + formatToolCall(item.name, item.args, theme.fg.bind(theme))}\n`;
 					}
 				}
 				return text.trimEnd();
@@ -1008,7 +1007,8 @@ export default function (gama: ExtensionAPI) {
 					theme.fg("toolTitle", theme.bold("chain ")) +
 					theme.fg("accent", `${successCount}/${details.results.length} steps`);
 				for (const r of details.results) {
-					const rIcon = r.exitCode === 0 ? theme.fg("success", "OK") : theme.fg("error", "ERR");
+					const rIcon =
+						r.exitCode === 0 ? theme.fg("success", "OK") : theme.fg("error", "ERR");
 					const displayItems = getDisplayItems(r.messages);
 					text +=
 						`\n\n${theme.fg("muted", `─── Step ${r.step}: `)}${theme.fg("accent", r.agent)} ` +

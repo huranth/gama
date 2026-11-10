@@ -196,7 +196,9 @@ export default function presetExtension(gama: ExtensionAPI) {
 
 			container.addChild(selectList);
 
-			container.addChild(new Text(theme.fg("dim", "Up/Down navigate, enter select, esc cancel")));
+			container.addChild(
+				new Text(theme.fg("dim", "Up/Down navigate, enter select, esc cancel")),
+			);
 
 			container.addChild(new DynamicBorder((str) => theme.fg("accent", str)));
 

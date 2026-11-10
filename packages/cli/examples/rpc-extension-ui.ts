@@ -6,11 +6,11 @@ import {
 	type Component,
 	Container,
 	Input,
+	MainScreen,
 	matchesKey,
 	ProcessTerminal,
 	SelectList,
 	type TUI,
-	MainScreen,
 } from "@huranth/gama-tui";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));

@@ -41,9 +41,7 @@ describe("worker protocol guards", () => {
 		);
 		expect(
 			isWorkerToHostMessage({ type: "call", id: 1, target: "tool", name: "echo", args: 5 }),
-		).toBe(
-			false,
-		);
+		).toBe(false);
 		expect(isWorkerToHostMessage({ type: "output", item: { type: "text" } })).toBe(false);
 		expect(isWorkerToHostMessage({ type: "output", item: { type: "image", data: "x" } })).toBe(
 			false,
@@ -83,9 +81,7 @@ describe("CodemodeSandbox guards", () => {
 	it("rejects invalid timeouts", async () => {
 		const sandbox = new CodemodeSandbox();
 		try {
-			await expect(sandbox.execute("return 1", { timeoutMs: -1 })).rejects.toThrow(
-				"timeoutMs",
-			);
+			await expect(sandbox.execute("return 1", { timeoutMs: -1 })).rejects.toThrow("timeoutMs");
 			await expect(sandbox.execute("return 1", { timeoutMs: Number.NaN })).rejects.toThrow(
 				"timeoutMs",
 			);

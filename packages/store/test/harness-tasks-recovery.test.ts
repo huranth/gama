@@ -1,5 +1,5 @@
-import type { Context, JsonValue } from "@huranth/gama-bus";
 import { createModels, Type } from "@huranth/gama-ai";
+import type { Context, JsonValue } from "@huranth/gama-bus";
 import {
 	createRegistry,
 	defineDoc,

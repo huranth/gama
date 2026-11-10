@@ -244,19 +244,12 @@ function toFileError(error: unknown, fallbackPath?: string): FileError {
 function resolveTimeoutMs(timeout: number | undefined): Result<number | undefined, ExecutionError> {
 	if (timeout === undefined) return ok(undefined);
 	if (!Number.isFinite(timeout) || timeout <= 0) {
-		return err(
-			new ExecutionError("timeout", "Invalid timeout"),
-		);
+		return err(new ExecutionError("timeout", "Invalid timeout"));
 	}
 
 	const timeoutMs = timeout * 1000;
 	if (timeoutMs > MAX_TIMEOUT_MS) {
-		return err(
-			new ExecutionError(
-				"timeout",
-				`Timeout maximum: ${MAX_TIMEOUT_SECONDS}`,
-			),
-		);
+		return err(new ExecutionError("timeout", `Timeout maximum: ${MAX_TIMEOUT_SECONDS}`));
 	}
 	return ok(timeoutMs);
 }

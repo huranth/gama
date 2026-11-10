@@ -3,11 +3,7 @@ import { Container, isViewportTUI, Text } from "@huranth/gama-tui";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../ui/test/virtual-terminal.ts";
 import type { FullscreenExitOutput, TuiMode } from "../src/core/settings.ts";
-import {
-	createInteractiveTui,
-	createInteractiveTuiReference,
-	TermApp,
-} from "../src/term/app.ts";
+import { createInteractiveTui, createInteractiveTuiReference, TermApp } from "../src/term/app.ts";
 import {
 	BranchSummaryStatusIndicator,
 	CompactionStatusIndicator,

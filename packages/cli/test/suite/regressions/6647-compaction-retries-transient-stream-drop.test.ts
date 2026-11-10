@@ -1,9 +1,5 @@
 import type { StreamFn } from "@huranth/gama-agent-core";
-import {
-	type AssistantMessage,
-	createReplyStream,
-	fauxAssistantMessage,
-} from "@huranth/gama-ai";
+import { type AssistantMessage, createReplyStream, fauxAssistantMessage } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, type Harness } from "../harness.ts";
 

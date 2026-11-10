@@ -1,19 +1,14 @@
 import {
 	Container,
 	padLine,
-	truncateToWidth,
 	type TuiMouseEvent,
+	truncateToWidth,
 	visibleWidth,
 } from "@huranth/gama-tui";
 import type { HandSnapshot } from "../../core/hands.ts";
 import { theme } from "../theme/theme.ts";
-import {
-	fillHandLine,
-	handBackgroundAnsi,
-	type HandBgAt,
-	type HandFillBg,
-} from "./hand-fill.ts";
 import { handKindColor, handSpotlightBg, handSpotlightColor } from "./hand-colors.ts";
+import { fillHandLine, type HandBgAt, type HandFillBg, handBackgroundAnsi } from "./hand-fill.ts";
 
 const CARD_MAX_WIDTH = 28;
 
@@ -103,14 +98,7 @@ export class HandCardComponent extends Container {
 
 		const rows = [
 			this.place("", "", cardWidth, margin, cardBg, bgAt(0)),
-			this.place(
-				title,
-				theme.fg("text", theme.bold(title)),
-				cardWidth,
-				margin,
-				cardBg,
-				bgAt(1),
-			),
+			this.place(title, theme.fg("text", theme.bold(title)), cardWidth, margin, cardBg, bgAt(1)),
 			this.place("", "", cardWidth, margin, cardBg, bgAt(2)),
 			this.place(roleLabel, roleChip, cardWidth, margin, cardBg, bgAt(3)),
 			this.place("", "", cardWidth, margin, cardBg, bgAt(4)),
@@ -142,5 +130,4 @@ export class HandCardComponent extends Container {
 		const row = `${" ".repeat(padX)}${padLine(clipped, innerWidth)}${" ".repeat(padX)}`;
 		return `${" ".repeat(margin)}${fillHandLine(row, cardWidth, bg, cellBackground)}`;
 	}
-
 }

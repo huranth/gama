@@ -7,7 +7,7 @@ const execAsync = promisify(exec);
 async function isDarkMode(): Promise<boolean> {
 	try {
 		const { stdout } = await execAsync(
-			"osascript -e 'tell application \"System Events\" to tell appearance " +
+			'osascript -e \'tell application "System Events" to tell appearance ' +
 				"preferences to return dark mode'",
 		);
 		return stdout.trim() === "true";

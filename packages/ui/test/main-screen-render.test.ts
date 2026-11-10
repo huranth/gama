@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it } from "node:test";
 import type { Terminal as XtermTerminalType } from "@xterm/headless";
-import { Image } from "../src/view/image.ts";
+import { MainScreen } from "../src/main-screen.ts";
+import type { Component, TUI } from "../src/screen.ts";
 import type { Terminal } from "../src/terminal.ts";
 import {
 	deleteKittyImage,
@@ -13,8 +14,7 @@ import {
 	setCapabilities,
 	setCellDimensions,
 } from "../src/terminal-image.ts";
-import type { Component, TUI } from "../src/screen.ts";
-import { MainScreen } from "../src/main-screen.ts";
+import { Image } from "../src/view/image.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class TestComponent implements Component {
@@ -233,9 +233,7 @@ function overrideEnv(names: readonly string[], value: string): () => void {
 }
 
 describe("TUI crash dump without configured log directory", () => {
-	it(
-		"writes the crash dump to the OS temp directory instead of a home-directory default",
-		async () => {
+	it("writes the crash dump to the OS temp directory instead of a home-directory default", async () => {
 		const crashDir = mkdtempSync(join(tmpdir(), "gama-tui-crash-"));
 		const crashLogPath = join(crashDir, "gama-tui-crash.log");
 		const restoreTmpdirEnv = overrideEnv(["TMPDIR", "TEMP", "TMP"], crashDir);
@@ -960,9 +958,7 @@ describe("TUI differential rendering", () => {
 		tui.stop();
 	});
 
-	it(
-		"clears stale content when maxLinesRendered was inflated by a transient component",
-		async () => {
+	it("clears stale content when maxLinesRendered was inflated by a transient component", async () => {
 		const terminal = new VirtualTerminal(40, 10);
 		const tui: TUI = new MainScreen(terminal);
 		const chat = new TestComponent();

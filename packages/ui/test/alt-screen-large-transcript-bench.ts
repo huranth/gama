@@ -1,11 +1,11 @@
 import { performance } from "node:perf_hooks";
+import { AltScreen } from "../src/alt-screen.ts";
+import { Container } from "../src/screen.ts";
+import type { Terminal } from "../src/terminal.ts";
 import { Markdown, type MarkdownTheme } from "../src/view/markdown.ts";
 import { ScrollView } from "../src/view/scroll-view.ts";
 import { Text } from "../src/view/text.ts";
 import { VStack } from "../src/view/v-stack.ts";
-import type { Terminal } from "../src/terminal.ts";
-import { Container } from "../src/screen.ts";
-import { AltScreen } from "../src/alt-screen.ts";
 
 const COLUMNS = 80;
 const ROWS = 50;

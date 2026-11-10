@@ -460,23 +460,20 @@ describe("NodeExecutionEnv filesystem", () => {
 		});
 	});
 
-	it(
-		"does not flush a directory through a symlink",
-		async () => {
-			const root = createTempDir();
-			const env = new NodeExecutionEnv({ cwd: root });
-			getOrThrow(await env.createDir("dir", undefined, BACKGROUND_CONTEXT));
-			await symlink(
-				join(root, "dir"),
-				join(root, "dir-link"),
-				process.platform === "win32" ? "junction" : "dir",
-			);
-			expect(await env.flushFile("dir-link", BACKGROUND_CONTEXT)).toMatchObject({
-				ok: false,
-				error: { code: "is_directory", path: join(root, "dir-link") },
-			});
-		},
-	);
+	it("does not flush a directory through a symlink", async () => {
+		const root = createTempDir();
+		const env = new NodeExecutionEnv({ cwd: root });
+		getOrThrow(await env.createDir("dir", undefined, BACKGROUND_CONTEXT));
+		await symlink(
+			join(root, "dir"),
+			join(root, "dir-link"),
+			process.platform === "win32" ? "junction" : "dir",
+		);
+		expect(await env.flushFile("dir-link", BACKGROUND_CONTEXT)).toMatchObject({
+			ok: false,
+			error: { code: "is_directory", path: join(root, "dir-link") },
+		});
+	});
 
 	it("syncs through a handle, returns failures, and always closes it", async () => {
 		const root = createTempDir();
@@ -779,32 +776,29 @@ describe("NodeExecutionEnv shell", () => {
 		}
 	});
 
-	it(
-		"settles after the shell exits when a detached descendant retains inherited stdio",
-		async () => {
-			const root = createTempDir();
-			const pidFile = join(root, "grandchild.pid");
-			const env = new NodeExecutionEnv({ cwd: root });
-			const controller = new AbortController();
-			try {
-				const collected = await withTimeout(
-					collectShellOutput(
-						env,
-						createInheritedStdioCommand(pidFile),
-						undefined,
-						withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
-					),
-					3000,
-					() => controller.abort(),
-				);
-				getOrThrow(collected.result);
-				expect(collected.output).toContain("child-exiting");
-			} finally {
-				controller.abort();
-				cleanupDetachedChild(pidFile);
-			}
-		},
-	);
+	it("settles after the shell exits when a detached descendant retains inherited stdio", async () => {
+		const root = createTempDir();
+		const pidFile = join(root, "grandchild.pid");
+		const env = new NodeExecutionEnv({ cwd: root });
+		const controller = new AbortController();
+		try {
+			const collected = await withTimeout(
+				collectShellOutput(
+					env,
+					createInheritedStdioCommand(pidFile),
+					undefined,
+					withAbortSignal(controller.signal, BACKGROUND_CONTEXT),
+				),
+				3000,
+				() => controller.abort(),
+			);
+			getOrThrow(collected.result);
+			expect(collected.output).toContain("child-exiting");
+		} finally {
+			controller.abort();
+			cleanupDetachedChild(pidFile);
+		}
+	});
 
 	it("cleanup terminates active shell processes", async () => {
 		const root = createTempDir();

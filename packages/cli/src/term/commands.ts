@@ -1,16 +1,16 @@
 import * as fs from "node:fs";
 import type { ThinkingLevel } from "@huranth/gama-agent-core";
 import { Spacer } from "@huranth/gama-tui";
-import { parseThinkingLevel } from "../start/args.ts";
 import { cacheRows, formatCacheWarmingStatus } from "../core/cache/index.ts";
 import { reasoningLevelName } from "../core/defaults.ts";
+import { parseThinkingLevel } from "../start/args.ts";
 import type { TermApp } from "./app.ts";
+import { isExpandable } from "./chat.ts";
 import { AssistantMessageComponent } from "./parts/assistant-message.ts";
 import { formatTokens } from "./parts/footer.ts";
 import { ThemedText } from "./parts/themed-text.ts";
 import { ThinkingSelectorComponent } from "./parts/thinking-selector.ts";
 import { theme } from "./theme/theme.ts";
-import { isExpandable } from "./chat.ts";
 
 export type DeliveryMode = "steer" | "followUp";
 
@@ -101,18 +101,12 @@ export function cycleThinkingLevel(mode: TermApp): void {
 	}
 }
 
-export async function cycleModel(
-	mode: TermApp,
-	direction: "forward" | "backward",
-): Promise<void> {
+export async function cycleModel(mode: TermApp, direction: "forward" | "backward"): Promise<void> {
 	try {
 		// Save default
 		const result = await mode.session.cycleModel(direction, { persist: true });
 		if (result === undefined) {
-			const msg =
-				mode.session.scopedModels.length > 0
-					? "Single model"
-					: "Single model";
+			const msg = mode.session.scopedModels.length > 0 ? "Single model" : "Single model";
 			mode.showStatus(msg);
 		} else {
 			mode.refreshModelIndicators();
@@ -215,18 +209,11 @@ export function handleDequeue(mode: TermApp): void {
 	}
 }
 
-export function showContextPanel(
-	mode: TermApp,
-	rows: ReadonlyArray<[string, string]>,
-): void {
+export function showContextPanel(mode: TermApp, rows: ReadonlyArray<[string, string]>): void {
 	mode.chatContainer.addChild(new Spacer(1));
 	for (const [label, value] of rows) {
 		mode.chatContainer.addChild(
-			new ThemedText(
-				() => ` ${theme.fg("dim", `${label} `)}${theme.fg("text", value)}`,
-				1,
-				0,
-			),
+			new ThemedText(() => ` ${theme.fg("dim", `${label} `)}${theme.fg("text", value)}`, 1, 0),
 		);
 	}
 	mode.ui.requestRender();

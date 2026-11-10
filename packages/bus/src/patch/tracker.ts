@@ -313,10 +313,8 @@ class TrackerImpl<T extends object> implements Tracker<T> {
 
 	adopt(prepared: Prepared<T>): void {
 		const context = PREPARED.get(prepared as object);
-		if (context?.owner !== this.#owner)
-			throw new Error("Wrong tracker");
-		if (context.status.value === "consumed")
-			throw new Error("Change used");
+		if (context?.owner !== this.#owner) throw new Error("Wrong tracker");
+		if (context.status.value === "consumed") throw new Error("Change used");
 		if (context.status.value === "aborted") throw new Error("Change aborted");
 		if (context.status.value === "stale") throw new Error("Stale change");
 		if (context.status.value !== "prepared") throw new Error("Change not ready");

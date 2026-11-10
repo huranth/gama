@@ -1,3 +1,6 @@
+import { constants, createReadStream } from "node:fs";
+import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
+import { createInterface } from "node:readline";
 import type { AgentTool } from "@huranth/gama-agent-core";
 import type {
 	Api,
@@ -6,16 +9,13 @@ import type {
 	ModelImageResizeOptions,
 	TextContent,
 } from "@huranth/gama-ai";
-import { constants, createReadStream } from "node:fs";
-import { access as fsAccess, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
-import { createInterface } from "node:readline";
 import { type Static, Type } from "typebox";
 import { processImage } from "../../utils/image-process.ts";
 import { detectSupportedImageMimeTypeFromFile } from "../../utils/mime.ts";
 import { stripBom } from "../../utils/text.ts";
 import type { ExtensionContext, ToolDefinition } from "../ext/types.ts";
-import type { FileReadTracker } from "./file-read-tracker.ts";
 import { assertNotAborted } from "./abort.ts";
+import type { FileReadTracker } from "./file-read-tracker.ts";
 import { resolveReadPathAsync } from "./path-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 import {

@@ -1,10 +1,12 @@
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { LookupAddress, LookupOptions } from "node:dns";
 import http from "node:http";
-import net from "node:net";
-import zlib from "node:zlib";
-import { gzipSync } from "node:zlib";
 import type { AddressInfo } from "node:net";
-import { readUrl, type FetchLike } from "../src/core/tools/web/read-url.ts";
+import net from "node:net";
+import zlib, { gzipSync } from "node:zlib";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { pinnedFetch } from "../src/core/tools/web/pinned-fetch.ts";
+import { type FetchLike, readUrl } from "../src/core/tools/web/read-url.ts";
+import type { AddressPolicy, HostLookup, HostPolicy } from "../src/core/tools/web/security/ssrf.ts";
 import {
 	assertUrlAllowed,
 	compileAllowlist,
@@ -15,9 +17,6 @@ import {
 	unwrapHost,
 	validatingLookup,
 } from "../src/core/tools/web/security/ssrf.ts";
-import { pinnedFetch } from "../src/core/tools/web/pinned-fetch.ts";
-import type { AddressPolicy, HostLookup, HostPolicy } from "../src/core/tools/web/security/ssrf.ts";
-import type { LookupAddress, LookupOptions } from "node:dns";
 
 const PUBLIC = "93.184.216.34";
 
@@ -133,7 +132,7 @@ describe("address policy", () => {
 			"93.184.216.34",
 			"1.1.1.1",
 			"2606:2800:220:1::1",
-			"2606:4700:4700::1111"
+			"2606:4700:4700::1111",
 		];
 		for (const ip of allowed) expect(isBlockedAddress(ip)).toBe(false);
 	});
@@ -186,10 +185,8 @@ describe("url gate", () => {
 	it("refuses a hostname resolving private", async () => {
 		const { lookupHost } = resolver(["10.0.0.5"]);
 		await expect(
-			assertUrlAllowed(new URL("http://internal.example/"), { lookupHost })
-		).rejects.toThrow(
-			'Blocked address: 10.0.0.5',
-		);
+			assertUrlAllowed(new URL("http://internal.example/"), { lookupHost }),
+		).rejects.toThrow("Blocked address: 10.0.0.5");
 	});
 
 	it("allows a hostname resolving public", async () => {
@@ -200,30 +197,33 @@ describe("url gate", () => {
 
 	it("refuses when one answer is private", async () => {
 		const { lookupHost } = resolver([PUBLIC, "10.0.0.7"]);
-		await expect(assertUrlAllowed(new URL("http://mixed.example/"), { lookupHost })).rejects.toThrow(
-			/(10\.0\.0\.7)/,
-		);
+		await expect(
+			assertUrlAllowed(new URL("http://mixed.example/"), { lookupHost }),
+		).rejects.toThrow(/(10\.0\.0\.7)/);
 	});
 
 	it("refuses an empty answer", async () => {
 		const { lookupHost } = resolver();
-		await expect(assertUrlAllowed(new URL("http://empty.example/"), { lookupHost })).rejects.toThrow(
-			'Unknown host',
-		);
+		await expect(
+			assertUrlAllowed(new URL("http://empty.example/"), { lookupHost }),
+		).rejects.toThrow("Unknown host");
 	});
 
 	it("reports resolver failures", async () => {
 		const lookupHost = async () => {
 			throw new Error("dns down");
 		};
-		await expect(assertUrlAllowed(new URL("http://dead.example/"), { lookupHost })).rejects.toThrow(
-			'Unknown host: dns down',
-		);
+		await expect(
+			assertUrlAllowed(new URL("http://dead.example/"), { lookupHost }),
+		).rejects.toThrow("Unknown host: dns down");
 	});
 
 	it("skips DNS when asked but still checks literals", async () => {
 		const { lookupHost, calls } = resolver(["10.0.0.5"]);
-		await assertUrlAllowed(new URL("http://internal.example/"), { lookupHost, resolveDns: false });
+		await assertUrlAllowed(new URL("http://internal.example/"), {
+			lookupHost,
+			resolveDns: false,
+		});
 		expect(calls).toEqual([]);
 
 		await expect(
@@ -235,7 +235,10 @@ describe("url gate", () => {
 		const onlyLoopback: AddressPolicy = (ip) => ip !== "127.0.0.1";
 		const { lookupHost } = resolver(["127.0.0.2"]);
 		await expect(
-			assertUrlAllowed(new URL("http://custom.example/"), { lookupHost, isBlocked: onlyLoopback }),
+			assertUrlAllowed(new URL("http://custom.example/"), {
+				lookupHost,
+				isBlocked: onlyLoopback,
+			}),
 		).rejects.toThrow(/127\.0\.0\.2/);
 		await assertUrlAllowed(new URL("http://127.0.0.1/"), { isBlocked: onlyLoopback });
 	});
@@ -256,39 +259,33 @@ describe("dns rebinding", () => {
 		"169.254.169.254",
 		"100.64.1.1",
 		"fd00::1",
-		"192.168.1.10"
+		"192.168.1.10",
 	]) {
 		it(`refuses a connect-time answer in ${address}`, async () => {
 			const { lookupHost } = resolver([PUBLIC], [address]);
 			await assertUrlAllowed(new URL("http://rebind.example/"), { lookupHost });
-			await expect(lookupPromise(validatingLookup({ lookupHost }), "rebind.example")).rejects.toThrow(
-				`Blocked address: ${address}`,
-			);
+			await expect(
+				lookupPromise(validatingLookup({ lookupHost }), "rebind.example"),
+			).rejects.toThrow(`Blocked address: ${address}`);
 		});
 	}
 
 	it("refuses a mixed connect-time answer", async () => {
 		const { lookupHost } = resolver([PUBLIC], [PUBLIC, "10.0.0.7"]);
 		await assertUrlAllowed(new URL("http://mixed.example/"), { lookupHost });
-		await expect(lookupPromise(validatingLookup({ lookupHost }), "mixed.example")).rejects.toThrow(
-			/(10\.0\.0\.7)/,
-		);
+		await expect(
+			lookupPromise(validatingLookup({ lookupHost }), "mixed.example"),
+		).rejects.toThrow(/(10\.0\.0\.7)/);
 	});
 
 	it("filters by family and reports ENOTFOUND", async () => {
 		const { lookupHost } = resolver([PUBLIC, "2606:4700:4700::1111"]);
-		const both = await lookupPromise(
-			validatingLookup({ lookupHost }),
-			"dual.example",
-			{},
-		);
+		const both = await lookupPromise(validatingLookup({ lookupHost }), "dual.example", {});
 		expect(both.map((entry) => entry.address)).toEqual([PUBLIC, "2606:4700:4700::1111"]);
 
-		const v4Only = await lookupPromise(
-			validatingLookup({ lookupHost }),
-			"dual.example",
-			{ family: 4 }
-		);
+		const v4Only = await lookupPromise(validatingLookup({ lookupHost }), "dual.example", {
+			family: 4,
+		});
 		expect(v4Only.map((entry) => entry.address)).toEqual([PUBLIC]);
 
 		const { lookupHost: noV6 } = resolver([PUBLIC]);
@@ -303,18 +300,16 @@ describe("redirect re-validation", () => {
 		const fetchCalls: string[] = [];
 		const fetchImpl: FetchImpl = async (url) => {
 			fetchCalls.push(url);
-			return new Response(
-				null,
-				{ status: 302, headers: { location: "http://169.254.169.254/secret" } }
-			);
+			return new Response(null, {
+				status: 302,
+				headers: { location: "http://169.254.169.254/secret" },
+			});
 		};
 
 		const { lookupHost } = resolver([PUBLIC]);
 		await expect(
-			gatedFetch(fetchImpl, "http://public.example/start", { lookupHost })
-		).rejects.toThrow(
-			"Blocked address",
-		);
+			gatedFetch(fetchImpl, "http://public.example/start", { lookupHost }),
+		).rejects.toThrow("Blocked address");
 		expect(fetchCalls).toEqual(["http://public.example/start"]);
 	});
 
@@ -322,10 +317,10 @@ describe("redirect re-validation", () => {
 		const fetchCalls: string[] = [];
 		const fetchImpl: FetchImpl = async (url) => {
 			fetchCalls.push(url);
-			return new Response(
-				null,
-				{ status: 302, headers: { location: "http://internal.example/secret" } }
-			);
+			return new Response(null, {
+				status: 302,
+				headers: { location: "http://internal.example/secret" },
+			});
 		};
 
 		const onlyLoopback: AddressPolicy = (ip) => ip !== "127.0.0.1";
@@ -333,7 +328,10 @@ describe("redirect re-validation", () => {
 			hostname === "internal.example" ? ["127.0.0.2"] : ["127.0.0.1"];
 
 		await expect(
-			gatedFetch(fetchImpl, "http://public.example/redirect", { lookupHost, isBlocked: onlyLoopback }),
+			gatedFetch(fetchImpl, "http://public.example/redirect", {
+				lookupHost,
+				isBlocked: onlyLoopback,
+			}),
 		).rejects.toThrow(/127\.0\.0\.2/);
 		expect(fetchCalls).toEqual(["http://public.example/redirect"]);
 	});
@@ -358,10 +356,10 @@ describe("redirect re-validation", () => {
 		const fetchCalls: string[] = [];
 		const fetchImpl: FetchImpl = async (url) => {
 			fetchCalls.push(url);
-			return new Response(
-				null,
-				{ status: 302, headers: { location: `${new URL(url).origin}/again` } }
-			);
+			return new Response(null, {
+				status: 302,
+				headers: { location: `${new URL(url).origin}/again` },
+			});
 		};
 
 		const { lookupHost } = resolver([PUBLIC]);
@@ -377,10 +375,8 @@ describe("redirect re-validation", () => {
 
 		const { lookupHost } = resolver([PUBLIC]);
 		await expect(
-			gatedFetch(fetchImpl, "http://public.example/start", { lookupHost })
-		).rejects.toThrow(
-			"Invalid redirect location: http://",
-		);
+			gatedFetch(fetchImpl, "http://public.example/start", { lookupHost }),
+		).rejects.toThrow("Invalid redirect location: http://");
 	});
 
 	it("treats a non-3xx location as a final response", async () => {
@@ -441,7 +437,10 @@ describe("host allowlist", () => {
 	it("refuses a redirect to a non-listed host before DNS", async () => {
 		const fetchImpl: FetchImpl = async (url) => {
 			if (url === "http://public.example/start") {
-				return new Response(null, { status: 302, headers: { location: "http://other.example/x" } });
+				return new Response(null, {
+					status: 302,
+					headers: { location: "http://other.example/x" },
+				});
 			}
 			return new Response("leak", { status: 200 });
 		};
@@ -578,7 +577,10 @@ describe("ssrf sweep regressions", () => {
 	it("refuses the IPv4-translated literal at the URL gate", async () => {
 		const { lookupHost, calls } = resolver([]);
 		await expect(
-			assertUrlAllowed(new URL("http://[::ffff:0:127.0.0.1]/"), { lookupHost, resolveDns: false }),
+			assertUrlAllowed(new URL("http://[::ffff:0:127.0.0.1]/"), {
+				lookupHost,
+				resolveDns: false,
+			}),
 		).rejects.toThrow("Blocked address");
 		expect(calls).toEqual([]);
 	});
@@ -629,7 +631,10 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				};
 				const path = request.url ?? "";
 				if (path === "/empty-gzip") {
-					response.writeHead(200, { "content-encoding": "gzip", "content-type": "text/plain" });
+					response.writeHead(200, {
+						"content-encoding": "gzip",
+						"content-type": "text/plain",
+					});
 					response.end(gzipSync(""));
 					return;
 				}
@@ -644,7 +649,10 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				}
 				if (path === "/raw-deflate") {
 					// Raw deflate
-					response.writeHead(200, { "content-encoding": "deflate", "content-type": "text/plain" });
+					response.writeHead(200, {
+						"content-encoding": "deflate",
+						"content-type": "text/plain",
+					});
 					response.end(zlib.deflateRawSync("raw deflate payload"));
 					return;
 				}
@@ -834,12 +842,15 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				calls++;
 				const url = String(input);
 				if (url === "https://example.com/loop-a") {
-					return new Response(
-						null,
-						{ status: 302, headers: { location: "https://example.org/loop-b" } }
-					);
+					return new Response(null, {
+						status: 302,
+						headers: { location: "https://example.org/loop-b" },
+					});
 				}
-				return new Response(null, { status: 302, headers: { location: "https://example.com/loop-a" } });
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://example.com/loop-a" },
+				});
 			};
 
 			await expect(

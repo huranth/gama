@@ -67,13 +67,13 @@ function rawValue(match: RegExpMatchArray): string {
 
 // Quote escapes
 function unescapeDoubleQuoted(raw: string): string {
-	return raw.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, escape: string) => {
-		if (escape[0] === "u") {
-			const code = Number.parseInt(escape.slice(1), HEX_RADIX);
+	return raw.replace(/\\(u[0-9a-fA-F]{4}|.)/g, (_, token: string) => {
+		if (token[0] === "u") {
+			const code = Number.parseInt(token.slice(1), HEX_RADIX);
 
-			return Number.isNaN(code) ? escape : String.fromCharCode(code);
+			return Number.isNaN(code) ? token : String.fromCharCode(code);
 		}
 
-		return DOUBLE_QUOTE_ESCAPES[escape] ?? escape;
+		return DOUBLE_QUOTE_ESCAPES[token] ?? token;
 	});
 }

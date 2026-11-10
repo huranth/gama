@@ -103,10 +103,7 @@ function getRetryDelayMs(
 	return exponentialDelay * jitter;
 }
 
-function validateServerRetryDelayMs(
-	delayMs: number,
-	maxRetryDelayMs: number | undefined,
-): number {
+function validateServerRetryDelayMs(delayMs: number, maxRetryDelayMs: number | undefined): number {
 	const maxDelayMs = maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
 
 	if (maxDelayMs > 0 && delayMs > maxDelayMs) {

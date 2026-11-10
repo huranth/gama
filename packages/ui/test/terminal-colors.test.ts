@@ -2,11 +2,11 @@ import assert from "node:assert";
 import { describe, it } from "node:test";
 import {
 	type Component,
+	MainScreen,
 	parseTerminalColorSchemeReport,
 	type Terminal,
 	type TerminalColors,
 	type TUI,
-	MainScreen,
 } from "../src/index.ts";
 import { parseOscColorResponse } from "../src/terminal-colors.ts";
 

@@ -36,9 +36,7 @@ export function decodeMouseButton(button: number): TuiMouseButton {
 }
 
 export function isMouseSequence(data: string): boolean {
-	return (
-		/^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data) || (data.length === 6 && data.startsWith("\x1b[M"))
-	);
+	return /^\x1b\[<\d+;\d+;\d+[Mm]$/.test(data) || (data.length === 6 && data.startsWith("\x1b[M"));
 }
 
 export function parseSgrMouseEvent(data: string): SgrMouseEvent | undefined {

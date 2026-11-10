@@ -877,10 +877,7 @@ export abstract class TuiBase extends Container implements TUI {
 	} {
 		for (let index = this.renderedOverlayLayouts.length - 1; index >= 0; index--) {
 			const layout = this.renderedOverlayLayouts[index]!;
-			if (
-				!this.overlayStack.includes(layout.entry) ||
-				!this.isOverlayVisible(layout.entry)
-			) {
+			if (!this.overlayStack.includes(layout.entry) || !this.isOverlayVisible(layout.entry)) {
 				continue;
 			}
 			if (
@@ -1193,7 +1190,9 @@ export abstract class TuiBase extends Container implements TUI {
 	}
 
 	private hasColorQuery(): boolean {
-		return this.lateTerminalColorQueries.length > 0 || this.pendingTerminalColorQueries.length > 0;
+		return (
+			this.lateTerminalColorQueries.length > 0 || this.pendingTerminalColorQueries.length > 0
+		);
 	}
 
 	private consumeTerminalColorResponse(data: string): boolean {

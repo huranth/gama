@@ -14,10 +14,7 @@ function getPackageName(): string {
 }
 
 function registryUnavailable(): Response {
-	return Response.json(
-		{ error: "registry unavailable" },
-		{ status: 503, headers: NO_STORE },
-	);
+	return Response.json({ error: "registry unavailable" }, { status: 503, headers: NO_STORE });
 }
 
 export default async function latestVersion(request: Request): Promise<Response> {

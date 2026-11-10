@@ -2,15 +2,15 @@ import {
 	Container,
 	Editor,
 	getKeybindings,
+	MainScreen,
 	setKeybindings,
 	stripTerminalSequences,
-	MainScreen,
 } from "@huranth/gama-tui";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { VirtualTerminal } from "../../ui/test/virtual-terminal.ts";
-import type { RunSession } from "../src/core/session/session.ts";
 import { redactJsonValue, redactUrl } from "../src/core/bug-report.ts";
 import { Keymap } from "../src/core/hotkeys.ts";
+import type { RunSession } from "../src/core/session/session.ts";
 import { reportBug } from "../src/term/bug.ts";
 import { ExtensionEditorComponent } from "../src/term/parts/extension-editor.ts";
 import { ExtensionSelectorComponent } from "../src/term/parts/extension-selector.ts";

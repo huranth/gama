@@ -28,9 +28,7 @@ export class StatusIndicator extends Loader {
 		const line = super.render(width + BORDER_PADDING)[1] ?? "";
 
 		// Trim padding
-		const trimmed = line
-			.replace(/^\s+/, "")
-			.replace(/\s+(?=(?:\x1b\[[0-9;]*m|\s)*$)/g, "");
+		const trimmed = line.replace(/^\s+/, "").replace(/\s+(?=(?:\x1b\[[0-9;]*m|\s)*$)/g, "");
 
 		return truncateToWidth(trimmed, width, "");
 	}

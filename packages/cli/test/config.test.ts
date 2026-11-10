@@ -6,7 +6,6 @@ import {
 	detectInstallMethod,
 	findNodePackageDir,
 	getSelfUpdateCommand,
-	getSelfUpdateUnavailableInstruction,
 	getUpdateInstruction,
 } from "../src/config.ts";
 
@@ -541,5 +540,4 @@ describe("detectInstallMethod", () => {
 			],
 		});
 	});
-
 });

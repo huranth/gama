@@ -12,7 +12,7 @@ import {
 	type UserMessage,
 } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, it } from "vitest";
-import { Runner, type AgentEvent } from "../src/index.ts";
+import { type AgentEvent, Runner } from "../src/index.ts";
 import { calculateTool } from "./utils/calculate.ts";
 
 const registrations: FauxProviderRegistration[] = [];

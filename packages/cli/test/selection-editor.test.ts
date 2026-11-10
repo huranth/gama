@@ -1,9 +1,9 @@
-import { Editor, Text, AltScreen, VStack } from "@huranth/gama-tui";
+import { AltScreen, Editor, Text, VStack } from "@huranth/gama-tui";
 import { describe, expect, it } from "vitest";
 import { defaultEditorTheme } from "../../ui/test/test-themes.ts";
 import { VirtualTerminal } from "../../ui/test/virtual-terminal.ts";
-import { createChatViewport } from "../src/term/viewport.ts";
 import { CenteredColumn } from "../src/term/parts/centered-column.ts";
+import { createChatViewport } from "../src/term/viewport.ts";
 
 describe("fullscreen editor selection", () => {
 	it("deletes selected editor text with backspace through a centered column", async () => {
@@ -227,13 +227,7 @@ describe("fullscreen editor selection", () => {
 		});
 		const editor = new Editor(tui, defaultEditorTheme);
 		const transcript = new CenteredColumn(30);
-		transcript.addChild(
-			new Text(
-				"────────────\n" + "hello\n" + "────────────",
-				0,
-				0,
-			),
-		);
+		transcript.addChild(new Text("────────────\n" + "hello\n" + "────────────", 0, 0));
 		const editorColumn = new CenteredColumn(30);
 		editorColumn.addChild(editor);
 		const viewport = createChatViewport({

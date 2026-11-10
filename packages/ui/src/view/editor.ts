@@ -35,7 +35,7 @@ import {
 	type TuiTextSelectionTarget,
 } from "../screen.ts";
 import { UndoStack } from "../undo-stack.ts";
-import { clampPaddingX, cjkBreakRegex, isWhitespaceChar, padLine, visibleWidth } from "../utils.ts";
+import { cjkBreakRegex, clampPaddingX, isWhitespaceChar, padLine, visibleWidth } from "../utils.ts";
 import { findWordBackward, findWordForward } from "../word-navigation.ts";
 import { SelectList } from "./select-list.ts";
 
@@ -271,7 +271,9 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 
 	protected renderBottomBorder(width: number, hiddenLineCount: number): string {
 		const border =
-			hiddenLineCount > 0 ? createScrollBorder("down", hiddenLineCount, width) : "─".repeat(width);
+			hiddenLineCount > 0
+				? createScrollBorder("down", hiddenLineCount, width)
+				: "─".repeat(width);
 		return this.borderColor(border);
 	}
 
@@ -885,9 +887,7 @@ export class Editor implements Component, Focusable, TuiTextSelectionTarget {
 			line.slice(0, markerStart) + line.slice(markerStart + markerLength);
 
 		this.pastes.delete(targetId);
-		const higherIds = [...this.pastes.keys()]
-			.filter((id) => id > targetId)
-			.sort((a, b) => a - b);
+		const higherIds = [...this.pastes.keys()].filter((id) => id > targetId).sort((a, b) => a - b);
 		for (const id of higherIds) {
 			this.pastes.set(id - 1, this.pastes.get(id)!);
 			this.pastes.delete(id);

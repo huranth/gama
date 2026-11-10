@@ -4,6 +4,8 @@ import { join } from "node:path";
 import { zstdDecompressSync } from "node:zlib";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import type { Api, Context, Model } from "../src/types.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import {
 	closeOpenAICodexWebSocketSessions,
 	getOpenAICodexWebSocketDebugStats,
@@ -11,8 +13,6 @@ import {
 	stream as streamOpenAICodexResponses,
 	streamSimple as streamSimpleOpenAICodexResponses,
 } from "../src/wire/openai-codex-responses.ts";
-import type { Api, Context, Model } from "../src/types.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 const originalAgentDir = process.env.GAMA_CODING_AGENT_DIR;
 
@@ -1130,9 +1130,7 @@ describe("openai-codex streaming", () => {
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 400000,
 				maxTokens: 128000,
-				...(modelId === "gpt-5.5"
-					? { compat: { priorityServiceTierMultiplier: 2.5 } }
-					: {}),
+				...(modelId === "gpt-5.5" ? { compat: { priorityServiceTierMultiplier: 2.5 } } : {}),
 			};
 
 			const context = normalizeContext({
@@ -1236,9 +1234,7 @@ describe("openai-codex streaming", () => {
 				cost: { input: 1, output: 2, cacheRead: 0, cacheWrite: 0 },
 				contextWindow: 400000,
 				maxTokens: 128000,
-				...(modelId === "gpt-5.5"
-					? { compat: { priorityServiceTierMultiplier: 2.5 } }
-					: {}),
+				...(modelId === "gpt-5.5" ? { compat: { priorityServiceTierMultiplier: 2.5 } } : {}),
 			};
 
 			const context = normalizeContext({

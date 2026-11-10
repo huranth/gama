@@ -1,8 +1,8 @@
 import {
 	Container,
 	padLine,
-	truncateToWidth,
 	type TuiMouseEvent,
+	truncateToWidth,
 	visibleWidth,
 } from "@huranth/gama-tui";
 import { theme } from "../theme/theme.ts";

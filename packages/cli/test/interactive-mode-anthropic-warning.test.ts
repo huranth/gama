@@ -24,18 +24,12 @@ describe("TermApp.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 			showWarning: vi.fn(),
 		};
 
-		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(
-			fakeThis,
-			{
-				provider: "anthropic",
-			},
-		);
-		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(
-			fakeThis,
-			{
-				provider: "anthropic",
-			},
-		);
+		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
+			provider: "anthropic",
+		});
+		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
+			provider: "anthropic",
+		});
 
 		expect(fakeThis.showWarning).toHaveBeenCalledTimes(1);
 		expect(modelRuntime.getAuth).toHaveBeenCalledTimes(1);
@@ -50,12 +44,9 @@ describe("TermApp.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 			showWarning: vi.fn(),
 		};
 
-		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(
-			fakeThis,
-			{
-				provider: "openai",
-			},
-		);
+		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
+			provider: "openai",
+		});
 
 		expect(fakeThis.showWarning).not.toHaveBeenCalled();
 		expect(modelRuntime.getAuth).not.toHaveBeenCalled();
@@ -70,12 +61,9 @@ describe("TermApp.maybeWarnAboutAnthropicSubscriptionAuth", () => {
 			showWarning: vi.fn(),
 		};
 
-		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(
-			fakeThis,
-			{
-				provider: "anthropic",
-			},
-		);
+		await (TermApp as any).prototype.maybeWarnAboutAnthropicSubscriptionAuth.call(fakeThis, {
+			provider: "anthropic",
+		});
 
 		expect(fakeThis.showWarning).not.toHaveBeenCalled();
 		expect(modelRuntime.checkAuth).not.toHaveBeenCalled();

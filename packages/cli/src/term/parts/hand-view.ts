@@ -1,3 +1,4 @@
+import type { AssistantMessage } from "@huranth/gama-ai";
 import {
 	type Component,
 	Container,
@@ -6,14 +7,9 @@ import {
 	Text,
 	type TUI,
 } from "@huranth/gama-tui";
-import type { AssistantMessage } from "@huranth/gama-ai";
 import type { MarkdownTransformer } from "../../core/ext/types.ts";
 import { formatHandFailure, HAND_RUN_NEXT } from "../../core/hand-failure.ts";
-import type {
-	HandSnapshot,
-	HandToolItem,
-	HandTranscriptItem,
-} from "../../core/hands.ts";
+import type { HandSnapshot, HandToolItem, HandTranscriptItem } from "../../core/hands.ts";
 import { getMarkdownTheme, theme } from "../theme/theme.ts";
 import { ActivityLineComponent, type ActivityRecord } from "./activity.ts";
 import { AssistantMessageComponent, hasVisibleAssistantContent } from "./assistant-message.ts";
@@ -88,7 +84,8 @@ export class HandViewComponent extends Container {
 	setHiddenThinkingLabel(label: string): void {
 		this.hiddenThinkingLabel = label;
 		for (const component of this.components.values()) {
-			if (component instanceof AssistantMessageComponent) component.setHiddenThinkingLabel(label);
+			if (component instanceof AssistantMessageComponent)
+				component.setHiddenThinkingLabel(label);
 		}
 	}
 

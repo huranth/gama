@@ -2,7 +2,6 @@ import assert from "node:assert";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, it } from "node:test";
-import { Image, setImageTranscoder } from "../src/view/image.ts";
 import {
 	cropKittyImageLine,
 	deleteAllKittyImages,
@@ -26,6 +25,7 @@ import {
 	setCellDimensions,
 } from "../src/terminal-image.ts";
 import { visibleWidth } from "../src/utils.ts";
+import { Image, setImageTranscoder } from "../src/view/image.ts";
 
 const ENV_KEYS = [
 	"TERM",

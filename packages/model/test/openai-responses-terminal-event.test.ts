@@ -1,10 +1,10 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";
-import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
-import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 import type { Api, AssistantMessage, AssistantMessageEvent, Model } from "../src/types.ts";
 import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream as streamOpenAIResponses } from "../src/wire/openai-responses.ts";
+import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 
 vi.mock("openai", () => {
 	async function* createMockResponsesStream(): AsyncIterable<ResponseStreamEvent> {
@@ -281,12 +281,7 @@ describe("OpenAI Responses terminal event handling", () => {
 		const model = createModel();
 		const output = createOutput(model);
 
-		await processResponsesStream(
-			createUnknownStatusEvents(),
-			output,
-			new ReplyStream(),
-			model,
-		);
+		await processResponsesStream(createUnknownStatusEvents(), output, new ReplyStream(), model);
 
 		expect(output.stopReason).toBe("stop");
 		expect(output.errorMessage).toBeUndefined();
@@ -313,9 +308,7 @@ describe("OpenAI Responses terminal event handling", () => {
 				new ReplyStream(),
 				model,
 			),
-		).rejects.toThrow(
-			"Unfinished tool call: bash",
-		);
+		).rejects.toThrow("Unfinished tool call: bash");
 	});
 
 	it("rejects parallel tool calls without output_index instead of mixing them up", async () => {
@@ -328,9 +321,7 @@ describe("OpenAI Responses terminal event handling", () => {
 				new ReplyStream(),
 				model,
 			),
-		).rejects.toThrow(
-			"Unfinished tool call: bash",
-		);
+		).rejects.toThrow("Unfinished tool call: bash");
 	});
 
 	it("forwards parsed provider stream events in order", async () => {
@@ -383,9 +374,7 @@ describe("OpenAI Responses terminal event handling", () => {
 		expect(initialStopReason).toBe("pending");
 		expect(lastEvent?.type).toBe("error");
 		expect(result.stopReason).toBe("error");
-		expect(result.errorMessage).toBe(
-			"No terminal event",
-		);
+		expect(result.errorMessage).toBe("No terminal event");
 	});
 
 	it.each([

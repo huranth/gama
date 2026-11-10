@@ -72,10 +72,7 @@ export class QueuedMessagesComponent extends Container {
 		const safeWidth = Math.max(1, width);
 		const margin = Math.min(1, Math.max(0, safeWidth - 4));
 		const available = Math.max(1, safeWidth - margin * 2);
-		const buttonWidth = Math.min(
-			available,
-			visibleWidth(this.buttonLabel()) + CARD_PAD_X * 2,
-		);
+		const buttonWidth = Math.min(available, visibleWidth(this.buttonLabel()) + CARD_PAD_X * 2);
 		const messageWidth = Math.min(available, CARD_MAX_WIDTH);
 
 		return {
@@ -114,8 +111,8 @@ export class QueuedMessagesComponent extends Container {
 		if (cached?.width === width && cached.messages === key) return cached.lines;
 
 		const lines = this.messages.flatMap((message) =>
-			wrapTextWithAnsi(`${BULLET}${message.replace(/\s+/g, " ").trim()}`, width).map(
-				(line) => theme.style(line, { fg: CARD_INK }),
+			wrapTextWithAnsi(`${BULLET}${message.replace(/\s+/g, " ").trim()}`, width).map((line) =>
+				theme.style(line, { fg: CARD_INK }),
 			),
 		);
 
@@ -163,10 +160,7 @@ export class QueuedMessagesComponent extends Container {
 
 		place(this.row("", headingWidth), headingWidth, CARD_HEADING_BG);
 		place(
-			this.row(
-				theme.style(this.buttonLabel(), { fg: CARD_INK, bold: true }),
-				headingWidth,
-			),
+			this.row(theme.style(this.buttonLabel(), { fg: CARD_INK, bold: true }), headingWidth),
 			headingWidth,
 			CARD_HEADING_BG,
 		);

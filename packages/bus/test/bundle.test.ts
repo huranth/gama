@@ -3,13 +3,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 import { bundleFacetPackage, bundleFacets } from "../src/bundler.ts";
-import { createFacetHost, defineFacet, defineService } from "../src/index.ts";
 import {
 	createFacetBundleArtifactLoader,
 	createFacetBundleLoader,
 	readFacetBundleArtifact,
 	readFacetBundleManifest,
 } from "../src/host.ts";
+import { createFacetHost, defineFacet, defineService } from "../src/index.ts";
 
 interface GenerationValue {
 	read(): string;
@@ -272,7 +272,10 @@ describe("facet bundles", () => {
 	test("rejects reserved entry names", async () => {
 		const directory = await mkdtemp(join(packageDirectory, ".bundle-reserved-test-"));
 		temporaryDirectories.push(directory);
-		await writeFile(join(directory, "entry.ts"), "export default { id: 'reserved', setup() {} };\n");
+		await writeFile(
+			join(directory, "entry.ts"),
+			"export default { id: 'reserved', setup() {} };\n",
+		);
 		await writeFile(
 			join(directory, "package.json"),
 			JSON.stringify({ name: "reserved-package", version: "1.0.0" }),

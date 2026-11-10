@@ -1,13 +1,13 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
+import { AltScreen } from "../src/alt-screen.ts";
+import { Container, type TuiMouseEvent, type TuiMouseEventType } from "../src/screen.ts";
 import { Editor, type EditorTheme } from "../src/view/editor.ts";
 import { Input } from "../src/view/input.ts";
 import { MouseRegion } from "../src/view/mouse-region.ts";
 import { SelectList, type SelectListTheme } from "../src/view/select-list.ts";
 import { SettingsList, type SettingsListTheme } from "../src/view/settings-list.ts";
 import { Text } from "../src/view/text.ts";
-import { Container, type TuiMouseEvent, type TuiMouseEventType } from "../src/screen.ts";
-import { AltScreen } from "../src/alt-screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 function mouse(

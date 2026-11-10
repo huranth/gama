@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 import {
 	createRemoteServiceEndpoint,
 	createServiceCatalogueCall,
@@ -21,6 +20,7 @@ import {
 	type ServiceProviderUpdate,
 	type ServiceSubscriptionSnapshot,
 } from "../src/index.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 
 describe("service wire protocol", () => {
 	test("encodes control calls and validates service values", () => {

@@ -1,17 +1,18 @@
 import { mkdtemp } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { createProvider, envApiKeyAuth, type Model } from "@huranth/gama-ai";
-import { openAICompletionsApi } from "@huranth/gama-ai/compat";
-import { createModels } from "@huranth/gama-ai/models";
 import {
 	fauxAssistantMessage,
 	fauxProvider,
 	fauxText,
 	fauxToolCall,
 } from "@huranth/gama-ai/catalog/faux";
-import { NodeExecutionEnv } from "../../src/system/node.ts";
+import { openAICompletionsApi } from "@huranth/gama-ai/compat";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
+import { openNodeJsonlStorage } from "../../src/backends/jsonl/node.ts";
+import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 import {
 	createRegistry,
 	defineExtension,
@@ -21,9 +22,8 @@ import {
 	section,
 	watchEvents,
 } from "../../src/index.ts";
-import { openNodeJsonlStorage } from "../../src/backends/jsonl/node.ts";
-import { openNodeSqliteStorage } from "../../src/backends/sqlite/node.ts";
 import { createBashTool, createReadTool } from "../../src/ops/index.ts";
+import { NodeExecutionEnv } from "../../src/system/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 const args = process.argv.slice(2);

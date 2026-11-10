@@ -3,11 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import lockfile from "proper-lockfile";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import {
-	AuthStorage,
-	FileAuthStorageBackend,
-	readStoredCredential,
-} from "../src/core/vault.ts";
+import { AuthStorage, FileAuthStorageBackend, readStoredCredential } from "../src/core/vault.ts";
 
 describe("AuthStorage", () => {
 	const tempDir = join(

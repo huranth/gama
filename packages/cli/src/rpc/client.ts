@@ -2,13 +2,13 @@ import { type ChildProcess, spawn } from "node:child_process";
 import type { Writable } from "node:stream";
 import type { AgentMessage, ThinkingLevel } from "@huranth/gama-agent-core";
 import type { ImageContent } from "@huranth/gama-ai";
+import type { BashResult } from "../core/bash-executor.ts";
+import type { CompactionResult } from "../core/comp/index.ts";
 import type {
 	PromptDisposition,
 	QueuedInputDisposition,
 	SessionStats,
 } from "../core/session/session.ts";
-import type { BashResult } from "../core/bash-executor.ts";
-import type { CompactionResult } from "../core/comp/index.ts";
 import type { SessionEntry, SessionTreeNode } from "../core/sessions.ts";
 import type { JsonAgentSessionEvent } from "../json-event.ts";
 import { attachJsonlLineReader, serializeJsonLine } from "./jsonl.ts";
@@ -121,17 +121,13 @@ export class RpcClient {
 		});
 		childProcess.once("error", (error) => {
 			if (this.process !== childProcess) return;
-			const processError = new Error(
-				`Agent failed: ${error.message}`,
-			);
+			const processError = new Error(`Agent failed: ${error.message}`);
 			this.exitError = processError;
 			this.rejectPendingRequests(processError);
 		});
 		childProcess.stdin?.on("error", (error) => {
 			if (this.process !== childProcess) return;
-			const stdinError =
-				this.exitError ??
-				new Error(`Agent stdin failed: ${error.message}`);
+			const stdinError = this.exitError ?? new Error(`Agent stdin failed: ${error.message}`);
 			this.exitError = stdinError;
 			this.rejectPendingRequests(stdinError);
 		});
@@ -364,12 +360,13 @@ export class RpcClient {
 	}
 
 	waitForIdle(timeout = IDLE_TIMEOUT_MS): Promise<void> {
-		return this.waitForSettled(timeout, "Idle timeout").then(
-			() => undefined,
-		);
+		return this.waitForSettled(timeout, "Idle timeout").then(() => undefined);
 	}
 
-	collectEvents(timeout = IDLE_TIMEOUT_MS, signal?: AbortSignal): Promise<JsonAgentSessionEvent[]> {
+	collectEvents(
+		timeout = IDLE_TIMEOUT_MS,
+		signal?: AbortSignal,
+	): Promise<JsonAgentSessionEvent[]> {
 		return this.waitForSettled(timeout, "Event timeout", signal);
 	}
 
@@ -423,10 +420,7 @@ export class RpcClient {
 			}
 
 			function onError(error: Error): void {
-				fail(
-					self.exitError ??
-						new Error(`Agent failed: ${error.message}`),
-				);
+				fail(self.exitError ?? new Error(`Agent failed: ${error.message}`));
 			}
 
 			function onAbort(): void {
@@ -516,9 +510,7 @@ export class RpcClient {
 			throw error;
 		}
 		if (stdin.destroyed || !stdin.writable) {
-			const error = new Error(
-				"Agent stdin closed",
-			);
+			const error = new Error("Agent stdin closed");
 			this.exitError = error;
 			throw error;
 		}
@@ -531,11 +523,7 @@ export class RpcClient {
 				? undefined
 				: setTimeout(() => {
 						this.pendingRequests.delete(id);
-						reject(
-							new Error(
-								`Request timeout: ${command.type}`,
-							),
-						);
+						reject(new Error(`Request timeout: ${command.type}`));
 					}, RESPONSE_TIMEOUT_MS);
 
 			this.pendingRequests.set(id, {

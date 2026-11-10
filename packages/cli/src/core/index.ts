@@ -1,43 +1,12 @@
 export {
-	RunSession,
-	type AgentSessionConfig,
-	type SessionEvent,
-	type AgentSessionEventListener,
-	type ModelCycleResult,
-	type PromptOptions,
-	type SessionStats,
-} from "./session/session.ts";
-
-export {
-	SessionRuntime,
-	type CreateAgentSessionRuntimeFactory,
-	type CreateAgentSessionRuntimeResult,
-	createAgentSessionRuntime,
-} from "./session/runtime.ts";
-
-export {
-	type AgentSessionRuntimeDiagnostic,
-	type AgentSessionServices,
-	type CreateAgentSessionFromServicesOptions,
-	type CreateAgentSessionServicesOptions,
-	createAgentSessionFromServices,
-	createAgentSessionServices,
-} from "./session/services.ts";
-
-export {
 	type BashExecutorOptions,
 	type BashResult,
 	executeBashWithOperations,
 } from "./bash-executor.ts";
-
 export * from "./cache/index.ts";
-
 export type { CompactionResult } from "./comp/index.ts";
-
 export { createEventBus, type EventBus, type EventBusController } from "./event-bus.ts";
-
 export { areExperimentalFeaturesEnabled } from "./experimental.ts";
-
 export {
 	type AgentActivityOutcome,
 	type AgentBeforeSettleEvent,
@@ -72,13 +41,13 @@ export {
 	type ExtensionFactory,
 	type ExtensionFlag,
 	type ExtensionHandler,
-	PluginHost,
 	type ExtensionShortcut,
 	type ExtensionUIContext,
 	type InlineExtension,
 	type LoadExtensionsResult,
 	type MessageRenderer,
 	type NormalizedBuildSystemPromptOptions,
+	PluginHost,
 	type RegisteredCommand,
 	type SessionBeforeCompactEvent,
 	type SessionBeforeForkEvent,
@@ -99,5 +68,27 @@ export {
 	type TurnStartEvent,
 	type WorkingIndicatorOptions,
 } from "./ext/index.ts";
-
 export { createSyntheticSourceInfo } from "./origin.ts";
+export {
+	type CreateAgentSessionRuntimeFactory,
+	type CreateAgentSessionRuntimeResult,
+	createAgentSessionRuntime,
+	SessionRuntime,
+} from "./session/runtime.ts";
+export {
+	type AgentSessionRuntimeDiagnostic,
+	type AgentSessionServices,
+	type CreateAgentSessionFromServicesOptions,
+	type CreateAgentSessionServicesOptions,
+	createAgentSessionFromServices,
+	createAgentSessionServices,
+} from "./session/services.ts";
+export {
+	type AgentSessionConfig,
+	type AgentSessionEventListener,
+	type ModelCycleResult,
+	type PromptOptions,
+	RunSession,
+	type SessionEvent,
+	type SessionStats,
+} from "./session/session.ts";

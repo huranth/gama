@@ -1,5 +1,4 @@
 import { describe, expect, test, vi } from "vitest";
-import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 import {
 	type Context,
 	type ReplicatedState,
@@ -9,6 +8,7 @@ import {
 } from "../src/index.ts";
 import { ReplicatedStateReplica } from "../src/peers/state.ts";
 import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
+import { BACKGROUND_CONTEXT, withCancel } from "../src/scope/index.ts";
 
 type Value = { value: number };
 type Kind = "mutable" | "attached" | "replica";

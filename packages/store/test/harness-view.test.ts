@@ -1,10 +1,10 @@
-import { applyImmutable, type Op } from "@huranth/gama-bus/delta";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
 	fauxAssistantMessage,
 	fauxText,
 } from "@huranth/gama-ai";
+import { applyImmutable, type Op } from "@huranth/gama-bus/delta";
 import {
 	AgentDoc,
 	type Conversation,

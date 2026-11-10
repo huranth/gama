@@ -1,3 +1,4 @@
+import type { Component } from "../screen.ts";
 import {
 	allocateImageId,
 	getCapabilities,
@@ -8,7 +9,6 @@ import {
 	imageFallback,
 	renderImage,
 } from "../terminal-image.ts";
-import type { Component } from "../screen.ts";
 import { truncateToWidth } from "../utils.ts";
 
 let imageTranscoder: ImageTranscoder | undefined;

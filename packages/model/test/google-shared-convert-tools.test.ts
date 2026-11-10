@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import type { Tool } from "../src/types.ts";
 import {
 	convertTools,
 	resolveGoogleFunctionCallingMode,
 	supportsGoogleStrictToolSampling,
 } from "../src/wire/google-shared.ts";
-import type { Tool } from "../src/types.ts";
 
 function makeTool(parameters: Record<string, unknown>): Tool {
 	return {

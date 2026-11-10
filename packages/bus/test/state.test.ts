@@ -1,6 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
-import type { Draft, Op } from "../src/patch/index.ts";
 import {
 	type Context,
 	type JsonValue,
@@ -9,8 +7,10 @@ import {
 	type ReplicatedStateSourceFrame,
 	replicatedState,
 } from "../src/index.ts";
+import type { Draft, Op } from "../src/patch/index.ts";
 import { ReplicatedStateReplica } from "../src/peers/state.ts";
 import { getReplicatedStateInternals } from "../src/peers/state-internals.ts";
+import { BACKGROUND_CONTEXT } from "../src/scope/index.ts";
 
 describe("transactional replicated state", () => {
 	it("publishes one immutable structurally shared revision", () => {
@@ -60,10 +60,7 @@ describe("transactional replicated state", () => {
 
 	it("reports rejected async change callbacks without applying their draft", async () => {
 		const errors: Error[] = [];
-		const state = replicatedState(
-			{ value: 0 },
-			{ onError: (error) => errors.push(error) },
-		);
+		const state = replicatedState({ value: 0 }, { onError: (error) => errors.push(error) });
 		const failure = new Error("async change failed");
 		expect(() =>
 			state.change(BACKGROUND_CONTEXT, ((draft: Draft<{ value: number }>) => {

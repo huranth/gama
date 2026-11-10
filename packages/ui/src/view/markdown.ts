@@ -1,8 +1,8 @@
 import { Marked, type Token, Tokenizer, type TokenizerExtension, type Tokens } from "marked";
 import { ANSI_CELL_RESET, ANSI_RESET } from "../colors.ts";
 import { renderLatex } from "../latex.ts";
-import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import type { Component } from "../screen.ts";
+import { getCapabilities, hyperlink, isImageLine } from "../terminal-image.ts";
 import {
 	applyBackgroundToLine,
 	clampPaddingX,

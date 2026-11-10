@@ -4,11 +4,7 @@ import { join } from "node:path";
 import type { AssistantMessage, ToolResultMessage } from "@huranth/gama-ai";
 import { fauxAssistantMessage } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import {
-	CURRENT_SESSION_VERSION,
-	type FileEntry,
-	SessionStore,
-} from "../src/core/sessions.ts";
+import { CURRENT_SESSION_VERSION, type FileEntry, SessionStore } from "../src/core/sessions.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 const CANARY = "__gama_append_only_canary__";

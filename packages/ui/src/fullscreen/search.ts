@@ -1,13 +1,13 @@
 import {
-	AltScreenSearchComponent,
+	type AltScreenSearchComponent,
 	type AltScreenSearchIndex,
 	type AltScreenSearchMatch,
 	getAltScreenSearchMatchKey,
 } from "../alt-screen-search.ts";
 import { getScrollbarGeometry, type LayoutBox } from "../layout.ts";
-import type { ScrollView } from "../view/scroll-view.ts";
 import type { OverlayHandle } from "../screen.ts";
 import { extractAnsiCode } from "../utils.ts";
+import type { ScrollView } from "../view/scroll-view.ts";
 
 export type SearchSelectionMode = "query" | "retain" | "next" | "previous";
 

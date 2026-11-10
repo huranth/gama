@@ -10,10 +10,10 @@ import {
 	type TuiMouseEventResult,
 } from "../screen.ts";
 import { UndoStack } from "../undo-stack.ts";
-import { padLine } from "../utils.ts";
 import {
 	getGraphemeSegmenter,
 	isWhitespaceChar,
+	padLine,
 	sliceByColumn,
 	stripControlChars,
 	truncateToWidth,
@@ -496,9 +496,7 @@ export class Input implements Component, Focusable {
 
 		const marker = this.focused ? CURSOR_MARKER : "";
 
-		const cursorChar = this.focused
-			? this.cursorStyle(atCursor)
-			: atCursor;
+		const cursorChar = this.focused ? this.cursorStyle(atCursor) : atCursor;
 		const textWithCursor = beforeCursor + marker + cursorChar + afterCursor;
 
 		const line = this.prompt + padLine(textWithCursor, availableWidth);

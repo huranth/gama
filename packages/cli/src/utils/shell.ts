@@ -21,8 +21,7 @@ const trackedDetachedChildPids = new Set<number>();
 
 const powershellMissingMessage = "PowerShell unavailable";
 
-const powershellLookupMessage =
-	"PowerShell not found";
+const powershellLookupMessage = "PowerShell not found";
 
 const pathLookupTimeoutMs = 5000;
 

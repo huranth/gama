@@ -1,7 +1,7 @@
 import type { Model, Provider } from "@huranth/gama-ai";
 import { describe, expect, it, vi } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { CredentialSynchronizationError, ModelHub } from "../src/core/model-run.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 function model(provider: string): Model<"openai-completions"> {
 	return {
@@ -63,9 +63,7 @@ async function runtimeWithProvider(
 }
 
 describe("ModelHub credential synchronization", () => {
-	it(
-		"publishes locally consistent availability when a runtime API key is set and removed",
-		async () => {
+	it("publishes locally consistent availability when a runtime API key is set and removed", async () => {
 		const credentials = AuthStorage.inMemory();
 		const runtime = await runtimeWithProvider(provider("dynamic"), credentials);
 

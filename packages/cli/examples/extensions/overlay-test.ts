@@ -84,8 +84,7 @@ class OverlayTestComponent implements Focusable {
 			row(
 				` Wide: ${th.fg(
 					"warning",
-					"中文日本語한글テスト漢字繁體简体" +
-						"ひらがなカタカナ가나다라마바",
+					"中文日本語한글テスト漢字繁體简体" + "ひらがなカタカナ가나다라마바",
 				)}`,
 			),
 		);

@@ -54,9 +54,9 @@ vi.mock("@aws-sdk/client-bedrock-runtime", () => {
 	};
 });
 
-import { stream as streamBedrock } from "../src/wire/bedrock-converse-stream.ts";
 import type { Context, Message, Model, ThinkingContent } from "../src/types.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { stream as streamBedrock } from "../src/wire/bedrock-converse-stream.ts";
 
 const gptModel: Model<"bedrock-converse-stream"> = {
 	id: "global.openai.gpt-5.6-terra",

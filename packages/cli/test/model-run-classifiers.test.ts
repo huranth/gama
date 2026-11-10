@@ -1,7 +1,7 @@
 import { type ClassifierModel, createProvider, InMemoryModelsStore } from "@huranth/gama-ai";
 import { describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { ModelHub } from "../src/core/model-run.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 const context = {
 	state: { text: "Looks good" },

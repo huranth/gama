@@ -1,25 +1,20 @@
-import {
-	colorToRgb,
-	type Component,
-	type TuiMouseEvent,
-	visibleWidth,
-} from "@huranth/gama-tui";
 import type { AssistantMessage } from "@huranth/gama-ai";
+import { type Component, colorToRgb, type TuiMouseEvent, visibleWidth } from "@huranth/gama-tui";
 import { beforeAll, describe, expect, test } from "vitest";
 import type { HandSnapshot, HandTranscriptItem } from "../src/core/hands.ts";
+import type { TermApp } from "../src/term/app.ts";
+import { isSilentTool } from "../src/term/chat.ts";
+import { handleHandsStarted } from "../src/term/hands.ts";
 import { HandBackComponent } from "../src/term/parts/hand-back.ts";
+import { HandCardComponent } from "../src/term/parts/hand-card.ts";
 import {
 	handSpotlightBg,
 	handSpotlightColor,
 	handStatusColor,
 } from "../src/term/parts/hand-colors.ts";
-import { HandCardComponent } from "../src/term/parts/hand-card.ts";
-import { HandGridComponent } from "../src/term/parts/hand-grid.ts";
 import { fillHandLine, handBackgroundAnsi } from "../src/term/parts/hand-fill.ts";
+import { HandGridComponent } from "../src/term/parts/hand-grid.ts";
 import { HandViewComponent } from "../src/term/parts/hand-view.ts";
-import type { TermApp } from "../src/term/app.ts";
-import { isSilentTool } from "../src/term/chat.ts";
-import { handleHandsStarted } from "../src/term/hands.ts";
 import { initTheme, theme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 
@@ -319,9 +314,9 @@ describe("hand views", () => {
 
 	test("renders the hand's title, agent content, and explanation as written", () => {
 		const reply =
-			'## Core map\n\nAgent content:\n```json\n' +
-				'{"files":[{"path":"src/core/index.ts","purpose":"barrel","lines":9}]}\n```\n\n' +
-				'Explanation:\nThe core is a thin barrel over the registry.';
+			"## Core map\n\nAgent content:\n```json\n" +
+			'{"files":[{"path":"src/core/index.ts","purpose":"barrel","lines":9}]}\n```\n\n' +
+			"Explanation:\nThe core is a thin barrel over the registry.";
 		const view = new HandViewComponent({
 			...runningHand,
 			kind: "scout",

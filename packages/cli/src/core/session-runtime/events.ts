@@ -2,10 +2,10 @@ import type { AgentEvent, AgentMessage, ThinkingLevel } from "@huranth/gama-agen
 import type { AssistantMessage, ToolResultMessage } from "@huranth/gama-ai/compat";
 import type { CompactionResult } from "../comp/index.ts";
 import type {
-	PluginHost,
 	MessageEndEvent,
 	MessageStartEvent,
 	MessageUpdateEvent,
+	PluginHost,
 	ToolExecutionEndEvent,
 	ToolExecutionStartEvent,
 	ToolExecutionUpdateEvent,
@@ -145,10 +145,7 @@ export async function emitExtensionEvent(
 		};
 		await context.runner.emit(extensionEvent);
 	} else if (event.type === "turn_end") {
-		if (
-			event.message.role === "assistant" &&
-			!context.clearBoundaryDispatched(event.message)
-		) {
+		if (event.message.role === "assistant" && !context.clearBoundaryDispatched(event.message)) {
 			await context.dispatchTurnEndBoundary(event.message, event.toolResults);
 		}
 		turnIndex++;

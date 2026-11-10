@@ -106,4 +106,3 @@ function imageIndicator(image: RenderBlock): string {
 
 	return imageFallback(mimeType, dims);
 }
-

@@ -3,7 +3,6 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { afterEach, describe, expect, it } from "vitest";
-import { idFromNumber } from "../src/ids.ts";
 import {
 	applySqliteMigrations,
 	CURRENT_SQLITE_SCHEMA_VERSION,
@@ -11,6 +10,7 @@ import {
 	type SqliteMigration,
 } from "../src/backends/sqlite/index.ts";
 import { openNodeSqliteDatabase, openNodeSqliteStorage } from "../src/backends/sqlite/node.ts";
+import { idFromNumber } from "../src/ids.ts";
 import { type EntryId, ROOT_CONVERSATION_ID } from "../src/types.ts";
 
 const directories = new Set<string>();

@@ -1,8 +1,8 @@
 import { type Static, Type } from "typebox";
-import { getOrThrow } from "../system/index.ts";
 import { defineTool } from "../engine/define.ts";
 import { characterEnd } from "../engine/output.ts";
 import type { ToolDiagnostic, ToolRegistration } from "../engine/types.ts";
+import { getOrThrow } from "../system/index.ts";
 import {
 	DEFAULT_MAX_BYTES,
 	DEFAULT_MAX_LINES,
@@ -69,9 +69,7 @@ export function createReadTool(): ToolRegistration<typeof readSchema, ReadToolDe
 			const startLine = offset ? Math.max(0, offset - 1) : 0;
 			const startLineDisplay = startLine + 1;
 			if (startLine >= totalFileLines) {
-				throw new Error(
-					`Past end: ${offset}`,
-				);
+				throw new Error(`Past end: ${offset}`);
 			}
 
 			let selectedContent: string;

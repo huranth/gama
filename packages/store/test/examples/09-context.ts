@@ -1,6 +1,6 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type { AssistantMessage, Message, StopReason, ToolResultMessage } from "@huranth/gama-ai";
 import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { createRegistry, Harness, MemoryStorage } from "../../src/index.ts";
 
 const context = BACKGROUND_CONTEXT;

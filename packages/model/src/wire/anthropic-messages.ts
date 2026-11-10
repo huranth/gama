@@ -60,13 +60,13 @@ import {
 	type TranscriptContext,
 } from "../utils/transcript.ts";
 import { claudeCodeVersion, toClaudeCodeName } from "./claude-code.ts";
-import { matchesHost } from "./openai-compat.ts";
 import {
 	getJsonSchemaToolParameters,
 	resolveJsonSchemaStrictSampling,
 	type UnsupportedStrictSchemaKeywordCheck,
 } from "./constrained-sampling.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
+import { matchesHost } from "./openai-compat.ts";
 import {
 	adjustMaxTokensForThinking,
 	buildBaseOptions,
@@ -418,10 +418,7 @@ const fromClaudeCodeName = (name: string, tools?: Tool[]) => {
 	return name;
 };
 
-function consumeLine(
-	text: string,
-	final = false,
-): { line: string; rest: string } | null {
+function consumeLine(text: string, final = false): { line: string; rest: string } | null {
 	const lineBreakIndex = nextLineBreakIndex(text);
 	if (lineBreakIndex === -1) {
 		return null;

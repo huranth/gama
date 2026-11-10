@@ -7,9 +7,8 @@ import {
 	type LayoutFrame,
 	type LayoutRect,
 } from "../layout.ts";
-import type { ScrollView } from "../view/scroll-view.ts";
-import { isImageLine } from "../terminal-image.ts";
 import { type Component, resolveTextSelectionTarget } from "../screen.ts";
+import { isImageLine } from "../terminal-image.ts";
 import {
 	extractAnsiCode,
 	getGraphemeCellRange,
@@ -19,6 +18,7 @@ import {
 	stripTerminalSequences,
 	visibleWidth,
 } from "../utils.ts";
+import type { ScrollView } from "../view/scroll-view.ts";
 import type { SgrMouseEvent } from "./mouse.ts";
 
 export interface SelectionPoint {

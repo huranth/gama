@@ -124,9 +124,7 @@ export function validateThemeJson(label: string, json: unknown): ValidatedThemeJ
 
 	const themeJson = json as ValidatedThemeJson;
 	if (themeJson.name.includes("/")) {
-		throw new Error(
-			`Invalid theme name "${themeJson.name}"`,
-		);
+		throw new Error(`Invalid theme name "${themeJson.name}"`);
 	}
 	return themeJson;
 }

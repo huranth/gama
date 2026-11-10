@@ -3,8 +3,6 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { Runner } from "@huranth/gama-agent-core";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
-import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { createEventBus } from "../src/core/event-bus.ts";
 import type {
 	Extension,
@@ -14,16 +12,17 @@ import type {
 } from "../src/core/ext/index.ts";
 import { createExtensionRuntime, loadExtensionFromFactory } from "../src/core/ext/loader.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
+import { RunSession } from "../src/core/session/session.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createCodingTools } from "../src/index.ts";
 import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 
 export const API_KEY = process.env.ANTHROPIC_API_KEY;
 
 // Env override
-const AUTH_PATH =
-	process.env.GAMA_TEST_AUTH_FILE ?? join(homedir(), ".gama", "agent", "auth.json");
+const AUTH_PATH = process.env.GAMA_TEST_AUTH_FILE ?? join(homedir(), ".gama", "agent", "auth.json");
 
 type ApiKeyCredential = {
 	type: "api_key";
@@ -205,9 +204,7 @@ export async function createTestSession(
 		streamFn: streamSimple,
 	});
 
-	const sessionManager = options.inMemory
-		? SessionStore.inMemory()
-		: SessionStore.create(tempDir);
+	const sessionManager = options.inMemory ? SessionStore.inMemory() : SessionStore.create(tempDir);
 	const settingsManager = SettingsStore.create(tempDir, tempDir);
 
 	if (options.settingsOverrides) {

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { InMemoryModelsStore } from "@huranth/gama-ai";
 import { afterEach, describe, expect, it } from "vitest";
-import { AuthStorage } from "../src/core/vault.ts";
 import { saveCustomProviderModels } from "../src/core/custom-provider.ts";
 import { ModelHub } from "../src/core/model-run.ts";
 import type { ProviderModelConfig } from "../src/core/provider-composer.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 
 const cleanupDirs: string[] = [];
 

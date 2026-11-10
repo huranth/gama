@@ -5,7 +5,6 @@ import {
 	type ApiStreamOptions,
 	type AssistantImages,
 	type AssistantMessage,
-	type ReplyStream,
 	type AuthCheck,
 	type AuthOperationOptions,
 	type AuthResult,
@@ -50,6 +49,7 @@ import {
 	type Provider,
 	type ProviderHeaders,
 	type ProviderRequestOptions,
+	type ReplyStream,
 	type SimpleStreamOptions,
 	type StreamOptions,
 } from "@huranth/gama-ai";
@@ -63,7 +63,15 @@ import {
 } from "@huranth/gama-ai/utils/model-operations";
 import { getAgentDir } from "../config.ts";
 import { operationSignal, raceWithAbortSignal } from "../utils/abort.ts";
-import { AuthStorage as DefaultAuthStorage } from "./vault.ts";
+import {
+	createVirtualModel,
+	findLatestResponse,
+	isVirtualModel,
+	type ModelRoute,
+	type ModelRouteReason,
+	type VirtualModelDefinition,
+	withVirtualModels,
+} from "./fake-models.ts";
 import { ModelConfig } from "./model-config.ts";
 import { FileModelsStore, InMemoryCodingAgentModelsStore } from "./models-store.ts";
 import {
@@ -77,15 +85,7 @@ import {
 	validateExtensionProvider,
 } from "./provider-composer.ts";
 import { RuntimeCredentials } from "./runtime-credentials.ts";
-import {
-	createVirtualModel,
-	findLatestResponse,
-	isVirtualModel,
-	type ModelRoute,
-	type ModelRouteReason,
-	type VirtualModelDefinition,
-	withVirtualModels,
-} from "./fake-models.ts";
+import { AuthStorage as DefaultAuthStorage } from "./vault.ts";
 
 interface RegisteredVirtualModel {
 	model: Model<Api>;
@@ -1131,7 +1131,6 @@ export class ModelHub implements Models {
 			return classifierErrorResult(model, error, options?.signal?.aborted);
 		}
 	}
-
 }
 
 function mergeHeaders(

@@ -10,9 +10,9 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { FileAuthStorageBackend } from "../src/core/vault.ts";
 import { saveProviderBaseUrl } from "../src/core/custom-provider.ts";
 import { ProjectTrustStore } from "../src/core/trust-manager.ts";
+import { FileAuthStorageBackend } from "../src/core/vault.ts";
 import { writeFileAtomicSync } from "../src/utils/atomic-write.ts";
 
 // Inode

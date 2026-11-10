@@ -1,18 +1,15 @@
 import {
 	type AssistantMessage,
-	type ReplyStream,
 	createReplyStream,
 	fauxAssistantMessage,
 	fauxText,
+	type ReplyStream,
 } from "@huranth/gama-ai";
 import { describe, expect, it } from "vitest";
 import { fingerprintPrompt, withPromptCacheStamping } from "../src/core/cache/prompt-hash.ts";
 import { testAnthropicModel as model } from "./model-run-test-utils.ts";
 
-function brokenSource(
-	error: Error,
-	partial?: AssistantMessage,
-): ReplyStream {
+function brokenSource(error: Error, partial?: AssistantMessage): ReplyStream {
 	return {
 		async *[Symbol.asyncIterator]() {
 			if (partial) yield { type: "start", partial } as const;

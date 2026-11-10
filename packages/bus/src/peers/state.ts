@@ -1,4 +1,3 @@
-import { BACKGROUND_CONTEXT } from "../scope/index.ts";
 import {
 	applyImmutable,
 	isBase,
@@ -8,6 +7,7 @@ import {
 	track,
 } from "../patch/index.ts";
 import { JsonRevisionValidator } from "../patch/revision-validator.ts";
+import { BACKGROUND_CONTEXT } from "../scope/index.ts";
 import type {
 	AttachedReplicatedState,
 	Context,
@@ -259,8 +259,7 @@ export class MutableReplicatedStateImpl<T extends object> implements MutableRepl
 	}
 
 	change(context: Context, mutate: Parameters<MutableReplicatedState<T>["change"]>[1]): void {
-		if (this.#changing)
-			throw new Error("Reentrant change");
+		if (this.#changing) throw new Error("Reentrant change");
 		this.#changing = true;
 		let prepared: Prepared<T>;
 		try {
@@ -295,8 +294,7 @@ export class MutableReplicatedStateImpl<T extends object> implements MutableRepl
 	}
 
 	replace(context: Context, value: T): void {
-		if (this.#changing)
-			throw new Error("Reentrant replace");
+		if (this.#changing) throw new Error("Reentrant replace");
 		const prepared = this.#tracker.prepareReplace(value);
 		this.#tracker.adopt(prepared);
 		if (prepared.ops.length === 0) return;
@@ -360,9 +358,7 @@ class AttachedReplicatedStateImpl<T> implements AttachedReplicatedState<T> {
 			assertCursor(frame.cursor, "frame");
 			const expected = this.#cursor + 1;
 			if (frame.cursor !== expected) {
-				throw new Error(
-					`Cursor gap: ${frame.cursor}`,
-				);
+				throw new Error(`Cursor gap: ${frame.cursor}`);
 			}
 			this.#cursor = frame.cursor;
 			const errors = this.#publisher.publish(frame.value, frame.ops, frame.context);
@@ -436,8 +432,7 @@ export class ReplicatedStateReplica<T extends JsonValue = JsonValue> implements 
 	hydrate(sequence: number, ops: readonly Op[], context: Context): void {
 		let next: T;
 		try {
-			if (!isBase(ops))
-				throw new Error("Invalid snapshot");
+			if (!isBase(ops)) throw new Error("Invalid snapshot");
 			next = this.#validator.validate(applyImmutable<T>(undefined, ops));
 		} catch (error) {
 			this.clear();

@@ -13,13 +13,13 @@ import type {
 	ToolCall,
 	TranscriptContext,
 } from "../types.ts";
-import { ReplyStream } from "../utils/event-stream.ts";
 import {
 	formatProviderError,
 	MAX_PROVIDER_ERROR_BODY_CHARS,
 	normalizeProviderError,
 	truncateErrorText,
 } from "../utils/error-body.ts";
+import { ReplyStream } from "../utils/event-stream.ts";
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
@@ -803,8 +803,7 @@ async function consumeChatStream(
 				finishCurrentBlock(currentBlock);
 				currentBlock = null;
 			}
-			const providedId =
-				toolCall.id && toolCall.id !== "null" ? toolCall.id : undefined;
+			const providedId = toolCall.id && toolCall.id !== "null" ? toolCall.id : undefined;
 			const key =
 				toolCall.index ??
 				providedId ??
@@ -813,9 +812,7 @@ async function consumeChatStream(
 			lastToolCallKey = key;
 			const callId =
 				providedId ??
-				(typeof key === "string"
-					? key
-					: deriveMistralToolCallId(`toolcall:${key}`, 0));
+				(typeof key === "string" ? key : deriveMistralToolCallId(`toolcall:${key}`, 0));
 			const existingIndex = toolBlocksByKey.get(key);
 			let block: (ToolCall & { partialArgs?: string }) | undefined;
 			if (existingIndex !== undefined) {

@@ -3,10 +3,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { createExtensionRuntime } from "../src/core/ext/loader.ts";
-import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/kit.ts";
-import { SessionStore } from "../src/core/sessions.ts";
 import { createSyntheticSourceInfo } from "../src/core/origin.ts";
+import type { ResourceLoader } from "../src/core/resource-loader.ts";
+import { SessionStore } from "../src/core/sessions.ts";
 
 describe("createAgentSession skills option", () => {
 	let tempDir: string;

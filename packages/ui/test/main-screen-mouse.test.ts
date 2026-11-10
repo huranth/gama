@@ -1,7 +1,7 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../src/screen.ts";
 import { MainScreen } from "../src/main-screen.ts";
+import type { Component, TuiMouseEvent, TuiMouseEventResult } from "../src/screen.ts";
 import { VirtualTerminal } from "./virtual-terminal.ts";
 
 class ClickTarget implements Component {

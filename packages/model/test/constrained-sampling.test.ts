@@ -1,6 +1,9 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
+import type { AssistantMessage, Model, Tool, ToolCall } from "../src/types.ts";
+import { ReplyStream } from "../src/utils/event-stream.ts";
+import { normalizeContext } from "../src/utils/transcript.ts";
 import {
 	appendGrammarToolInputJsonDelta,
 	makeStrictJsonSchema,
@@ -11,9 +14,6 @@ import {
 	convertResponsesTools,
 	processResponsesStream,
 } from "../src/wire/openai-responses-shared.ts";
-import type { AssistantMessage, Model, Tool, ToolCall } from "../src/types.ts";
-import { ReplyStream } from "../src/utils/event-stream.ts";
-import { normalizeContext } from "../src/utils/transcript.ts";
 
 function makeModel(): Model<"openai-responses"> {
 	return {

@@ -495,10 +495,7 @@ export class AuthStorage implements CredentialStore {
 			return { result: next, next: JSON.stringify(merged, null, 2) };
 		}, options);
 
-		this.updateReadState(
-			latestData,
-			this.authPath ? getFileRevision(this.authPath) : undefined,
-		);
+		this.updateReadState(latestData, this.authPath ? getFileRevision(this.authPath) : undefined);
 		return result;
 	}
 
@@ -512,10 +509,7 @@ export class AuthStorage implements CredentialStore {
 			return { result: undefined, next: JSON.stringify(currentData, null, 2) };
 		}, options);
 
-		this.updateReadState(
-			latestData,
-			this.authPath ? getFileRevision(this.authPath) : undefined,
-		);
+		this.updateReadState(latestData, this.authPath ? getFileRevision(this.authPath) : undefined);
 	}
 
 	async list(options?: AuthOperationOptions): Promise<readonly CredentialInfo[]> {

@@ -126,4 +126,3 @@ export function cacheRows(snapshot: CacheSnapshot): Array<[string, string]> {
 		["recent", snapshot.rates.map((rate) => formatPercent(rate)).join(" ")],
 	];
 }
-

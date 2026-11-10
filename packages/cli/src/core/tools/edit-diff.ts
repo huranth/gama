@@ -83,11 +83,11 @@ function countOverlapping(content: string, oldText: string): number {
 	if (!oldText) return 0;
 
 	let count = 0;
-	let index = 0;
+	let index = content.indexOf(oldText);
 
-	while ((index = content.indexOf(oldText, index)) !== -1) {
+	while (index !== -1) {
 		count += 1;
-		index += 1;
+		index = content.indexOf(oldText, index + 1);
 	}
 
 	return count;

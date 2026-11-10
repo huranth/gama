@@ -63,14 +63,14 @@ function looksLikeTag(lower: string, position: number): boolean {
 
 function findOpener(lower: string, tagName: string, from: number): number {
 	const open = `<${tagName}`;
-	let index = from;
+	let index = lower.indexOf(open, from);
 
-	while ((index = lower.indexOf(open, index)) !== -1) {
+	while (index !== -1) {
 		const next = lower[index + open.length];
 
 		if (!next || !isWordChar(next)) return index;
 
-		index += 1;
+		index = lower.indexOf(open, index + 1);
 	}
 
 	return -1;
@@ -88,14 +88,14 @@ function matchClose(lower: string, position: number, tagName: string): number {
 
 function findClose(lower: string, tagName: string, from: number): number {
 	const close = `</${tagName}`;
-	let index = from;
+	let index = lower.indexOf(close, from);
 
-	while ((index = lower.indexOf(close, index)) !== -1) {
+	while (index !== -1) {
 		const end = matchClose(lower, index, tagName);
 
 		if (end !== -1) return end;
 
-		index += 1;
+		index = lower.indexOf(close, index + 1);
 	}
 
 	return -1;

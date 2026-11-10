@@ -1,3 +1,4 @@
+import { browserFetch } from "./browser.ts";
 import {
 	DEFAULT_MAX_CHARS,
 	MAX_BODY_BYTES,
@@ -6,7 +7,7 @@ import {
 	USER_AGENT,
 } from "./const.ts";
 import { extractMarkdownFrontmatter } from "./extract/frontmatter.ts";
-import { extractReadableHtml, type ExtractedContent } from "./extract/readability.ts";
+import { type ExtractedContent, extractReadableHtml } from "./extract/readability.ts";
 import { normalizeText, truncateParagraphs } from "./extract/text.ts";
 import {
 	ACCEPT_ENCODING,
@@ -16,18 +17,17 @@ import {
 	FETCH_KINDS,
 	FETCH_TIMEOUT_MS,
 	FetchError,
+	type FetchLike,
 	header,
 	isSupportedContentType,
 	MAX_MAX_CHARS,
 	MIN_MAX_CHARS,
+	type ReadUrlResult,
 	readResponseBody,
 	stripBom,
-	type FetchLike,
-	type ReadUrlResult,
 } from "./read-url.ts";
-import { browserFetch } from "./browser.ts";
-import { assertUrlAllowed } from "./security/ssrf.ts";
 import type { AddressPolicy, HostLookup } from "./security/ssrf.ts";
+import { assertUrlAllowed } from "./security/ssrf.ts";
 
 // Challenge page
 const CHALLENGE_MAX_CHARS = 12_000;

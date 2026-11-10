@@ -5,15 +5,15 @@ import { getModel } from "@huranth/gama-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	createAgentSessionFromServices,
-	createAgentSessionServices,
-} from "../src/core/session/services.ts";
-import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
-import {
 	type CreateAgentSessionOptions,
 	createAgentSession,
 	type InlineExtension,
 } from "../src/core/kit.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
+import {
+	createAgentSessionFromServices,
+	createAgentSessionServices,
+} from "../src/core/session/services.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
 
@@ -233,13 +233,7 @@ describe("defaultTools setting", () => {
 
 		it("activates only tools newly added to defaultTools", async () => {
 			const session = await createFileSession();
-			expect(session.getActiveToolNames()).toEqual([
-				"read",
-				"bash",
-				"edit",
-				"write",
-				"fetch",
-			]);
+			expect(session.getActiveToolNames()).toEqual(["read", "bash", "edit", "write", "fetch"]);
 			session.setActiveToolsByName(["read", "edit", "write"]);
 
 			writeSettings({ defaultTools: ["+inactive_tool", "+grep"] });

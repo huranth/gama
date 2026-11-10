@@ -158,9 +158,7 @@ describe("http dispatcher", () => {
 		}
 	});
 
-	it(
-		"allows two seconds for HTTPS connection attempts without changing the Node default",
-		async () => {
+	it("allows two seconds for HTTPS connection attempts without changing the Node default", async () => {
 		globalThis.fetch = async () => {
 			throw new Error("Unexpected global fetch");
 		};

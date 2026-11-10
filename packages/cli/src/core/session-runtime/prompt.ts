@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 import type { ImageContent, TextContent } from "@huranth/gama-ai/compat";
 import { stripFrontmatter } from "../../utils/frontmatter.ts";
-import { processImage, type ProcessImageOptions } from "../../utils/image-process.ts";
+import { type ProcessImageOptions, processImage } from "../../utils/image-process.ts";
 import type { InputEventResult, InputSource } from "../ext/index.ts";
 import type { Skill } from "../skills.ts";
 

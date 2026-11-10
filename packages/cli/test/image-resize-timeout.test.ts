@@ -4,8 +4,6 @@ const fake = vi.hoisted(() => ({ terminate: vi.fn() }));
 
 vi.mock("node:worker_threads", () => ({
 	Worker: class {
-		constructor(_specifier: string | URL) {}
-
 		once(_event: string, _listener: (...args: unknown[]) => void): void {}
 
 		postMessage(_value: unknown, _transfer?: readonly unknown[]): void {}
@@ -17,10 +15,7 @@ vi.mock("node:worker_threads", () => ({
 	},
 }));
 
-import {
-	IMAGE_RESIZE_WORKER_TIMEOUT_MS,
-	resizeImageInWorker,
-} from "../src/utils/image-resize.ts";
+import { IMAGE_RESIZE_WORKER_TIMEOUT_MS, resizeImageInWorker } from "../src/utils/image-resize.ts";
 
 describe("image resize worker", () => {
 	it("terminates a hung worker after the deadline", async () => {

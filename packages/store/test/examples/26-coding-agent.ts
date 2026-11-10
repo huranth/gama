@@ -1,11 +1,10 @@
 import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import type { ToolResultMessage } from "@huranth/gama-ai";
-import { createModels } from "@huranth/gama-ai/models";
 import { fauxAssistantMessage, fauxProvider, fauxToolCall } from "@huranth/gama-ai/catalog/faux";
-import { NodeExecutionEnv } from "../../src/system/node.ts";
+import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	createRegistry,
 	defineExtension,
@@ -16,6 +15,7 @@ import {
 	ToolResultEntry,
 } from "../../src/index.ts";
 import { CodingTools } from "../../src/ops/index.ts";
+import { NodeExecutionEnv } from "../../src/system/node.ts";
 
 const context = BACKGROUND_CONTEXT;
 const workspace = await mkdtemp(join(tmpdir(), "gama-durable-agent-"));

@@ -3,13 +3,10 @@ import { fauxAssistantMessage } from "@huranth/gama-ai";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
 import { describe, expect, it } from "vitest";
 import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
-import {
-	PROMPT_SUMMARY_MIN_WORDS,
-	UserMessageComponent,
-} from "../src/term/parts/user-message.ts";
+import { AuthStorage } from "../src/core/vault.ts";
+import { PROMPT_SUMMARY_MIN_WORDS, UserMessageComponent } from "../src/term/parts/user-message.ts";
 import { initTheme } from "../src/term/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
 import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";

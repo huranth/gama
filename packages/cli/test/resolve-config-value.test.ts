@@ -72,7 +72,8 @@ describe("resolveConfigValue", () => {
 		const counterFile = join(tempDir, "counter");
 		writeFileSync(counterFile, "0");
 		const escapedPath = counterFile.replace(/\\/g, "/").replace(/"/g, '\\"');
-		const success = `!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
+		const success =
+			`!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
 			` echo value'`;
 
 		expect(resolveConfigValue(success)).toBe("value");
@@ -83,7 +84,8 @@ describe("resolveConfigValue", () => {
 		expect(resolveConfigValue(success)).toBe("value");
 		expect(readFileSync(counterFile, "utf-8").trim()).toBe("2");
 
-		const failure = `!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
+		const failure =
+			`!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
 			` exit 1'`;
 		expect(resolveConfigValue(failure)).toBeUndefined();
 		expect(resolveConfigValue(failure)).toBeUndefined();
@@ -105,7 +107,8 @@ describe("resolveConfigValue", () => {
 		const counterFile = join(tempDir, "uncached-counter");
 		writeFileSync(counterFile, "0");
 		const escapedPath = counterFile.replace(/\\/g, "/").replace(/"/g, '\\"');
-		const command = `!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
+		const command =
+			`!sh -c 'count=$(cat "${escapedPath}"); echo $((count + 1)) > "${escapedPath}";` +
 			` echo value'`;
 		expect(resolveConfigValueUncached(command)).toBe("value");
 		expect(resolveConfigValueUncached(command)).toBe("value");

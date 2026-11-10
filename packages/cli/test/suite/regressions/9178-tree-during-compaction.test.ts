@@ -54,9 +54,7 @@ describe("issue #9178: tree navigation during manual compaction", () => {
 		try {
 			await expect(
 				harness.session.navigateTree(navigationTargetId, { summarize: false }),
-			).rejects.toThrow(
-				"Compaction running",
-			);
+			).rejects.toThrow("Compaction running");
 			expect(harness.sessionManager.getLeafId()).toBe(originalLeafId);
 		} finally {
 			compactionReleased.resolve();
@@ -97,9 +95,7 @@ describe("issue #9178: tree navigation during manual compaction", () => {
 		expect(harness.sessionManager.getLeafId()).toBe(originalLeafId);
 		navigationReleased.resolve();
 
-		await expect(secondNavigation).rejects.toThrow(
-			"Compaction running",
-		);
+		await expect(secondNavigation).rejects.toThrow("Compaction running");
 		await firstNavigation;
 		expect(harness.sessionManager.getLeafId()).toBe(firstTargetId);
 	});

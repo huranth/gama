@@ -73,7 +73,9 @@ export class ScrollbarController {
 		this.setHover(target.scrollView);
 		const grab = getThumbGrab(target.geometry, pointerY);
 		if (!grab.onThumb) {
-			target.scrollView.scrollTo(getScrollbarScrollTop(target.geometry, pointerY, grab.grabOffset));
+			target.scrollView.scrollTo(
+				getScrollbarScrollTop(target.geometry, pointerY, grab.grabOffset),
+			);
 		}
 		this.drag = { scrollView: target.scrollView, grabOffset: grab.grabOffset };
 	}

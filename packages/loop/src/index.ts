@@ -1,8 +1,7 @@
-export * from "./runner.ts";
+export * from "./proxy.ts";
 
 export * from "./run-loop.ts";
-
-export * from "./proxy.ts";
+export * from "./runner.ts";
 
 export { setDefaultStreamFn } from "./stream-fn.ts";
 

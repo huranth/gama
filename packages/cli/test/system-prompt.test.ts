@@ -1,6 +1,6 @@
 import { describe, expect, test } from "vitest";
-import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/origin.ts";
+import type { Skill } from "../src/core/skills.ts";
 import { buildSystemPrompt } from "../src/core/system-prompt.ts";
 
 const testSkill: Skill = {

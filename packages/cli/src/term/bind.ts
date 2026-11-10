@@ -10,9 +10,11 @@ export function subscribeToAgent(mode: TermApp): void {
 	let queue: Promise<void> = Promise.resolve();
 
 	mode.unsubscribe = mode.session.subscribe((event) => {
-		queue = queue.then(() => mode.handleEvent(event)).catch((error: unknown) => {
-			mode.showError(`Event failed: ${messageOf(error)}`);
-		});
+		queue = queue
+			.then(() => mode.handleEvent(event))
+			.catch((error: unknown) => {
+				mode.showError(`Event failed: ${messageOf(error)}`);
+			});
 	});
 }
 

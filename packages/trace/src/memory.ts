@@ -51,11 +51,7 @@ function copyAttributeValue(value: AttributeValue): AttributeValue {
 	return Array.isArray(value) ? ([...value] as AttributeValue) : value;
 }
 
-function defineAttribute(
-	attributes: SpanAttributes,
-	name: string,
-	value: AttributeValue,
-): void {
+function defineAttribute(attributes: SpanAttributes, name: string, value: AttributeValue): void {
 	Object.defineProperty(attributes, name, {
 		value: copyAttributeValue(value),
 		enumerable: true,
@@ -91,7 +87,9 @@ function automaticErrorStatus(error: unknown): SpanStatus {
 		if (error instanceof Error) {
 			return { status: "error", error: { name: error.name, message: error.message } };
 		}
-	} catch { /* unreadable */ }
+	} catch {
+		/* unreadable */
+	}
 	return { status: "error" };
 }
 
@@ -172,7 +170,9 @@ function startInMemorySpan<T>(
 
 			try {
 				recordedSpan.events.push({ name, attributes: copyAttributes(attributes) });
-			} catch { /* unreadable */ }
+			} catch {
+				/* unreadable */
+			}
 		},
 		setAttributes(attributes) {
 			if (recordedSpan.settled) {
@@ -181,7 +181,9 @@ function startInMemorySpan<T>(
 
 			try {
 				recordedSpan.attributes = mergeAttributes(recordedSpan.attributes, attributes);
-			} catch { /* unreadable */ }
+			} catch {
+				/* unreadable */
+			}
 		},
 		setStatus(status) {
 			if (recordedSpan.settled) {
@@ -191,7 +193,9 @@ function startInMemorySpan<T>(
 			try {
 				recordedSpan.status = copyStatus(status); // copy first
 				recordedSpan.explicitStatus = true;
-			} catch { /* unreadable */ }
+			} catch {
+				/* unreadable */
+			}
 		},
 	};
 

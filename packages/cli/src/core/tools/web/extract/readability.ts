@@ -21,8 +21,7 @@ const LIST_INDENT = "  ";
 
 const LIST_ROOT = 1;
 
-const HINT_PATTERN =
-	/(?:class|id|role)\s*=\s*["'][^"']*\b(?:article|main|content|post)\b/i;
+const HINT_PATTERN = /(?:class|id|role)\s*=\s*["'][^"']*\b(?:article|main|content|post)\b/i;
 
 const ARTICLE_BODY_PATTERN = /itemprop\s*=\s*["']articleBody/i;
 
@@ -193,10 +192,7 @@ function extractMetaContent(html: string, name: string): string | undefined {
 	for (const token of scanTags(html)) {
 		if (token.close || token.tag !== "meta") continue;
 
-		const keys = [
-			extractAttr(token.attrs, "name"),
-			extractAttr(token.attrs, "property"),
-		];
+		const keys = [extractAttr(token.attrs, "name"), extractAttr(token.attrs, "property")];
 		if (!keys.some((key) => key.toLowerCase() === wanted)) continue;
 
 		const raw = extractAttr(token.attrs, "content");
@@ -219,10 +215,7 @@ function extractAttr(attrs: string, name: string): string {
 }
 
 function attrPattern(name: string): RegExp {
-	return new RegExp(
-		`(?<![\\w-])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`,
-		"i",
-	);
+	return new RegExp(`(?<![\\w-])${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
 }
 
 function convertBlocks(html: string): string {
@@ -338,10 +331,7 @@ function pickCandidate(html: string): string {
 	return best?.html ?? html;
 }
 
-function collectBodies(
-	html: string,
-	isWanted: (tag: string, attrs: string) => boolean,
-): Block[] {
+function collectBodies(html: string, isWanted: (tag: string, attrs: string) => boolean): Block[] {
 	const bodies: Block[] = [];
 	const stack: { tag: string; attrs: string; start: number }[] = [];
 
@@ -379,9 +369,7 @@ function codeLanguage(inner: string): string {
 
 function renderCodeBlock(inner: string): string {
 	const language = codeLanguage(inner);
-	const raw = inner
-		.replace(/^\s*<code\b[^>]*>/i, "")
-		.replace(/<\/code>\s*$/i, "");
+	const raw = inner.replace(/^\s*<code\b[^>]*>/i, "").replace(/<\/code>\s*$/i, "");
 
 	const code = decodeCodeEntities(stripTags(raw, "")).replace(/^\s+|\s+$/g, "");
 
@@ -440,22 +428,16 @@ function tryMarkdown(html: string): string {
 	}
 }
 
-export function extractReadableHtml(
-	html: string,
-	maxChars: number,
-): ExtractedContent {
+export function extractReadableHtml(html: string, maxChars: number): ExtractedContent {
 	const title = extractTitle(html);
 	const description =
-		extractMetaContent(html, "description") ??
-		extractMetaContent(html, "og:description");
+		extractMetaContent(html, "description") ?? extractMetaContent(html, "og:description");
 
 	let text = tryMarkdown(html);
 
 	// Plain fallback
 	if (!text) {
-		text = normalizeText(
-			decodeHtmlEntities(stripTags(removeBoilerplate(html))),
-		);
+		text = normalizeText(decodeHtmlEntities(stripTags(removeBoilerplate(html))));
 	}
 
 	const cut = truncateText(text, maxChars);

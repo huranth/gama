@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildBaseOptions } from "../src/wire/simple-options.ts";
 import type { AssistantMessage, Model, Usage } from "../src/types.ts";
 import { estimateContextTokens } from "../src/utils/estimate.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { buildBaseOptions } from "../src/wire/simple-options.ts";
 
 function createUsage(totalTokens: number): Usage {
 	return {

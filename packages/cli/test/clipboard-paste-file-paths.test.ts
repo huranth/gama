@@ -59,9 +59,7 @@ test("clipboard file paths containing terminal control characters are rejected",
 
 	expect(insertTextAtCursor).not.toHaveBeenCalled();
 	expect(mocks.readClipboardImage).not.toHaveBeenCalled();
-	expect(showError).toHaveBeenCalledExactlyOnceWith(
-		"Paste failed: Invalid clipboard path",
-	);
+	expect(showError).toHaveBeenCalledExactlyOnceWith("Paste failed: Invalid clipboard path");
 });
 
 test(

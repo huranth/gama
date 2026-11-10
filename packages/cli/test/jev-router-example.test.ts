@@ -10,10 +10,7 @@ import {
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import jevRouter from "../examples/extensions/jev-router.ts";
-import {
-	VIRTUAL_MODEL_STATE_ENTRY,
-	type VirtualModelStateData,
-} from "../src/core/fake-models.ts";
+import { VIRTUAL_MODEL_STATE_ENTRY, type VirtualModelStateData } from "../src/core/fake-models.ts";
 import { createHarness, type Harness } from "./suite/harness.ts";
 
 function createTool(name: string, fails = false): AgentTool {

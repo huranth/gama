@@ -20,7 +20,9 @@ const lsSchema = Type.Object({
 		Type.String({ description: "Directory to list (default: current directory)" }),
 	),
 	limit: Type.Optional(
-		Type.Number({ description: `Maximum number of entries to return (default: ${DEFAULT_LIMIT})` }),
+		Type.Number({
+			description: `Maximum number of entries to return (default: ${DEFAULT_LIMIT})`,
+		}),
 	),
 });
 

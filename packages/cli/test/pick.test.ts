@@ -5,8 +5,6 @@ import { Runner } from "@huranth/gama-agent-core";
 import type { Model } from "@huranth/gama-ai";
 import { streamSimple } from "@huranth/gama-ai/compat";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { RunSession } from "../src/core/session/session.ts";
-import { AuthStorage } from "../src/core/vault.ts";
 import {
 	findInitialModel,
 	parseModelPattern,
@@ -14,8 +12,10 @@ import {
 	resolveModelScope,
 	resolveModelScopeWithDiagnostics,
 } from "../src/core/pick.ts";
+import { RunSession } from "../src/core/session/session.ts";
 import { SessionStore } from "../src/core/sessions.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { AuthStorage } from "../src/core/vault.ts";
 import { createModelRegistry, getModelRuntime } from "./model-run-test-utils.ts";
 import { createTestResourceLoader } from "./test-helpers.ts";
 
@@ -218,9 +218,7 @@ describe("parseModelPattern", () => {
 });
 
 describe("resolveModelScopeWithDiagnostics", () => {
-	test(
-		"returns scoped models and structured diagnostics without writing console warnings",
-		async () => {
+	test("returns scoped models and structured diagnostics without writing console warnings", async () => {
 		const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 		try {
 			const registry = {
@@ -547,9 +545,7 @@ describe("resolveCliModel", () => {
 		expect(result.model?.id).toBe("glm-5");
 	});
 
-	test(
-		"prefers an authenticated exact raw model id over an unauthenticated inferred provider",
-		() => {
+	test("prefers an authenticated exact raw model id over an unauthenticated inferred provider", () => {
 		const commandcodeModel: Model<"anthropic-messages"> = {
 			id: "xiaomi/mimo-v2.5-pro",
 			name: "Xiaomi MiMo via Commandcode",

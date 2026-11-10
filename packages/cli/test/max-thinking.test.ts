@@ -3,8 +3,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
-import { isValidThinkingLevel } from "../src/start/args.ts";
 import { SettingsStore } from "../src/core/settings.ts";
+import { isValidThinkingLevel } from "../src/start/args.ts";
 import { loadThemeFromPath } from "../src/term/theme/theme.ts";
 
 const tempDirs: string[] = [];

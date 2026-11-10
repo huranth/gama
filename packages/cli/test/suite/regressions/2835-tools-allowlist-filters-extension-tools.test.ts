@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { getModel } from "@huranth/gama-ai/compat";
 import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { createAgentSession } from "../../../src/core/kit.ts";
+import { DefaultResourceLoader } from "../../../src/core/resource-loader.ts";
 import { SessionStore } from "../../../src/core/sessions.ts";
 import { SettingsStore } from "../../../src/core/settings.ts";
 

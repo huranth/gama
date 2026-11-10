@@ -41,8 +41,8 @@ import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { shortHash } from "../utils/hash.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
-import { isRecord } from "../utils/record.ts";
 import { retryProviderRequest } from "../utils/provider-retry.ts";
+import { isRecord } from "../utils/record.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { getSystemMessageText, renderSystemMessageUpdate } from "../utils/text.ts";
 import {
@@ -871,8 +871,7 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 
 	// DeepSeek match
 	const isDeepSeek =
-		matchesHost("deepseek", provider, baseUrl) ||
-		model.id.toLowerCase().includes("deepseek");
+		matchesHost("deepseek", provider, baseUrl) || model.id.toLowerCase().includes("deepseek");
 
 	const isXai = matchesHost("xai", provider, baseUrl);
 	const isChutes = matchesHost("chutes", provider, baseUrl);

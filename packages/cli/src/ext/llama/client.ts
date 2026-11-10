@@ -199,8 +199,7 @@ export class LlamaClient {
 		} catch {
 			payload = undefined;
 		}
-		if (!response.ok)
-			throw new Error(errorMessage(payload, `HTTP error: ${response.status}`));
+		if (!response.ok) throw new Error(errorMessage(payload, `HTTP error: ${response.status}`));
 		return payload;
 	}
 
@@ -216,8 +215,7 @@ export class LlamaClient {
 			throw new Error("Invalid model catalog");
 		}
 		const data = (payload as { data: unknown[] }).data;
-		if (!data.every(isModelInfo))
-			throw new Error("Invalid router mode");
+		if (!data.every(isModelInfo)) throw new Error("Invalid router mode");
 		return data;
 	}
 
@@ -270,8 +268,7 @@ export class LlamaClient {
 		const headers = new Headers();
 		if (this.apiKey) headers.set("Authorization", `Bearer ${this.apiKey}`);
 		const response = await fetch(`${this.serverUrl}/models/sse`, { headers, signal });
-		if (!response.ok || !response.body)
-			throw new Error(`SSE failed: ${response.status}`);
+		if (!response.ok || !response.body) throw new Error(`SSE failed: ${response.status}`);
 		const reader = response.body.getReader();
 		const decoder = new TextDecoder();
 		let buffer = "";
@@ -292,7 +289,11 @@ export class LlamaClient {
 					if (data) {
 						try {
 							const event = JSON.parse(data) as LlamaModelEvent;
-							if (event && typeof event.model === "string" && typeof event.event === "string")
+							if (
+								event &&
+								typeof event.model === "string" &&
+								typeof event.event === "string"
+							)
 								onEvent(event);
 						} catch {}
 					}

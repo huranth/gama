@@ -3,7 +3,6 @@ import { dirname, join, resolve, sep } from "node:path";
 import type { GitSource } from "../../utils/git.ts";
 import { stripBom } from "../../utils/text.ts";
 import { isOfflineModeEnabled, NETWORK_TIMEOUT_MS } from "../resource-scan.ts";
-import { getGitDependencyInstallArgs, runNpmCommand } from "./npm.ts";
 import {
 	ensureGitIgnore,
 	getGitInstallPath,
@@ -11,6 +10,7 @@ import {
 	gitUpdateMarkerPath,
 	pruneEmptyGitParents,
 } from "./dirs.ts";
+import { getGitDependencyInstallArgs, runNpmCommand } from "./npm.ts";
 import type { PackageContext, SourceScope } from "./types.ts";
 
 export function runGitRemoteCommand(
@@ -149,13 +149,7 @@ export async function getLocalGitUpdateTarget(
 		return {
 			ref: "origin/HEAD",
 			head,
-			fetchArgs: [
-				"fetch",
-				"--prune",
-				"--no-tags",
-				"origin",
-				"+HEAD:refs/remotes/origin/HEAD",
-			],
+			fetchArgs: ["fetch", "--prune", "--no-tags", "origin", "+HEAD:refs/remotes/origin/HEAD"],
 		};
 	}
 }

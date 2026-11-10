@@ -1,7 +1,7 @@
-import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import { createProvider, envApiKeyAuth, type Model } from "@huranth/gama-ai";
 import { openAICompletionsApi } from "@huranth/gama-ai/compat";
 import { createModels } from "@huranth/gama-ai/models";
+import { BACKGROUND_CONTEXT } from "@huranth/gama-bus/context";
 import {
 	AssistantEntry,
 	createRegistry,

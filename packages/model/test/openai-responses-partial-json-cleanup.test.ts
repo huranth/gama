@@ -1,8 +1,8 @@
 import type { ResponseStreamEvent } from "openai/resources/responses/responses.js";
 import { describe, expect, it, vi } from "vitest";
-import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 import type { AssistantMessage, AssistantMessageEvent, Model } from "../src/types.ts";
 import { ReplyStream } from "../src/utils/event-stream.ts";
+import { processResponsesStream } from "../src/wire/openai-responses-shared.ts";
 
 function createOutput(model: Model<"openai-responses">): AssistantMessage {
 	return {

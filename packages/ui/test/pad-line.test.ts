@@ -11,7 +11,10 @@ describe("padding never inherits a drawing style", () => {
 		const out = padLine(line, 6);
 		const firstSpace = out.indexOf(" ", line.length);
 		assert.ok(firstSpace > line.length, "fill starts after the content");
-		assert.ok(out.lastIndexOf("\x1b[24m", firstSpace) >= line.length, "underline closed before fill");
+		assert.ok(
+			out.lastIndexOf("\x1b[24m", firstSpace) >= line.length,
+			"underline closed before fill",
+		);
 		assert.ok(
 			out.lastIndexOf("\x1b]8;;\x07", firstSpace) >= line.length,
 			"link closed before fill",

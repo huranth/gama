@@ -454,8 +454,8 @@ describe("codemode options and store", () => {
 		const result = await run(
 			harness,
 			'// @options: {"timeout_ms": 30000}\nlet a = [];\ntry { while (true) a.push("x".repeat(1 << 20' +
-				') + a.length); } catch (error) { const n = a.length; a = null; return { n, error: String(err' +
-				'or) }; }',
+				") + a.length); } catch (error) { const n = a.length; a = null; return { n, error: String(err" +
+				"or) }; }",
 		);
 		expect(result.isError).toBe(false);
 		const { n, error } = JSON.parse(resultText(result)) as { n: number; error: string };
@@ -518,7 +518,7 @@ describe("codemode options and store", () => {
 		const result = await run(
 			harness,
 			'const r = await tools.bash({ command: "echo out; exit 3" });\ntext(JSON.stringify([r.output, ' +
-				'r.exit_code, typeof r.wall_time_seconds]));',
+				"r.exit_code, typeof r.wall_time_seconds]));",
 		);
 		expect(result.isError).toBe(false);
 		expect(resultText(result)).toBe('["out\\n",3,"number"]');
@@ -929,19 +929,11 @@ describe("codemode models", () => {
 		expect(value.failed).toEqual(["error", "classifier exploded"]);
 		expect(value.badType).toContain('Unknown model type: "video"');
 		expect(value.unknown).toBe("Wrong model type");
-		expect(value.noModel).toContain(
-			"Invalid model: models.classify",
-		);
-		expect(value.undefinedModel).toContain(
-			"Invalid model: models.classify",
-		);
-		expect(value.noState).toContain(
-			"Invalid classify context",
-		);
+		expect(value.noModel).toContain("Invalid model: models.classify");
+		expect(value.undefinedModel).toContain("Invalid model: models.classify");
+		expect(value.noState).toContain("Invalid classify context");
 		expect(value.badQuestion).toContain("Invalid classify context");
-		expect(value.badImage).toContain(
-			"Invalid image context",
-		);
+		expect(value.badImage).toContain("Invalid image context");
 		expect(value.badSplit).toContain("Invalid model arguments");
 		const details = result.details as unknown as CodemodeToolDetails;
 		expect(details.calls.map((call) => [call.name, call.status, call.error])).toEqual([

@@ -21,8 +21,7 @@ export interface AuthResolutionOverrides {
 
 function overlayEnvAuthContext(base: AuthContext, env: ProviderEnv): AuthContext {
 	return {
-		env: async (name) =>
-			env[name] !== undefined ? env[name] : await base.env(name),
+		env: async (name) => (env[name] !== undefined ? env[name] : await base.env(name)),
 		fileExists: (path) => base.fileExists(path),
 	};
 }

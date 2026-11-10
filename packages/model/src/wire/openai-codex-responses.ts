@@ -900,10 +900,7 @@ async function connectWebSocket(
 		signal?.addEventListener("abort", onAbort);
 		if (connectTimeoutMs > 0) {
 			timeout = setTimeout(() => {
-				fail(
-					new Error(`Connect timeout: ${connectTimeoutMs}ms`),
-					"connect_timeout",
-				);
+				fail(new Error(`Connect timeout: ${connectTimeoutMs}ms`), "connect_timeout");
 			}, connectTimeoutMs);
 		}
 		if (signal?.aborted) {

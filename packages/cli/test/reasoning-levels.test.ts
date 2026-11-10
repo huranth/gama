@@ -1,7 +1,7 @@
 import type { ThinkingLevel } from "@huranth/gama-agent-core";
 import { describe, expect, test } from "vitest";
-import { parseThinkingLevel } from "../src/start/args.ts";
 import { REASONING_LEVELS, reasoningLevelName, reasoningLevelTier } from "../src/core/defaults.ts";
+import { parseThinkingLevel } from "../src/start/args.ts";
 
 describe("reasoning level ladder", () => {
 	test("covers every canonical tier in escalation order", () => {

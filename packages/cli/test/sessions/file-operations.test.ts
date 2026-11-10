@@ -78,7 +78,7 @@ describe("loadEntriesFromFile", () => {
 			file,
 			'{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n' +
 				'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"ro' +
-					'le":"user","content":"hi","timestamp":1}}\n',
+				'le":"user","content":"hi","timestamp":1}}\n',
 		);
 		const entries = loadEntriesFromFile(file);
 		expect(entries).toHaveLength(2);
@@ -93,7 +93,7 @@ describe("loadEntriesFromFile", () => {
 			'{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n' +
 				"not valid json\n" +
 				'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"ro' +
-					'le":"user","content":"hi","timestamp":1}}\n',
+				'le":"user","content":"hi","timestamp":1}}\n',
 		);
 		const entries = loadEntriesFromFile(file);
 		expect(entries).toHaveLength(2);
@@ -104,7 +104,7 @@ describe("loadEntriesFromFile", () => {
 		const content =
 			'{"type":"session","id":"abc","timestamp":"2025-01-01T00:00:00Z","cwd":"/tmp"}\n' +
 			'{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"rol' +
-				'e":"user","content":"hi","timestamp":1}}';
+			'e":"user","content":"hi","timestamp":1}}';
 		writeFileSync(file, content);
 
 		expect(loadEntriesFromFile(file)).toHaveLength(2);
@@ -312,7 +312,7 @@ describe("findMostRecentSession", () => {
 				type: "session",
 				id: "a",
 				timestamp: "2025-01-01T00:00:00Z",
-				cwd: projectA
+				cwd: projectA,
 			})}\n`,
 		);
 		await new Promise((r) => setTimeout(r, 10));
@@ -322,7 +322,7 @@ describe("findMostRecentSession", () => {
 				type: "session",
 				id: "b",
 				timestamp: "2025-01-01T00:00:00Z",
-				cwd: projectB
+				cwd: projectB,
 			})}\n`,
 		);
 
@@ -443,7 +443,7 @@ describe("SessionStore.setSessionFile with corrupted files", () => {
 		const noHeaderFile = join(tempDir, "no-header.jsonl");
 		const originalContent =
 			'{"type":"message","id":"abc","parentId":"orphaned","timestamp":"2025-01-01T00:00:00Z","messag' +
-				'e":{"role":"assistant","content":"test"}}\n';
+			'e":{"role":"assistant","content":"test"}}\n';
 		writeFileSync(noHeaderFile, originalContent);
 
 		expect(() => SessionStore.open(noHeaderFile, tempDir)).toThrow(

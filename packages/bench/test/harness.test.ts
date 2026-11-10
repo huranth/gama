@@ -136,9 +136,7 @@ describe("documentation variant", () => {
 	});
 
 	it("fails closed when prompt markers are missing", () => {
-		expect(() => excludeGamaDocumentation("Instructions")).toThrow(
-			"Missing docs section",
-		);
+		expect(() => excludeGamaDocumentation("Instructions")).toThrow("Missing docs section");
 		expect(() => excludeGamaDocumentation("\n<docs>\nGama documentation\n</docs>")).toThrow(
 			"Missing cwd section",
 		);

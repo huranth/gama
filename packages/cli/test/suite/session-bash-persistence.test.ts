@@ -353,9 +353,7 @@ describe("RunSession bash and persistence characterization", () => {
 		]);
 	});
 
-	it(
-		"still settles when flushing queued bash messages fails, and does not duplicate them",
-		async () => {
+	it("still settles when flushing queued bash messages fails, and does not duplicate them", async () => {
 		let releaseToolExecution: (() => void) | undefined;
 		const toolRelease = new Promise<void>((resolve) => {
 			releaseToolExecution = resolve;

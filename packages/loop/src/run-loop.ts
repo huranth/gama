@@ -1,10 +1,10 @@
 import {
 	type AssistantMessage,
-	type ReplyStream,
 	EventStream,
 	getCurrentTools,
 	getToolStateChanges,
 	normalizeContext,
+	type ReplyStream,
 	type SystemMessage,
 	type ToolResultMessage,
 	type ToolStateChanges,
@@ -316,6 +316,7 @@ async function finishTurnSafely(
 	config: AgentLoopConfig,
 	turn: AgentTurnContext,
 	signal: AbortSignal | undefined,
+	// biome-ignore lint/suspicious/noConfusingVoidType: sync finishTurn hooks may return nothing
 ): Promise<AgentTurnDecision | void> {
 	try {
 		return await config.finishTurn?.(turn, signal);

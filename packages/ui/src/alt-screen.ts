@@ -25,7 +25,7 @@ import {
 	getSearchHighlightRanges,
 	pickSearchSelection,
 } from "./fullscreen/search.ts";
-import { TextSelection, type SelectionHost } from "./fullscreen/selection.ts";
+import { type SelectionHost, TextSelection } from "./fullscreen/selection.ts";
 import { getKeybindings } from "./keybindings.ts";
 import { isKeyRelease } from "./keys.ts";
 import {
@@ -37,19 +37,6 @@ import {
 	renderLayoutFrame,
 } from "./layout.ts";
 import { getLayoutNode } from "./layout-node.ts";
-import { AltScreenFlashContainer } from "./view/alt-screen-flash.ts";
-import { ScrollView } from "./view/scroll-view.ts";
-import type { Terminal } from "./terminal.ts";
-import {
-	deleteAllKittyImages,
-	deleteAllKittyPlacements,
-	getCapabilities,
-	getKittyImagePlacementRows,
-	type ImageProtocol,
-	isImageLine,
-	setCapabilities,
-	type TerminalCapabilities,
-} from "./terminal-image.ts";
 import {
 	type Component,
 	Container,
@@ -65,7 +52,20 @@ import {
 	VIEWPORT_TUI,
 	type ViewportTUI,
 } from "./screen.ts";
+import type { Terminal } from "./terminal.ts";
+import {
+	deleteAllKittyImages,
+	deleteAllKittyPlacements,
+	getCapabilities,
+	getKittyImagePlacementRows,
+	type ImageProtocol,
+	isImageLine,
+	setCapabilities,
+	type TerminalCapabilities,
+} from "./terminal-image.ts";
 import { sliceByColumn, truncateToWidth, visibleWidth } from "./utils.ts";
+import { AltScreenFlashContainer } from "./view/alt-screen-flash.ts";
+import { ScrollView } from "./view/scroll-view.ts";
 import { WheelScrollAccelerator, type WheelScrollLines } from "./wheel-scroll.ts";
 
 export type { CachedKittyImage } from "./fullscreen/images.ts";
@@ -692,11 +692,7 @@ export class AltScreen extends TuiBase implements ViewportTUI {
 			return { consume: true };
 		}
 		if (isMouseSequence(data)) return { consume: true };
-		if (
-			!isKeyRelease(data) &&
-			!this.isOverlayFocused() &&
-			this.selection.handleDeleteKey(data)
-		)
+		if (!isKeyRelease(data) && !this.isOverlayFocused() && this.selection.handleDeleteKey(data))
 			return { consume: true };
 
 		const keybindings = getKeybindings();
@@ -782,15 +778,7 @@ export class AltScreen extends TuiBase implements ViewportTUI {
 		y: number,
 		extra: Partial<Pick<TuiMouseEvent, "wheelDelta" | "clickCount">> = {},
 	): TuiMouseEvent {
-		return createMouseEvent(
-			type,
-			button,
-			x,
-			y,
-			this.terminal.columns,
-			this.terminal.rows,
-			extra,
-		);
+		return createMouseEvent(type, button, x, y, this.terminal.columns, this.terminal.rows, extra);
 	}
 
 	private dispatchMouseToLayout(event: TuiMouseEvent): TuiMouseDispatchResult | undefined {
@@ -864,12 +852,7 @@ export class AltScreen extends TuiBase implements ViewportTUI {
 		return count;
 	}
 
-	private dispatchSelectionClick(
-		button: number,
-		x: number,
-		y: number,
-		clickCount: number,
-	): void {
+	private dispatchSelectionClick(button: number, x: number, y: number, clickCount: number): void {
 		const event = this.createMouseEvent("click", button, x, y, { clickCount });
 		const overlay = this.dispatchMouseToOverlay(event);
 		const result =
@@ -942,8 +925,7 @@ export class AltScreen extends TuiBase implements ViewportTUI {
 			raw.x >= indicator.column &&
 			raw.x < indicator.column + indicator.width;
 		const blocksLayoutMotion =
-			type === "move" &&
-			(overIndicator || this.findScrollbar(raw.x, raw.y, true) !== undefined);
+			type === "move" && (overIndicator || this.findScrollbar(raw.x, raw.y, true) !== undefined);
 		const result =
 			overlay.result ??
 			(overlay.hit || blocksLayoutMotion ? undefined : this.dispatchMouseToLayout(event));

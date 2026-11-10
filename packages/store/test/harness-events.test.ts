@@ -1,4 +1,3 @@
-import type { Draft } from "@huranth/gama-bus";
 import {
 	type AssistantMessage,
 	type FauxResponseStep,
@@ -8,6 +7,7 @@ import {
 	fauxToolCall,
 	Type,
 } from "@huranth/gama-ai";
+import type { Draft } from "@huranth/gama-bus";
 import {
 	AgentDoc,
 	type AgentEvent,

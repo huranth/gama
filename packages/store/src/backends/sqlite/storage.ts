@@ -229,7 +229,10 @@ export class SqliteStorage implements Storage {
 		_context: Context,
 	): Promise<ConversationRecord | undefined> {
 		return this.admitRead(async () => {
-			const row = await this.db.get<JsonRow>("SELECT record FROM conversations WHERE id = ?", id);
+			const row = await this.db.get<JsonRow>(
+				"SELECT record FROM conversations WHERE id = ?",
+				id,
+			);
 			return row === undefined ? undefined : parseJson<ConversationRecord>(row.record);
 		});
 	}
@@ -914,8 +917,7 @@ export class SqliteStorage implements Storage {
 						action.copy.id,
 						action.copy.at,
 					);
-					if (stored === undefined)
-						throw new Error(`Unreadable source: ${action.copy.id}`);
+					if (stored === undefined) throw new Error(`Unreadable source: ${action.copy.id}`);
 					const create = action.create!;
 					if (
 						stored.record.scope.kind !== "conversation" ||
@@ -925,9 +927,7 @@ export class SqliteStorage implements Storage {
 						stored.record.history !== create.history ||
 						stored.record.fork !== create.fork
 					) {
-						throw new Error(
-							`Source mismatch: ${action.copy.id}`,
-						);
+						throw new Error(`Source mismatch: ${action.copy.id}`);
 					}
 					content = { kind: "base", version: stored.version, value: stored.value };
 				} catch (error) {

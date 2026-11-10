@@ -1,5 +1,4 @@
 import { getKeybindings } from "./keybindings.ts";
-import { Input } from "./view/input.ts";
 import type { Component, Focusable } from "./screen.ts";
 import {
 	getGraphemeSegmenter,
@@ -8,6 +7,7 @@ import {
 	truncateToWidth,
 	visibleWidth,
 } from "./utils.ts";
+import { Input } from "./view/input.ts";
 
 interface SearchSourceSpan {
 	textStart: number;

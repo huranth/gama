@@ -1,17 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { decodeHtmlEntities } from "../src/core/tools/web/extract/entities.ts";
-import {
-	normalizeText,
-	truncateParagraphs,
-	truncateText,
-} from "../src/core/tools/web/extract/text.ts";
 import {
 	removeBoilerplate,
 	removeElement,
 	stripTags,
 } from "../src/core/tools/web/extract/boilerplate.ts";
+import { decodeHtmlEntities } from "../src/core/tools/web/extract/entities.ts";
 import { extractMarkdownFrontmatter } from "../src/core/tools/web/extract/frontmatter.ts";
 import { extractReadableHtml } from "../src/core/tools/web/extract/readability.ts";
+import {
+	normalizeText,
+	truncateParagraphs,
+	truncateText,
+} from "../src/core/tools/web/extract/text.ts";
 
 const articlePage = `<!doctype html>
 <html>
@@ -584,7 +584,7 @@ describe("truncation edge cases (bug sweep)", () => {
 	});
 
 	it("does not split a surrogate pair on a raw paragraph cut", () => {
-		const cut = truncateParagraphs("𠀀".repeat(30) + "\n\nmore", 21);
+		const cut = truncateParagraphs(`${"𠀀".repeat(30)}\n\nmore`, 21);
 
 		expect(() => encodeURIComponent(cut.text)).not.toThrow();
 	});

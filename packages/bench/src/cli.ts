@@ -13,18 +13,18 @@ import {
 	runTask,
 } from "./container.ts";
 import {
-	createTaskPlan,
-	type DiscoveredEvalCase,
-	DOCUMENTATION_VARIANTS,
-	parseDiscoveredCases,
-} from "./plan.ts";
-import {
 	type EvalObservation,
 	erroredObservation,
 	formatEvalComparisonReport,
 	readTaskObservation,
 	summarizeEvalObservations,
 } from "./output.ts";
+import {
+	createTaskPlan,
+	type DiscoveredEvalCase,
+	DOCUMENTATION_VARIANTS,
+	parseDiscoveredCases,
+} from "./plan.ts";
 
 type EvalCliOptions = {
 	provider?: string;
@@ -172,8 +172,7 @@ function compareDiscovery(
 }
 
 const cli = parseEvalCli(process.argv.slice(2));
-if (!cli.provider || !cli.model)
-	throw new Error("Missing model choice");
+if (!cli.provider || !cli.model) throw new Error("Missing model choice");
 
 const selectedModel = { provider: cli.provider, model: cli.model };
 
@@ -188,8 +187,7 @@ const files = (
 	.sort();
 if (files.length === 0) throw new Error("No eval files");
 for (const file of files) {
-	if (!file.endsWith(".docs.eval.ts"))
-		throw new Error(`Bad eval type: ${file}`);
+	if (!file.endsWith(".docs.eval.ts")) throw new Error(`Bad eval type: ${file}`);
 }
 
 const artifactDirectory = resolve(packageRoot, ".eval", artifactRunId());
@@ -198,8 +196,7 @@ const authPath = requireEvalAuthFile(selectedModel.provider);
 await mkdir(artifactDirectory, { recursive: true, mode: 0o700 });
 
 const images = buildImages();
-if (images.with_docs.id === images.without_docs.id)
-	throw new Error("Duplicate variant image");
+if (images.with_docs.id === images.without_docs.id) throw new Error("Duplicate variant image");
 
 const docker = createDockerContext(
 	images,

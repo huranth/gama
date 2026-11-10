@@ -10,14 +10,10 @@ import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import type { ExecOptions } from "../exec.ts";
 import { execCommand } from "../exec.ts";
-import { readGamaManifest } from "../gama-manifest.ts";
-import {
-	createSyntheticSourceInfo,
-	getSyntheticPathSource,
-	isSyntheticPath,
-} from "../origin.ts";
-import { time } from "../timings.ts";
 import type { ModelRouteRequest, VirtualModelDefinition } from "../fake-models.ts";
+import { readGamaManifest } from "../gama-manifest.ts";
+import { createSyntheticSourceInfo, getSyntheticPathSource, isSyntheticPath } from "../origin.ts";
+import { time } from "../timings.ts";
 import type {
 	EntryRenderer,
 	Extension,
@@ -723,7 +719,9 @@ function isExtensionFile(name: string): boolean {
 function isInsideDirectory(root: string, candidate: string): boolean {
 	try {
 		const rel = path.relative(fs.realpathSync(root), fs.realpathSync(candidate));
-		return rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel));
+		return (
+			rel === "" || (rel !== ".." && !rel.startsWith(`..${path.sep}`) && !path.isAbsolute(rel))
+		);
 	} catch {
 		return false;
 	}

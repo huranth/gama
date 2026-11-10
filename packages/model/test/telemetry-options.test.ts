@@ -1,6 +1,5 @@
 import { NOOP_TELEMETRY_CONTEXT, type TelemetryContext } from "@huranth/gama-telemetry";
 import { describe, expect, it } from "vitest";
-import { buildBaseOptions } from "../src/wire/simple-options.ts";
 import { generateImages } from "../src/images.ts";
 import { registerImagesApiProvider } from "../src/images-api-registry.ts";
 import { createModels, createProvider } from "../src/registry.ts";
@@ -13,6 +12,7 @@ import type {
 } from "../src/types.ts";
 import { ReplyStream } from "../src/utils/event-stream.ts";
 import { normalizeContext } from "../src/utils/transcript.ts";
+import { buildBaseOptions } from "../src/wire/simple-options.ts";
 
 const telemetryContext: TelemetryContext = NOOP_TELEMETRY_CONTEXT;
 const context = normalizeContext({ messages: [] });

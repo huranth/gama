@@ -11,13 +11,13 @@ import type {
 	ToolResultMessage,
 } from "@huranth/gama-ai/compat";
 import { registerFauxProvider, streamSimple } from "@huranth/gama-ai/compat";
-import { RunSession, type SessionEvent } from "../../src/core/session/session.ts";
-import { AuthStorage } from "../../src/core/vault.ts";
-import type { PluginHost, ExtensionUIContext } from "../../src/core/ext/index.ts";
+import type { ExtensionUIContext, PluginHost } from "../../src/core/ext/index.ts";
 import { convertToLlm } from "../../src/core/msg.ts";
+import { RunSession, type SessionEvent } from "../../src/core/session/session.ts";
 import { SessionStore } from "../../src/core/sessions.ts";
 import type { Settings } from "../../src/core/settings.ts";
 import { SettingsStore } from "../../src/core/settings.ts";
+import { AuthStorage } from "../../src/core/vault.ts";
 import type { InlineExtension, ResourceLoader } from "../../src/index.ts";
 import { theme } from "../../src/term/theme/theme.ts";
 import {
@@ -137,9 +137,7 @@ export interface Harness {
 	appendResponses: (responses: FauxResponseStep[]) => void;
 	getPendingResponseCount: () => number;
 	events: SessionEvent[];
-	eventsOfType<T extends SessionEvent["type"]>(
-		type: T,
-	): Extract<SessionEvent, { type: T }>[];
+	eventsOfType<T extends SessionEvent["type"]>(type: T): Extract<SessionEvent, { type: T }>[];
 	tempDir: string;
 	cleanup: () => void;
 }

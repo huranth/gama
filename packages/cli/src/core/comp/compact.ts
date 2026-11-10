@@ -10,8 +10,8 @@ import {
 	uuidv7,
 } from "@huranth/gama-ai";
 import type {
-	AssistantMessage,
 	Api,
+	AssistantMessage,
 	Model,
 	SimpleStreamOptions,
 	SystemMessage,
@@ -494,8 +494,7 @@ export function findCutPoint(
 		entries,
 		scan.cutIndex,
 		startIndex,
-		(entry) =>
-			entry.type === "compaction" || sessionEntryToContextMessages(entry).length > 0,
+		(entry) => entry.type === "compaction" || sessionEntryToContextMessages(entry).length > 0,
 	);
 
 	const cutEntry = entries[cutIndex];
