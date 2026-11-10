@@ -88,7 +88,7 @@ function automaticErrorStatus(error: unknown): SpanStatus {
 			return { status: "error", error: { name: error.name, message: error.message } };
 		}
 	} catch {
-		/* unreadable */
+		/* Unreadable */
 	}
 	return { status: "error" };
 }
@@ -171,7 +171,7 @@ function startInMemorySpan<T>(
 			try {
 				recordedSpan.events.push({ name, attributes: copyAttributes(attributes) });
 			} catch {
-				/* unreadable */
+				/* Unreadable */
 			}
 		},
 		setAttributes(attributes) {
@@ -182,7 +182,7 @@ function startInMemorySpan<T>(
 			try {
 				recordedSpan.attributes = mergeAttributes(recordedSpan.attributes, attributes);
 			} catch {
-				/* unreadable */
+				/* Unreadable */
 			}
 		},
 		setStatus(status) {
@@ -194,7 +194,7 @@ function startInMemorySpan<T>(
 				recordedSpan.status = copyStatus(status); // copy first
 				recordedSpan.explicitStatus = true;
 			} catch {
-				/* unreadable */
+				/* Unreadable */
 			}
 		},
 	};

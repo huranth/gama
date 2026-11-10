@@ -272,7 +272,7 @@ run("npm", ["run", "build:offline"]);
 console.log();
 
 console.log("Running tests...");
-	run(resolveBash(), ["scripts/run-tests.sh"]);
+run(resolveBash(), ["scripts/run-tests.sh"]);
 console.log();
 
 // Build once
