@@ -9,6 +9,18 @@ test_root="$(mktemp -d "$temp_parent/gama-test.XXXXXX")"
 git_askpass="$(type -P false)"
 readonly temp_parent test_root git_askpass
 
+native_path() {
+	if command -v cygpath > /dev/null 2>&1; then
+		cygpath -w "$1"
+	else
+		printf "%s\n" "$1"
+	fi
+}
+
+home_dir="$(native_path "$test_root/home")"
+tmp_dir="$(native_path "$test_root/tmp")"
+cache_dir="$(native_path "$test_root/cache")"
+
 mkdir -p "$test_root/home/.config" "$test_root/tmp" "$test_root/cache/npm"
 touch "$test_root/.gama-test-owned" "$test_root/npm-userconfig" "$test_root/npm-globalconfig"
 
@@ -38,13 +50,13 @@ trap cleanup EXIT
 test_env=(
 	"PATH=$PATH"
 	"PWD=$PWD"
-	"HOME=$test_root/home"
-	"USERPROFILE=$test_root/home"
-	"TMPDIR=$test_root/tmp"
-	"TMP=$test_root/tmp"
-	"TEMP=$test_root/tmp"
-	"XDG_CONFIG_HOME=$test_root/home/.config"
-	"XDG_CACHE_HOME=$test_root/cache"
+	"HOME=$home_dir"
+	"USERPROFILE=$home_dir"
+	"TMPDIR=$tmp_dir"
+	"TMP=$tmp_dir"
+	"TEMP=$tmp_dir"
+	"XDG_CONFIG_HOME=$(native_path "$test_root/home/.config")"
+	"XDG_CACHE_HOME=$cache_dir"
 	"LANG=C"
 	"LC_ALL=C"
 	"TZ=UTC"
@@ -54,9 +66,9 @@ test_env=(
 	"GIT_ASKPASS=$git_askpass"
 	"GIT_EDITOR=true"
 	"GIT_SEQUENCE_EDITOR=true"
-	"NPM_CONFIG_USERCONFIG=$test_root/npm-userconfig"
-	"NPM_CONFIG_GLOBALCONFIG=$test_root/npm-globalconfig"
-	"NPM_CONFIG_CACHE=$test_root/cache/npm"
+	"NPM_CONFIG_USERCONFIG=$(native_path "$test_root/npm-userconfig")"
+	"NPM_CONFIG_GLOBALCONFIG=$(native_path "$test_root/npm-globalconfig")"
+	"NPM_CONFIG_CACHE=$cache_dir/npm"
 	"GAMA_NO_LOCAL_LLM=1"
 	"AWS_EC2_METADATA_DISABLED=true"
 )
@@ -77,4 +89,9 @@ for name in CI GITHUB_ACTIONS; do
 done
 
 echo "Running tests without API keys in isolated home: $test_root/home"
+
+if ! env -i "${test_env[@]}" node scripts/provision-test-tools.mjs; then
+	echo "Continuing without tool provisioning: offline machines rely on system ripgrep." >&2
+fi
+
 env -i "${test_env[@]}" npm test
