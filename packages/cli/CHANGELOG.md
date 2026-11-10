@@ -1,9 +1,21 @@
 # Changelog
 
+## [Unreleased]
+
+### Changed
+
+- Version bumps now only touch the published CLI, and every workspace package follows its version, so versions no longer drift between releases.
+
+### Fixed
+
+- The bench package version and its stale dependency ranges now follow the CLI.
+
 ## [1.0.2] - 2026-11-10
 
 ### Added
 
+- The `hands` tool. The model can delegate work to scout, digger and runner hands, and the terminal shows a card for each one that you can open.
+- `/changelog` slash command to show the release notes.
 - `/compact [instructions]` slash command.
 - Terminal bell when a run of 20 s or more finishes (`notifyOnTurnEnd`, on by default, toggle with `/bell`).
 - `LICENSE` is now shipped in the package.
@@ -34,6 +46,7 @@
 - Gemini parallel tool results stay in one turn.
 - RPC `session_start` fires once.
 - `exec` reports signal-killed children as failures (128 + signal number).
+- Bundled builds include the native prebuilds again.
 
 ## 1.0.1
 
