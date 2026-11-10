@@ -66,6 +66,11 @@ for name in SystemRoot SYSTEMROOT WINDIR COMSPEC PATHEXT; do
 	[[ -z "$value" ]] || test_env+=("$name=$value")
 done
 
+for name in ALL_PROXY HTTP_PROXY HTTPS_PROXY NO_PROXY all_proxy http_proxy https_proxy no_proxy; do
+	value="${!name-}"
+	[[ -z "$value" ]] || test_env+=("$name=$value")
+done
+
 for name in CI GITHUB_ACTIONS; do
 	value="${!name-}"
 	[[ -z "$value" ]] || test_env+=("$name=$value")
