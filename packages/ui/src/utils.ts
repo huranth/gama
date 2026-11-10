@@ -86,7 +86,7 @@ export const cjkBreakRegex = new RegExp(
 );
 
 export const cjkPunctuationRegex = new RegExp(
-	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|[，．：；！？（）［］｛｝""''…—])`,
+	`(?:(?=\\p{Punctuation})${cjkBreakRegex.source}|[，．：；！？（）［］｛｝“”‘’…—])`,
 	"u",
 );
 
