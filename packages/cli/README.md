@@ -1,10 +1,17 @@
 # gama
 
-A coding agent for the terminal. Reads files, runs commands, edits code, keeps sessions.
+a coding agent for the terminal, reads files, runs commands, edits code, keeps sessions
 
 ```sh
 npm install -g @huranth/gama-harness
 gama
 ```
 
-Node 22.19 or newer.
+node 22.19 or newer, hands, extensions, skills, themes and RPC are included
+
+full readme and release notes:
+
+- https://github.com/huranth/gama
+- https://github.com/huranth/gama/blob/main/packages/cli/CHANGELOG.md
+
+MIT, do what you want with it
