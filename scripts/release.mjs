@@ -19,14 +19,27 @@ if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEA
 
 function commandForPlatform(command) {
 	if (process.platform !== "win32" || command.endsWith(".exe")) return command;
-	return `${command}.cmd`;
+	if (command === "npm" || command === "npx") return `${command}.cmd`;
+	return command;
+}
+
+function resolveBash() {
+	if (process.platform !== "win32") return "bash";
+	const candidates = [
+		process.env.BASH,
+		"C:\\Program Files\\Git\\bin\\bash.exe",
+		"C:\\Program Files\\Git\\usr\\bin\\bash.exe",
+		"C:\\msys64\\usr\\bin\\bash.exe",
+	];
+	return candidates.find((candidate) => candidate && existsSync(candidate)) ?? "bash";
 }
 
 function run(command, args, options = {}) {
 	console.log(`$ ${[command, ...args].join(" ")}`);
+	const useShell = process.platform === "win32" && (command === "npm" || command === "npx");
 	const result = spawnSync(commandForPlatform(command), args, {
 		encoding: "utf8",
-		shell: process.platform === "win32",
+		shell: useShell,
 		stdio: options.capture ? ["inherit", "pipe", "pipe"] : "inherit",
 	});
 
@@ -256,7 +269,7 @@ console.log("Building packages for tests...");
 run("npm", ["run", "build:offline"]);
 console.log();
 
-console.log("Running tests...");	run("bash", ["scripts/run-tests.sh"]);
+console.log("Running tests...");	run(resolveBash(), ["scripts/run-tests.sh"]);
 console.log();
 
 // Build once
