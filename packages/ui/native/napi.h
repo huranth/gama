@@ -6,9 +6,12 @@
 #include <stdint.h>
 #ifdef _WIN32
 #include <windows.h>
+#define GAMA_NAPI_CALL __stdcall
+#define GAMA_NAPI_EXPORT __declspec(dllexport)
 #else
 #include <dlfcn.h>
 #define GAMA_NAPI_CALL
+#define GAMA_NAPI_EXPORT __attribute__((visibility("default")))
 #endif
 
 typedef void* napi_env;

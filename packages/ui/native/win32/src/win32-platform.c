@@ -1,9 +1,6 @@
 #define GAMA_CLIPBOARD_WRITE
 #include "../../clipboard.h"
 
-#ifndef BI_ALPHABITFIELDS
-#endif
-
 static int string_equals(const char* left, const char* right) {
     while (*left && *right && *left == *right) {
         left++;

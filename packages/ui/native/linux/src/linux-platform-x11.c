@@ -6,6 +6,9 @@
 #include <time.h>
 #include "clipboard-worker.h"
 
+#define MAX_CLIPBOARD_BYTES (64 * 1024 * 1024)
+#define CLIPBOARD_TIMEOUT_MS 1000
+
 static const char* const text_types[] = {
     "text/plain;charset=utf-8", "text/plain;charset=UTF-8", "UTF8_STRING", "text/plain", "STRING",
 };
