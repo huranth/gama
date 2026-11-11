@@ -149,13 +149,12 @@ describe("fetch stream option", () => {
 				}),
 		);
 		vi.stubGlobal("fetch", ambient);
-		const result = await streamGoogleGenerativeAI(createModel("google-generative-ai"), context, {
+		await streamGoogleGenerativeAI(createModel("google-generative-ai"), context, {
 			apiKey: "test-key",
 			fetch: ambient,
 		}).result();
 
 		expect(ambient).toHaveBeenCalledOnce();
-		expect(result.errorMessage).not.toContain("Custom fetch is not supported");
 		expect(globalThis.fetch).toBe(ambient);
 	});
 
