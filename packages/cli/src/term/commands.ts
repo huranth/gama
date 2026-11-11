@@ -106,8 +106,7 @@ export async function cycleModel(mode: TermApp, direction: "forward" | "backward
 		// Save default
 		const result = await mode.session.cycleModel(direction, { persist: true });
 		if (result === undefined) {
-			const msg = mode.session.scopedModels.length > 0 ? "Single model" : "Single model";
-			mode.showStatus(msg);
+			mode.showStatus("Single model");
 		} else {
 			mode.refreshModelIndicators();
 			const thinkingStr =
