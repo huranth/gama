@@ -763,7 +763,7 @@ function applyThinkingConfig(
 			display: options?.thinkingDisplay ?? "summarized",
 			block_binding: { prefix_mismatch_behavior: "drop_block" },
 		};
-		params.output_config = { effort: "high" };
+		params.output_config = { effort: options?.effort ?? "high" };
 		return;
 	}
 
