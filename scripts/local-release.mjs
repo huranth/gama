@@ -252,9 +252,8 @@ if (!options.skipCheck) {
 }
 
 for (const pkg of packages) {
-	const buildScript = pkg.directory === "packages/model" ? "build:offline" : "build";
 	run("npm", ["run", "clean"], { cwd: pkg.directory });
-	run("npm", ["run", buildScript], { cwd: pkg.directory });
+	run("npm", ["run", "build"], { cwd: pkg.directory });
 }
 
 if (!options.skipTest) {

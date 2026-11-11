@@ -9,7 +9,7 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 
 const repoRoot = resolve(scriptDir, "..");
 
-const packageDir = join(repoRoot, "packages", "coding-agent");
+const packageDir = join(repoRoot, "packages", "cli");
 
 const distCliPath = join(packageDir, "dist", "cli.js");
 
@@ -29,7 +29,7 @@ function printHelp() {
 	console.log(`Usage:
   node scripts/profile-node.mjs [options]
 
-Profiles coding-agent startup with the runtime selected below:
+Profiles gama startup with the runtime selected below:
 - npm run profile:tui     -> builds packages/cli and profiles TUI startup with Node
 - npm run profile:rpc     -> builds packages/cli and profiles RPC startup with Node
 - bun run profile:tui     -> profiles TUI startup from src/cli.ts directly with Bun
@@ -300,7 +300,7 @@ async function waitForExit(child, errorPrefix) {
 async function runBuild(bundle) {
 	process.stdout.write(
 		`Building dependencies and the ${bundle ? "bundled" : "unbundled"} ` +
-			"coding-agent Node entrypoint...\n",
+			"gama Node entrypoint...\n",
 	);
 	const startedAt = performance.now();
 	const commands = [

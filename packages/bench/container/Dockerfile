@@ -7,7 +7,7 @@ RUN --mount=type=bind,source=.,target=/repo,rw \
     cd /repo \
     && npm ci --ignore-scripts \
     && npm run build:offline \
-    && node packages/evals/docker/install-runtime.mjs /opt/evaluator
+    && node packages/bench/container/install-runtime.mjs /opt/evaluator
 
 # Both variants use the same installed runtime. The control removes only the
 # coding-agent documentation whose effect the experiment measures.
@@ -20,17 +20,17 @@ RUN rm -rf \
 
 FROM node:24-slim AS evaluator
 COPY --from=builder /opt/evaluator/root /repo
-WORKDIR /repo/packages/evals
+WORKDIR /repo/packages/bench
 # Vitest starts as root so it can load evaluator code. Before prompting the
 # model, the harness permanently drops to UID 65532. Keep evaluator sources
 # root-only so model tools and generated code cannot inspect judges or fixtures.
 RUN chmod -R go-rwx \
-      /repo/packages/evals/src \
-      /repo/packages/evals/evals \
-      /repo/packages/evals/docker \
+      /repo/packages/bench/src \
+      /repo/packages/bench/evals \
+      /repo/packages/bench/container \
     && chmod go-rwx \
       /repo/vitest.base.ts \
-      /repo/packages/evals/vitest.evals.config.ts \
+      /repo/packages/bench/vitest.evals.config.ts \
     && mkdir -p /run/gama-eval-secrets \
     && chmod 0700 /run/gama-eval-secrets
 ENTRYPOINT ["node", "--experimental-strip-types", "container/entrypoint.ts"]
