@@ -21,7 +21,15 @@ typedef void* napi_async_work;
 typedef void* napi_deferred;
 typedef void (GAMA_NAPI_CALL *napi_async_execute_callback)(napi_env, void*);
 typedef void (GAMA_NAPI_CALL *napi_async_complete_callback)(napi_env, int, void*);
-typedef int (GAMA_NAPI_CALL *napi_create_async_work_fn)(napi_env, napi_value, napi_value, napi_async_execute_callback, napi_async_complete_callback, void*, napi_async_work*);
+typedef int (GAMA_NAPI_CALL *napi_create_async_work_fn)(
+    napi_env,
+    napi_value,
+    napi_value,
+    napi_async_execute_callback,
+    napi_async_complete_callback,
+    void*,
+    napi_async_work*
+);
 typedef int (GAMA_NAPI_CALL *napi_create_array_fn)(napi_env, napi_value*);
 typedef int (GAMA_NAPI_CALL *napi_async_work_fn)(napi_env, napi_async_work);
 typedef int (GAMA_NAPI_CALL *napi_create_promise_fn)(napi_env, napi_deferred*, napi_value*);
@@ -34,7 +42,7 @@ typedef int (GAMA_NAPI_CALL *napi_create_string_utf8_fn)(napi_env, const char*, 
 typedef int (GAMA_NAPI_CALL *napi_create_string_utf16_fn)(napi_env, const uint16_t*, size_t, napi_value*);
 typedef int (GAMA_NAPI_CALL *napi_get_boolean_fn)(napi_env, bool, napi_value*);
 typedef int (GAMA_NAPI_CALL *napi_get_cb_info_fn)(napi_env, napi_callback_info, size_t*, napi_value*, napi_value*, void**);
-typedef int (GAMA_NAPI_CALL *napi_get_value_fn)(napi_env, napi_value*);
+typedef int (GAMA_NAPI_CALL *napi_get_primitive_fn)(napi_env, napi_value*);
 typedef int (GAMA_NAPI_CALL *napi_get_value_string_utf8_fn)(napi_env, napi_value, char*, size_t, size_t*);
 typedef int (GAMA_NAPI_CALL *napi_get_value_string_utf16_fn)(napi_env, napi_value, uint16_t*, size_t, size_t*);
 typedef int (GAMA_NAPI_CALL *napi_set_named_property_fn)(napi_env, napi_value, const char*, napi_value);
@@ -54,14 +62,14 @@ static void* node_symbol(const char* name) {
 }
 
 static napi_value undefined_value(napi_env env) {
-    napi_get_value_fn get_value = (napi_get_value_fn)node_symbol("napi_get_undefined");
+    napi_get_primitive_fn get_value = (napi_get_primitive_fn)node_symbol("napi_get_undefined");
     napi_value result = 0;
     if (get_value) get_value(env, &result);
     return result;
 }
 
 static napi_value null_value(napi_env env) {
-    napi_get_value_fn get_value = (napi_get_value_fn)node_symbol("napi_get_null");
+    napi_get_primitive_fn get_value = (napi_get_primitive_fn)node_symbol("napi_get_null");
     napi_value result = 0;
     if (get_value) get_value(env, &result);
     return result;
