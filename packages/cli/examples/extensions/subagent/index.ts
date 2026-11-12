@@ -1034,7 +1034,7 @@ export default function (gama: ExtensionAPI) {
 				const icon = isRunning
 					? theme.fg("warning", "...")
 					: failCount > 0
-						? theme.fg("warning", "◐")
+						? theme.fg("warning", "ERR")
 						: theme.fg("success", "OK");
 				const status = isRunning
 					? `${successCount + failCount}/${details.results.length} done, ${running} running`
