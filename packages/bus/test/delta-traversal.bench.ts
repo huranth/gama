@@ -13,6 +13,14 @@ type Point = { x: number; y: number; pressure: number };
 type Drawing = { strokes: { id: number; color: string; width: number; points: Point[] }[] };
 type Mode = "raw" | "proxy" | "delta";
 
+function optionValue(name: string): string | undefined {
+	const index = process.argv.indexOf(name);
+	if (index < 0) return undefined;
+	const value = process.argv[index + 1];
+	if (value === undefined || value.startsWith("--")) throw new Error(`Missing value for ${name}`);
+	return value;
+}
+
 const MiB = 1024 * 1024;
 
 async function gc(): Promise<void> {
@@ -172,13 +180,8 @@ if (process.argv.includes("--worker")) {
 	console.log(JSON.stringify(await measure(c.mode, c.strokes, c.points, c.trial)));
 } else {
 	const quick = process.argv.includes("--quick");
-	const outIndex = process.argv.indexOf("--out");
-	const output =
-		outIndex < 0 ? join(tmpdir(), "delta-traversal.json") : process.argv[outIndex + 1];
-	const modeIndex = process.argv.indexOf("--modes");
-	const selected = new Set(
-		modeIndex < 0 ? ["raw", "proxy", "delta"] : process.argv[modeIndex + 1].split(","),
-	);
+	const output = optionValue("--out") ?? join(tmpdir(), "delta-traversal.json");
+	const selected = new Set((optionValue("--modes") ?? "raw,proxy,delta").split(","));
 	for (const mode of selected)
 		if (!["raw", "proxy", "delta"].includes(mode)) throw new Error(`unknown mode: ${mode}`);
 	const hashes = sources();

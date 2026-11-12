@@ -80,6 +80,7 @@ const size = Number(process.argv[4] ?? 100_000);
 const trial = Number(process.argv[5] ?? 0);
 const requestedWatchCount = Number(process.argv[6] ?? 8);
 const requestedWatchUpdates = Number(process.argv[7] ?? 100);
+if (!Number.isSafeInteger(size) || size < 1) throw new RangeError("Invalid size");
 if (!Number.isSafeInteger(requestedWatchCount) || requestedWatchCount < 1)
 	throw new RangeError("Invalid watch count");
 if (!Number.isSafeInteger(requestedWatchUpdates) || requestedWatchUpdates < 0)
