@@ -277,11 +277,7 @@ function handNames(info: HandsInfo): string {
 function handProgress(done: number, total: number): string {
 	const slots = Math.min(Math.max(total, 1), 10);
 	const filled = Math.min(Math.max(done, 0), slots);
-	let text = "";
-	for (let index = 0; index < slots; index++) {
-		text += theme.fg(index < filled ? "success" : "dim", index < filled ? "●" : "○");
-	}
-	return text;
+	return `${theme.fg("success", String(filled))}${theme.fg("dim", `/${slots}`)}`;
 }
 
 function lineCount(text: string): number {
