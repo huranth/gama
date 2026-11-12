@@ -1,6 +1,7 @@
 import { mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
-import { fileURLToPath, pathToFileURL } from "node:url";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, test } from "vitest";
 import { bundleFacetPackage, bundleFacets } from "../src/bundler.ts";
 import {
@@ -15,7 +16,6 @@ interface GenerationValue {
 	read(): string;
 }
 
-const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const temporaryDirectories: string[] = [];
 const GenerationValue = defineService<GenerationValue>("test.bundle.generation", { local: true });
 
@@ -29,7 +29,7 @@ describe("facet bundles", () => {
 	test(
 		"builds independent content-addressed entries and " + "loads fresh reloadable generations",
 		async () => {
-			const directory = await mkdtemp(join(packageDirectory, ".bundle-test-"));
+			const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 			temporaryDirectories.push(directory);
 			const sourceDirectory = join(directory, "src");
 			const outputDirectory = join(directory, "bundle");
@@ -133,7 +133,7 @@ describe("facet bundles", () => {
 	);
 
 	test("loads host externals through the controlled CommonJS require", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-external-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const externalPath = join(directory, "host.mjs");
 		const entryPath = join(directory, "entry.ts");
@@ -169,7 +169,7 @@ describe("facet bundles", () => {
 	});
 
 	test("builds plugin packages from conventional and configured facet entries", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-package-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const sourceDirectory = join(directory, "src");
 		await mkdir(sourceDirectory);
@@ -237,7 +237,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects invalid plugin package entry configuration", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-package-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		await writeFile(
 			join(directory, "package.json"),
@@ -253,7 +253,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects output directories that contain the source directory", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-output-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const entryPath = join(directory, "entry.ts");
 		await writeFile(entryPath, "export default { id: 'entry', setup() {} };\n");
@@ -270,7 +270,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects output directories that contain an entry source", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-entry-output-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const sourceDirectory = join(directory, "src");
 		await mkdir(sourceDirectory);
@@ -291,7 +291,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects reserved entry names", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-reserved-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		await writeFile(
 			join(directory, "entry.ts"),
@@ -332,7 +332,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects reserved manifest entry names", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-manifest-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const manifestPath = join(directory, "chord-facets.json");
 		const entries = JSON.parse(
@@ -352,7 +352,7 @@ describe("facet bundles", () => {
 	});
 
 	test("rejects corrupt entries and invalid module exports", async () => {
-		const directory = await mkdtemp(join(packageDirectory, ".bundle-test-"));
+		const directory = await mkdtemp(join(tmpdir(), "gama-bundle-"));
 		temporaryDirectories.push(directory);
 		const entryPath = join(directory, "entry.ts");
 		const outputDirectory = join(directory, "bundle");
