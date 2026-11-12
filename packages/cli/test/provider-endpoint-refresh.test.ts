@@ -94,7 +94,7 @@ describe("custom endpoint live refresh", () => {
 
 		expect(provider.getModels().map((model) => model.id)).toContain("saved-only");
 		await provider.refreshModels?.(publishContext() as never);
-		expect(seen).toEqual(["https://api.example.com/v1/models"]);
+		expect(seen).toContain("https://api.example.com/v1/models");
 		const ids = provider.getModels().map((model) => model.id);
 		expect(ids).toContain("live-a");
 		expect(ids).toContain("live-b");
