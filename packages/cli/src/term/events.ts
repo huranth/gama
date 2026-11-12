@@ -38,11 +38,7 @@ export function handleTurnStart(mode: TermApp): void {
 	if (mode.settingsManager.getShowTerminalProgress()) {
 		mode.ui.terminal.setProgress(true);
 	}
-	if (mode.workingVisible) {
-		if (mode.activeStatusIndicator?.kind !== "working") {
-			mode.showWorkingStatusIndicator();
-		}
-	} else {
+	if (!mode.workingVisible) {
 		mode.clearStatusIndicator();
 	}
 	mode.ui.requestRender();

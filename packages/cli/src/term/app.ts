@@ -2155,20 +2155,12 @@ export class TermApp {
 		}
 	}
 
-	showWorkingStatusIndicator(): void {
-		// No-op
-		return;
-	}
-
 	private setWorkingVisible(visible: boolean): void {
 		this.workingVisible = visible;
 		if (!visible) {
 			this.clearStatusIndicator("working");
 			this.ui.requestRender();
 			return;
-		}
-		if (this.session.isStreaming && this.activeStatusIndicator?.kind !== "working") {
-			this.showWorkingStatusIndicator();
 		}
 		this.ui.requestRender();
 	}
