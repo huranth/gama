@@ -220,6 +220,7 @@ function commandName(command?: string): string | undefined {
 	return name || undefined;
 }
 
+// shortcut: 232 hint rules, split per language when a rule needs real parsing
 const FAILURE_RULES: Rule[] = [
 	// Git specifics
 	{
