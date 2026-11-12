@@ -1,6 +1,7 @@
 const DESTRUCTIVE_PATTERNS = [
 	/\brm\b/i,
 	/\brmdir\b/i,
+	/\bfind\b.*\s-(delete|exec|execdir|ok|okdir)\b/i,
 	/\bmv\b/i,
 	/\bcp\b/i,
 	/\bmkdir\b/i,

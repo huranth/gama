@@ -51,6 +51,12 @@ describe("isSafeCommand", () => {
 			expect(isSafeCommand("touch newfile")).toBe(false);
 		});
 
+		it("blocks find commands that delete or execute", () => {
+			expect(isSafeCommand("find . -delete")).toBe(false);
+			expect(isSafeCommand("find . -exec rm {} +")).toBe(false);
+			expect(isSafeCommand("find . -ok rm {} ;")).toBe(false);
+		});
+
 		it("blocks git write commands", () => {
 			expect(isSafeCommand("git add .")).toBe(false);
 			expect(isSafeCommand("git commit -m 'msg'")).toBe(false);

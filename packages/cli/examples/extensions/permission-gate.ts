@@ -1,7 +1,11 @@
 import type { ExtensionAPI } from "@huranth/gama-harness";
 
 export default function (gama: ExtensionAPI) {
-	const dangerousPatterns = [/\brm\s+(-rf?|--recursive)/i, /\bsudo\b/i, /\b(chmod|chown)\b.*777/i];
+	const dangerousPatterns = [
+		/\brm\s+(-[^\s]*[rR]|--recursive)/i,
+		/\bsudo\b/i,
+		/\b(chmod|chown)\b.*777/i,
+	];
 
 	gama.on("tool_call", async (event, ctx) => {
 		if (event.toolName !== "bash") return undefined;
