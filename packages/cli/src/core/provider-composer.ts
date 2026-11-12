@@ -511,15 +511,15 @@ function composeApiKeyAuth(
 		resolve: async (input) => {
 			let result: AuthResult | undefined;
 			if (input.credential) {
-				result = inherited
-					? await inherited.resolve(input)
-					: input.credential.key
-						? {
-								auth: { apiKey: input.credential.key },
-								env: input.credential.env,
-								source: "stored credential",
-							}
-						: undefined;
+				if (inherited) {
+					result = await inherited.resolve(input);
+				} else if (input.credential.key) {
+					result = {
+						auth: { apiKey: input.credential.key },
+						env: input.credential.env,
+						source: "stored credential",
+					};
+				}
 			} else if (rawKey !== undefined) {
 				const env = await configContextEnv([rawKey], input.ctx);
 				const key = resolveConfigValueOrThrow(
