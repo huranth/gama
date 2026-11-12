@@ -211,7 +211,10 @@ describe("inbox", () => {
 			scope: "session",
 			initial: () => ({ n: 0 }),
 		});
-		const occupying = root.commit(async (tx) => void (await tx.doc(Marker)).n++, context);
+		const occupying = root.commit(async (tx) => {
+			const marker = await tx.doc(Marker);
+			marker.n++;
+		}, context);
 		await held.entered;
 		first.release();
 		await yielded.promise;
