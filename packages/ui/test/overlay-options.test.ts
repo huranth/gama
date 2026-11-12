@@ -61,9 +61,8 @@ describe("TUI overlay options", () => {
 			await renderAndFlush(tui, terminal);
 
 			const viewport = terminal.getViewport();
-			for (const line of viewport) {
-				assert.ok(line !== undefined);
-			}
+			const widest = Math.max(...viewport.map((line) => (line?.match(/X/g) ?? []).length));
+			assert.strictEqual(widest, 20, "Overlay line should be clipped to its declared width");
 			tui.stop();
 		});
 
@@ -82,7 +81,11 @@ describe("TUI overlay options", () => {
 			await renderAndFlush(tui, terminal);
 
 			const viewport = terminal.getViewport();
-			assert.ok(viewport.length > 0);
+			assert.strictEqual(viewport.length, 24, "Every terminal row should still render");
+			assert.ok(
+				viewport.some((line) => line?.includes("Some styled content")),
+				"Styled overlay text should survive composition",
+			);
 			tui.stop();
 		});
 
@@ -123,7 +126,10 @@ describe("TUI overlay options", () => {
 			await renderAndFlush(tui, terminal);
 
 			const viewport = terminal.getViewport();
-			assert.ok(viewport.length > 0);
+			const wideRow = viewport.find((line) => line?.includes("中")) ?? "";
+			const wideChars = [...wideRow].filter((char) => /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(char)).length;
+			assert.ok(wideChars > 0, "Wide characters should render in the overlay");
+			assert.ok(wideChars <= 7, `Expected at most 7 double-width chars in 15 cells, got ${wideChars}`);
 			tui.stop();
 		});
 
@@ -138,7 +144,13 @@ describe("TUI overlay options", () => {
 			await renderAndFlush(tui, terminal);
 
 			const viewport = terminal.getViewport();
-			assert.ok(viewport.length > 0);
+			const row = viewport.find((line) => line?.includes("X")) ?? "";
+			assert.strictEqual(row.indexOf("X"), 60, "Overlay should start at the requested column");
+			assert.strictEqual(
+				(row.match(/X/g) ?? []).length,
+				20,
+				"Overlay should be clipped at the terminal edge",
+			);
 			tui.stop();
 		});
 
@@ -163,7 +175,14 @@ describe("TUI overlay options", () => {
 			await renderAndFlush(tui, terminal);
 
 			const viewport = terminal.getViewport();
-			assert.ok(viewport.length > 0);
+			assert.ok(
+				viewport.some((line) => line?.includes("OVERLAY-TEXT")),
+				"Overlay should be visible over OSC content",
+			);
+			assert.ok(
+				viewport.some((line) => line?.includes("file.ts")),
+				"Base hyperlink text should survive composition",
+			);
 			tui.stop();
 		});
 	});
