@@ -1242,7 +1242,8 @@ export class TermApp {
 		const home = os.homedir();
 		let result = p;
 
-		if (result.startsWith(home)) {
+		// Then a sibling like /home/smart2 doesn't collapse into ~2
+		if (result === home || result.startsWith(`${home}/`) || result.startsWith(`${home}\\`)) {
 			result = `~${result.slice(home.length)}`;
 		}
 
