@@ -202,7 +202,11 @@ describe("generateSummary reasoning options", () => {
 				settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 			};
 
-			const result = await compact(preparation, createModel(false), "test-key");
+			const result = await compact({
+				preparation,
+				model: createModel(false),
+				apiKey: "test-key",
+			});
 
 			expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 			expect(result.summary).toContain("previous checkpoint");
@@ -240,9 +244,9 @@ describe("generateSummary reasoning options", () => {
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
 
-		await expect(compact(preparation, createModel(false), "test-key")).rejects.toThrow(
-			"Empty summary",
-		);
+		await expect(
+			compact({ preparation, model: createModel(false), apiKey: "test-key" }),
+		).rejects.toThrow("Empty summary");
 	});
 
 	it("rejects tool calls from split-turn summaries", async () => {
@@ -257,9 +261,9 @@ describe("generateSummary reasoning options", () => {
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
 
-		await expect(compact(preparation, createModel(false), "test-key")).rejects.toThrow(
-			"Summary used tool",
-		);
+		await expect(
+			compact({ preparation, model: createModel(false), apiKey: "test-key" }),
+		).rejects.toThrow("Summary used tool");
 	});
 
 	it("rejects a length-limited history summary", async () => {
@@ -290,9 +294,9 @@ describe("generateSummary reasoning options", () => {
 			settings: { enabled: true, reserveTokens: 2000, keepRecentTokens: 20 },
 		};
 
-		await expect(compact(preparation, createModel(false), "test-key")).rejects.toThrow(
-			"generation hit the token cap",
-		);
+		await expect(
+			compact({ preparation, model: createModel(false), apiKey: "test-key" }),
+		).rejects.toThrow("generation hit the token cap");
 	});
 
 	it("does not set reasoning when thinking is off", async () => {
@@ -376,7 +380,11 @@ describe("generateSummary reasoning options", () => {
 			settings: { enabled: true, reserveTokens: 500000, keepRecentTokens: 20000 },
 		};
 
-		const result = await compact(preparation, createModel(false, 128000), "test-key");
+		const result = await compact({
+			preparation,
+			model: createModel(false, 128000),
+			apiKey: "test-key",
+		});
 
 		expect(result.usage).toEqual({
 			...mockSummaryResponse.usage,

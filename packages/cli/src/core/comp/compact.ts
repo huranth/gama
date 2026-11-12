@@ -941,21 +941,38 @@ Return 2 to 5 bullets, one line each, with no headings:
 
 Only summarize information explicitly present above. Do not infer or recreate later messages.`;
 
-export async function compact(
-	preparation: CompactionPreparation,
-	model: Model<Api>,
-	apiKey: string | undefined,
-	headers?: Record<string, string>,
-	customInstructions?: string,
-	signal?: AbortSignal,
-	thinkingLevel?: ThinkingLevel,
-	streamFn?: StreamFn,
-	env?: Record<string, string>,
-	retry?: RetryPolicy,
-	callbacks?: RetryCallbacks,
-	sessionId?: string,
-	lineage?: SummarizationLineage,
-): Promise<CompactionResult> {
+export interface CompactInput {
+	preparation: CompactionPreparation;
+	model: Model<Api>;
+	apiKey: string | undefined;
+	headers?: Record<string, string>;
+	customInstructions?: string;
+	signal?: AbortSignal;
+	thinkingLevel?: ThinkingLevel;
+	streamFn?: StreamFn;
+	env?: Record<string, string>;
+	retry?: RetryPolicy;
+	callbacks?: RetryCallbacks;
+	sessionId?: string;
+	lineage?: SummarizationLineage;
+}
+
+export async function compact(input: CompactInput): Promise<CompactionResult> {
+	const {
+		preparation,
+		model,
+		apiKey,
+		headers,
+		customInstructions,
+		signal,
+		thinkingLevel,
+		streamFn,
+		env,
+		retry,
+		callbacks,
+		sessionId,
+		lineage,
+	} = input;
 	const {
 		firstKeptEntryId,
 		messagesToSummarize,

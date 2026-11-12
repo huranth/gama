@@ -2256,21 +2256,20 @@ export class RunSession {
 		if (extensionResult) return { result: extensionResult, fromExtension: true };
 
 		const request = await this._getSummarizationRequestAuth(model, signal);
-		const result = await compact(
+		const result = await compact({
 			preparation,
-			request.model,
-			request.apiKey,
-			request.headers,
+			model: request.model,
+			apiKey: request.apiKey,
+			headers: request.headers,
 			customInstructions,
 			signal,
-			request.thinkingLevel,
-			this.agent.streamFunction,
-			request.env,
-			this.settingsManager.getRetrySettings(),
-			this._summarizationRetryCallbacks({ source: "compaction", reason }),
-			undefined,
-			this._summarizationLineage(preparation),
-		);
+			thinkingLevel: request.thinkingLevel,
+			streamFn: this.agent.streamFunction,
+			env: request.env,
+			retry: this.settingsManager.getRetrySettings(),
+			callbacks: this._summarizationRetryCallbacks({ source: "compaction", reason }),
+			lineage: this._summarizationLineage(preparation),
+		});
 		return { result, fromExtension: false };
 	}
 

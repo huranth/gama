@@ -641,16 +641,12 @@ describe("LLM summarization", () => {
 		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
 		expect(preparation).toBeDefined();
 
-		const compactionResult = await compact(
-			preparation!,
+		const compactionResult = await compact({
+			preparation: preparation!,
 			model,
-			"faux-key",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			streamSimple,
-		);
+			apiKey: "faux-key",
+			streamFn: streamSimple,
+		});
 
 		expect(compactionResult.summary.length).toBeGreaterThan(100);
 		expect(compactionResult.firstKeptEntryId).toBeTruthy();
@@ -667,16 +663,12 @@ describe("LLM summarization", () => {
 		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
 		expect(preparation).toBeDefined();
 
-		const compactionResult = await compact(
-			preparation!,
+		const compactionResult = await compact({
+			preparation: preparation!,
 			model,
-			"faux-key",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			streamSimple,
-		);
+			apiKey: "faux-key",
+			streamFn: streamSimple,
+		});
 
 		const lastEntry = entries[entries.length - 1];
 		const parentId = lastEntry.id;
