@@ -9,7 +9,8 @@ export default function (gama: ExtensionAPI) {
 		}
 
 		const path = event.input.path as string;
-		const isProtected = protectedPaths.some((p) => path.includes(p));
+		const normalized = path.replaceAll("\\", "/").toLowerCase();
+		const isProtected = protectedPaths.some((p) => normalized.includes(p));
 
 		if (isProtected) {
 			if (ctx.hasUI) {

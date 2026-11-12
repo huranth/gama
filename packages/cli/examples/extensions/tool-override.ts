@@ -18,7 +18,8 @@ const BLOCKED_PATTERNS = [
 ];
 
 function isBlockedPath(path: string): boolean {
-	return BLOCKED_PATTERNS.some((pattern) => pattern.test(path));
+	const normalized = path.replaceAll("\\", "/");
+	return BLOCKED_PATTERNS.some((pattern) => pattern.test(normalized));
 }
 
 async function logAccess(path: string, allowed: boolean, reason?: string) {
@@ -84,8 +85,9 @@ export default function (gama: ExtensionAPI) {
 
 				let text = selectedLines.join("\n");
 				const maxBytes = 50 * 1024;
-				if (Buffer.byteLength(text, "utf-8") > maxBytes) {
-					text = `${text.slice(0, maxBytes)}\n\n[Output truncated at 50KB]`;
+				const bytes = Buffer.from(text, "utf-8");
+				if (bytes.length > maxBytes) {
+					text = `${bytes.subarray(0, maxBytes).toString("utf-8")}\n\n[Output truncated at 50KB]`;
 				}
 
 				return {

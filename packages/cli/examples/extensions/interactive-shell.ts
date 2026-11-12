@@ -131,8 +131,14 @@ export default function (gama: ExtensionAPI) {
 
 			process.stdout.write("\x1b[2J\x1b[H");
 
-			const shell = process.env.SHELL || "/bin/sh";
-			const result = spawnSync(shell, ["-c", command], {
+			const shell =
+				process.env.SHELL ??
+				(process.platform === "win32" ? (process.env.ComSpec ?? "cmd.exe") : "/bin/sh");
+			const shellArgs =
+				process.env.SHELL || process.platform !== "win32"
+					? ["-c", command]
+					: ["/d", "/s", "/c", command];
+			const result = spawnSync(shell, shellArgs, {
 				stdio: "inherit",
 				env: process.env,
 			});
