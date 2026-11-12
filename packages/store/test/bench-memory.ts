@@ -231,31 +231,34 @@ async function runDriver(): Promise<void> {
 			"values are process deltas, not limits.",
 	);
 	console.table(
-		results.map((result) => ({
-			backend: result.backend,
-			scale: result.scale,
-			"heap after seed MiB": mebibytes(delta(result.postSeed, result.baseline, "heapUsed")),
-			"RSS after seed MiB": mebibytes(delta(result.postSeed, result.baseline, "rss")),
-			"external after seed MiB": mebibytes(delta(result.postSeed, result.baseline, "external")),
-			"heap after reads MiB": mebibytes(delta(result.postRead, result.postSeed, "heapUsed")),
-			"JS heap bytes/primary record": Math.round(
-				delta(result.postSeed, result.baseline, "heapUsed") / result.recordCount,
-			),
-			"disk main MiB": result.disk === undefined ? "-" : mebibytes(result.disk.mainBytes),
-			"disk auxiliary MiB":
-				result.disk === undefined ? "-" : mebibytes(result.disk.auxiliaryBytes),
-			"disk total MiB":
-				result.disk === undefined
+		results.map((result) => {
+			const disk = result.disk;
+			const totalBytes = disk === undefined ? undefined : disk.mainBytes + disk.auxiliaryBytes;
+			const detail =
+				disk === undefined
 					? "-"
-					: mebibytes(result.disk.mainBytes + result.disk.auxiliaryBytes),
-			"disk files": result.disk?.fileCount ?? "-",
-			"disk detail":
-				result.disk === undefined
-					? "-"
-					: result.disk.kind === "sqlite"
-						? `pages/free ${result.disk.pageCount}/${result.disk.freelistCount}`
-						: `documents/tasks ${result.disk.documentFiles}/${result.disk.taskFiles}`,
-		})),
+					: disk.kind === "sqlite"
+						? `pages/free ${disk.pageCount}/${disk.freelistCount}`
+						: `documents/tasks ${disk.documentFiles}/${disk.taskFiles}`;
+			return {
+				backend: result.backend,
+				scale: result.scale,
+				"heap after seed MiB": mebibytes(delta(result.postSeed, result.baseline, "heapUsed")),
+				"RSS after seed MiB": mebibytes(delta(result.postSeed, result.baseline, "rss")),
+				"external after seed MiB": mebibytes(
+					delta(result.postSeed, result.baseline, "external"),
+				),
+				"heap after reads MiB": mebibytes(delta(result.postRead, result.postSeed, "heapUsed")),
+				"JS heap bytes/primary record": Math.round(
+					delta(result.postSeed, result.baseline, "heapUsed") / result.recordCount,
+				),
+				"disk main MiB": disk === undefined ? "-" : mebibytes(disk.mainBytes),
+				"disk auxiliary MiB": disk === undefined ? "-" : mebibytes(disk.auxiliaryBytes),
+				"disk total MiB": totalBytes === undefined ? "-" : mebibytes(totalBytes),
+				"disk files": disk?.fileCount ?? "-",
+				"disk detail": detail,
+			};
+		}),
 	);
 }
 
