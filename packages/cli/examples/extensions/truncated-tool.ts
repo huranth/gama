@@ -1,4 +1,7 @@
+import { execFileSync } from "node:child_process";
 import { mkdtemp, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { ExtensionAPI } from "@huranth/gama-harness";
 import {
 	DEFAULT_MAX_BYTES,
@@ -9,9 +12,6 @@ import {
 	withFileMutationQueue,
 } from "@huranth/gama-harness";
 import { Text } from "@huranth/gama-tui";
-import { execSync } from "child_process";
-import { tmpdir } from "os";
-import { join } from "path";
 import { Type } from "typebox";
 
 const RgParams = Type.Object({
@@ -44,14 +44,14 @@ export default function (gama: ExtensionAPI) {
 		async execute(_toolCallId, params, _signal, _onUpdate, ctx) {
 			const { pattern, path: searchPath, glob } = params;
 
-			const args = ["rg", "--line-number", "--color=never"];
+			const args = ["--line-number", "--color=never"];
 			if (glob) args.push("--glob", glob);
 			args.push(pattern);
 			args.push(searchPath || ".");
 
 			let output: string;
 			try {
-				output = execSync(args.join(" "), {
+				output = execFileSync("rg", args, {
 					cwd: ctx.cwd,
 					encoding: "utf-8",
 					maxBuffer: 100 * 1024 * 1024,
