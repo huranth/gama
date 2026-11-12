@@ -843,13 +843,7 @@ export class ActivityLineComponent implements Component {
 			if (action === "start") return this.startBlock(width);
 		}
 
-		const rows: string[] = this.expanded
-			? this.record.name === "hands"
-				? this.record.status === "error"
-					? handFailureRows(this.record)
-					: []
-				: renderCardBodyRows(this.record)
-			: [];
+		const rows = this.bodyRows();
 		// Fixed width
 		const cardWidth = this.expanded
 			? width
@@ -859,6 +853,13 @@ export class ActivityLineComponent implements Component {
 		if (rows.length > 0) lines.push(...this.bodyBlock(rows, cardWidth));
 
 		return lines;
+	}
+
+	private bodyRows(): string[] {
+		if (!this.expanded) return [];
+		if (this.record.name !== "hands") return renderCardBodyRows(this.record);
+		if (this.record.status !== "error") return [];
+		return handFailureRows(this.record);
 	}
 
 	private handsBlock(width: number): string[] {
