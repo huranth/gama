@@ -316,14 +316,18 @@ export function resolveLocalEntries(
 	}
 }
 
-export function addAutoDiscoveredResources(
-	ctx: PackageContext,
-	accumulator: ResourceAccumulator,
-	globalSettings: ReturnType<SettingsStore["getGlobalSettings"]>,
-	projectSettings: ReturnType<SettingsStore["getProjectSettings"]>,
-	globalBaseDir: string,
-	projectBaseDir: string,
-): void {
+export interface AutoDiscoveryInput {
+	ctx: PackageContext;
+	accumulator: ResourceAccumulator;
+	globalSettings: ReturnType<SettingsStore["getGlobalSettings"]>;
+	projectSettings: ReturnType<SettingsStore["getProjectSettings"]>;
+	globalBaseDir: string;
+	projectBaseDir: string;
+}
+
+export function addAutoDiscoveredResources(input: AutoDiscoveryInput): void {
+	const { ctx, accumulator, globalSettings, projectSettings, globalBaseDir, projectBaseDir } =
+		input;
 	const userMetadata: PathMetadata = {
 		source: "auto",
 		scope: "user",

@@ -374,14 +374,14 @@ export async function resolvePaths(
 		);
 	}
 
-	addAutoDiscoveredResources(
+	addAutoDiscoveredResources({
 		ctx,
 		accumulator,
 		globalSettings,
 		projectSettings,
 		globalBaseDir,
 		projectBaseDir,
-	);
+	});
 
 	for (const name of ctx.builtinExtensions) {
 		const path = `${BUILTIN_PATH_PREFIX}${name}`;
