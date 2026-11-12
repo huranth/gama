@@ -500,7 +500,18 @@ function createNode(
 	parentPlacement = false,
 ): OverlayNode {
 	const existing = context.rawNodes!.get(base);
-	if (existing !== undefined) return existing;
+	if (existing !== undefined) {
+		// Alias-free state keeps every operation on one path
+		if (
+			existing.parentIndex === (parent?.baseIndex ?? -1) &&
+			existing.parentKind === parentKind &&
+			existing.parentKey === parentKey &&
+			existing.parentSource === parentSource &&
+			existing.parentPlacement === parentPlacement
+		)
+			return existing;
+		throw new TypeError("Replicated state containers must not be aliased");
+	}
 	const target: object = Array.isArray(base) ? [] : {};
 	const baseIndex = context.bases!.length;
 	const parentIndex = parent?.baseIndex ?? -1;

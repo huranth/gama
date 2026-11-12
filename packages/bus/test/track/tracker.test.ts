@@ -727,6 +727,15 @@ describe("delta tracker policy view", () => {
 		expect(change.state.rows[0]).toBe(change.state.rows[0]);
 		change.abort();
 	});
+
+	it("rejects a container reachable from two paths", () => {
+		const shared = { value: 1 };
+		const tracker = track({ left: shared, right: shared });
+		const change = tracker.beginChange();
+		expect(change.state.left.value).toBe(1);
+		expect(() => change.state.right.value).toThrow(/aliased/);
+		change.abort();
+	});
 });
 
 describe("delta tracker by-value placements", () => {
