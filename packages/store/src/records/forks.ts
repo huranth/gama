@@ -34,39 +34,43 @@ export async function prepareForkDocumentCopies(
 
 	const copies: ForkDocumentCopy[] = [];
 	const copiedAddresses = new Set<string>();
-	await collectCopies(
+	await collectCopies({
 		storage,
-		{ kind: "conversation", conversationId: entry.entry.conversationId },
-		entry.commitSeq,
-		"asOf",
+		scope: { kind: "conversation", conversationId: entry.entry.conversationId },
+		at: entry.commitSeq,
+		policy: "asOf",
 		childConversationId,
 		copies,
 		copiedAddresses,
 		context,
-	);
-	await collectCopies(
+	});
+	await collectCopies({
 		storage,
-		{ kind: "conversation", conversationId: parentConversationId },
-		"current",
-		"current",
+		scope: { kind: "conversation", conversationId: parentConversationId },
+		at: "current",
+		policy: "current",
 		childConversationId,
 		copies,
 		copiedAddresses,
 		context,
-	);
+	});
 	return copies;
 }
 
-async function collectCopies(
-	storage: Storage,
-	scope: Extract<DocumentRecord["scope"], { readonly kind: "conversation" }>,
-	at: DocumentPoint,
-	policy: ForkPolicy,
-	childConversationId: ConversationId,
-	copies: ForkDocumentCopy[],
-	copiedAddresses: Set<string>,
-	context: Context,
-): Promise<void> {
+interface CollectCopiesInput {
+	storage: Storage;
+	scope: Extract<DocumentRecord["scope"], { readonly kind: "conversation" }>;
+	at: DocumentPoint;
+	policy: ForkPolicy;
+	childConversationId: ConversationId;
+	copies: ForkDocumentCopy[];
+	copiedAddresses: Set<string>;
+	context: Context;
+}
+
+async function collectCopies(input: CollectCopiesInput): Promise<void> {
+	const { storage, scope, at, policy, childConversationId, copies, copiedAddresses, context } =
+		input;
 	let cursor: Cursor | undefined;
 	do {
 		const page = await storage.scanDocuments({ scope, at }, SCAN_PAGE_SIZE, cursor, context);
