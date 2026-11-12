@@ -269,6 +269,27 @@ describe("facet bundles", () => {
 		expect(await readdir(directory)).toContain("entry.ts");
 	});
 
+	test("rejects output directories that contain an entry source", async () => {
+		const directory = await mkdtemp(join(packageDirectory, ".bundle-entry-output-test-"));
+		temporaryDirectories.push(directory);
+		const sourceDirectory = join(directory, "src");
+		await mkdir(sourceDirectory);
+		await writeFile(
+			join(sourceDirectory, "entry.ts"),
+			"export default { id: 'entry', setup() {} };\n",
+		);
+
+		await expect(
+			bundleFacets({
+				plugin: { id: "entry-output-guard" },
+				entries: { entry: "src/entry.ts" },
+				outdir: "src",
+				workingDirectory: directory,
+			}),
+		).rejects.toThrow("Source in output");
+		expect(await readdir(sourceDirectory)).toContain("entry.ts");
+	});
+
 	test("rejects reserved entry names", async () => {
 		const directory = await mkdtemp(join(packageDirectory, ".bundle-reserved-test-"));
 		temporaryDirectories.push(directory);

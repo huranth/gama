@@ -83,6 +83,12 @@ export async function bundleFacets(options: BundleFacetsOptions): Promise<Bundle
 		throw new Error("Source in output");
 	}
 
+	for (const source of Object.values(options.entries)) {
+		if (containsPath(outputDirectory, resolve(workingDirectory, source))) {
+			throw new Error("Source in output");
+		}
+	}
+
 	const outputParent = dirname(outputDirectory);
 
 	await mkdir(outputParent, { recursive: true });
@@ -150,7 +156,10 @@ async function replaceDirectory(
 		if (movedExisting) await rename(backupDirectory, outputDirectory);
 		throw error;
 	}
-	if (movedExisting) await rm(backupDirectory, { force: true, recursive: true });
+	if (movedExisting) {
+		// Windows keeps the old bundle locked for a moment after the swap
+		await rm(backupDirectory, { force: true, recursive: true, maxRetries: 5, retryDelay: 50 });
+	}
 }
 
 function containsPath(parent: string, child: string): boolean {
