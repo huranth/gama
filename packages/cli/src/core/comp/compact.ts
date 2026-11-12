@@ -625,42 +625,26 @@ export async function completeSummarization(
 	return response;
 }
 
-export async function generateSummary(
-	currentMessages: AgentMessage[],
-	model: Model<Api>,
-	reserveTokens: number,
-	apiKey: string | undefined,
-	headers?: Record<string, string>,
-	signal?: AbortSignal,
-	customInstructions?: string,
-	previousSummary?: string,
-	thinkingLevel?: ThinkingLevel,
-	streamFn?: StreamFn,
-	env?: Record<string, string>,
-	retry?: RetryPolicy,
-	callbacks?: RetryCallbacks,
-	sessionId?: string,
-	lineage?: SummarizationLineage,
-): Promise<string> {
-	return (
-		await generateSummaryWithUsage(
-			currentMessages,
-			model,
-			reserveTokens,
-			apiKey,
-			headers,
-			signal,
-			customInstructions,
-			previousSummary,
-			thinkingLevel,
-			streamFn,
-			env,
-			retry,
-			callbacks,
-			sessionId,
-			lineage,
-		)
-	).text;
+export interface SummaryInput {
+	currentMessages: AgentMessage[];
+	model: Model<Api>;
+	reserveTokens: number;
+	apiKey: string | undefined;
+	headers?: Record<string, string>;
+	signal?: AbortSignal;
+	customInstructions?: string;
+	previousSummary?: string;
+	thinkingLevel?: ThinkingLevel;
+	streamFn?: StreamFn;
+	env?: Record<string, string>;
+	retry?: RetryPolicy;
+	callbacks?: RetryCallbacks;
+	sessionId?: string;
+	lineage?: SummarizationLineage;
+}
+
+export async function generateSummary(input: SummaryInput): Promise<string> {
+	return (await generateSummaryWithUsage(input)).text;
 }
 
 function buildSummarizationContext(promptText: string): TranscriptContext {
@@ -677,22 +661,25 @@ function buildSummarizationContext(promptText: string): TranscriptContext {
 }
 
 export async function generateSummaryWithUsage(
-	currentMessages: AgentMessage[],
-	model: Model<Api>,
-	reserveTokens: number,
-	apiKey: string | undefined,
-	headers?: Record<string, string>,
-	signal?: AbortSignal,
-	customInstructions?: string,
-	previousSummary?: string,
-	thinkingLevel?: ThinkingLevel,
-	streamFn?: StreamFn,
-	env?: Record<string, string>,
-	retry?: RetryPolicy,
-	callbacks?: RetryCallbacks,
-	sessionId?: string,
-	lineage?: SummarizationLineage,
+	input: SummaryInput,
 ): Promise<{ text: string; usage: Usage }> {
+	const {
+		currentMessages,
+		model,
+		reserveTokens,
+		apiKey,
+		headers,
+		signal,
+		customInstructions,
+		previousSummary,
+		thinkingLevel,
+		streamFn,
+		env,
+		retry,
+		callbacks,
+		sessionId,
+		lineage,
+	} = input;
 	signal?.throwIfAborted();
 	const contextWindow = model.contextWindow > 0 ? model.contextWindow : Number.POSITIVE_INFINITY;
 	const reserve = clampReserveTokens(reserveTokens, contextWindow);
@@ -991,10 +978,10 @@ export async function compact(input: CompactInput): Promise<CompactionResult> {
 		let historyText = previousSummary ?? "No prior history.";
 		let historyUsage: Usage | undefined;
 		if (messagesToSummarize.length > 0) {
-			const historyResult = await generateSummaryWithUsage(
-				messagesToSummarize,
+			const historyResult = await generateSummaryWithUsage({
+				currentMessages: messagesToSummarize,
 				model,
-				settings.reserveTokens,
+				reserveTokens: settings.reserveTokens,
 				apiKey,
 				headers,
 				signal,
@@ -1007,7 +994,7 @@ export async function compact(input: CompactInput): Promise<CompactionResult> {
 				callbacks,
 				sessionId,
 				lineage,
-			);
+			});
 			historyText = historyResult.text;
 			historyUsage = historyResult.usage;
 		}
@@ -1032,10 +1019,10 @@ export async function compact(input: CompactInput): Promise<CompactionResult> {
 			? combineUsage(historyUsage, turnPrefixResult.usage)
 			: turnPrefixResult.usage;
 	} else {
-		const result = await generateSummaryWithUsage(
-			messagesToSummarize,
+		const result = await generateSummaryWithUsage({
+			currentMessages: messagesToSummarize,
 			model,
-			settings.reserveTokens,
+			reserveTokens: settings.reserveTokens,
 			apiKey,
 			headers,
 			signal,
@@ -1048,7 +1035,7 @@ export async function compact(input: CompactInput): Promise<CompactionResult> {
 			callbacks,
 			sessionId,
 			lineage,
-		);
+		});
 		summary = result.text;
 		summaryUsage = result.usage;
 	}

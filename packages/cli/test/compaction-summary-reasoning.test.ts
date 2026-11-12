@@ -83,17 +83,13 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("uses the provided thinking level for reasoning-capable models", async () => {
-		const result = await generateSummaryWithUsage(
-			messages,
-			createModel(true),
-			2000,
-			"test-key",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			"medium",
-		);
+		const result = await generateSummaryWithUsage({
+			currentMessages: messages,
+			model: createModel(true),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+			thinkingLevel: "medium",
+		});
 
 		expect(result.text).toBe("## Goal\nTest summary");
 		expect(result.usage).toEqual(mockSummaryResponse.usage);
@@ -106,22 +102,13 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("keeps the previous summary in a lineage request", async () => {
-		await generateSummaryWithUsage(
-			[],
-			createModel(false),
-			2000,
-			"test-key",
-			undefined,
-			undefined,
-			undefined,
-			"EARLIER-SUMMARY-TEXT",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			{
+		await generateSummaryWithUsage({
+			currentMessages: [],
+			model: createModel(false),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+			previousSummary: "EARLIER-SUMMARY-TEXT",
+			lineage: {
 				messages: [
 					{
 						role: "system",
@@ -132,7 +119,7 @@ describe("generateSummary reasoning options", () => {
 					{ role: "user", content: "new work", timestamp: Date.now() },
 				],
 			},
-		);
+		});
 
 		const context = completeSimpleMock.mock.calls[0][1] as TranscriptContext;
 		const last = context.messages[context.messages.length - 1];
@@ -144,20 +131,40 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("keeps a usable budget when the reserve is zero", async () => {
-		await generateSummaryWithUsage(messages, createModel(false), 0, "test-key");
+		await generateSummaryWithUsage({
+			currentMessages: messages,
+			model: createModel(false),
+			reserveTokens: 0,
+			apiKey: "test-key",
+		});
 
 		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({ maxTokens: 1024 });
 	});
 
 	it("preserves the string result from generateSummary", async () => {
-		await expect(generateSummary(messages, createModel(false), 2000, "test-key")).resolves.toBe(
-			"## Goal\nTest summary",
-		);
+		await expect(
+			generateSummary({
+				currentMessages: messages,
+				model: createModel(false),
+				reserveTokens: 2000,
+				apiKey: "test-key",
+			}),
+		).resolves.toBe("## Goal\nTest summary");
 	});
 
 	it("uses fresh routing sessions without prompt caching", async () => {
-		await generateSummary(messages, createModel(false), 2000, "test-key");
-		await generateSummary(messages, createModel(false), 2000, "test-key");
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(false),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+		});
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(false),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+		});
 
 		const requestOptions = completeSimpleMock.mock.calls.map((call) => call[2]);
 		expect(requestOptions).toHaveLength(2);
@@ -225,7 +232,12 @@ describe("generateSummary reasoning options", () => {
 		completeSimpleMock.mockResolvedValueOnce(mockToolCallResponse);
 
 		await expect(
-			generateSummaryWithUsage(messages, createModel(false), 2000, "test-key"),
+			generateSummaryWithUsage({
+				currentMessages: messages,
+				model: createModel(false),
+				reserveTokens: 2000,
+				apiKey: "test-key",
+			}),
 		).rejects.toThrow("Summary used tool");
 	});
 
@@ -274,7 +286,12 @@ describe("generateSummary reasoning options", () => {
 		});
 
 		await expect(
-			generateSummaryWithUsage(messages, createModel(false), 2000, "test-key"),
+			generateSummaryWithUsage({
+				currentMessages: messages,
+				model: createModel(false),
+				reserveTokens: 2000,
+				apiKey: "test-key",
+			}),
 		).rejects.toThrow("generation hit the token cap");
 	});
 
@@ -300,17 +317,13 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("does not set reasoning when thinking is off", async () => {
-		await generateSummary(
-			messages,
-			createModel(true),
-			2000,
-			"test-key",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			"off",
-		);
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(true),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+			thinkingLevel: "off",
+		});
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
@@ -320,17 +333,13 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("does not set reasoning for non-reasoning models", async () => {
-		await generateSummary(
-			messages,
-			createModel(false),
-			2000,
-			"test-key",
-			undefined,
-			undefined,
-			undefined,
-			undefined,
-			"medium",
-		);
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(false),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+			thinkingLevel: "medium",
+		});
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 		expect(completeSimpleMock.mock.calls[0][2]).toMatchObject({
@@ -340,9 +349,9 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("leaves Anthropic refusal fallback handling to gama-ai model metadata", async () => {
-		await generateSummary(
-			messages,
-			createModel(true, 8192, {
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(true, 8192, {
 				allowedFallbackModels: [
 					{
 						provider: "anthropic",
@@ -351,9 +360,9 @@ describe("generateSummary reasoning options", () => {
 					},
 				],
 			}),
-			2000,
-			"test-key",
-		);
+			reserveTokens: 2000,
+			apiKey: "test-key",
+		});
 
 		expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 		expect(completeSimpleMock.mock.calls[0][2]).not.toHaveProperty("refusalFallbacks");
@@ -362,7 +371,12 @@ describe("generateSummary reasoning options", () => {
 	it(
 		"does not set Anthropic refusal fallback for models without allowed " + "fallback targets",
 		async () => {
-			await generateSummary(messages, createModel(true), 2000, "test-key");
+			await generateSummary({
+				currentMessages: messages,
+				model: createModel(true),
+				reserveTokens: 2000,
+				apiKey: "test-key",
+			});
 
 			expect(completeSimpleMock).toHaveBeenCalledTimes(1);
 			expect(completeSimpleMock.mock.calls[0][2]).not.toHaveProperty("refusalFallbacks");
@@ -397,7 +411,12 @@ describe("generateSummary reasoning options", () => {
 	});
 
 	it("asks for the handoff checkpoint format", async () => {
-		await generateSummary(messages, createModel(false), 2000, "test-key");
+		await generateSummary({
+			currentMessages: messages,
+			model: createModel(false),
+			reserveTokens: 2000,
+			apiKey: "test-key",
+		});
 
 		const context = completeSimpleMock.mock.calls[0][1] as TranscriptContext;
 		const prompt = JSON.stringify(context.messages);
