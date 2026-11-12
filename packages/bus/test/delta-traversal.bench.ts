@@ -3,6 +3,8 @@ import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { performance } from "node:perf_hooks";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { setImmediate } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { track } from "../src/patch/index.ts";
@@ -171,7 +173,7 @@ if (process.argv.includes("--worker")) {
 } else {
 	const quick = process.argv.includes("--quick");
 	const outIndex = process.argv.indexOf("--out");
-	const output = outIndex < 0 ? "/tmp/delta-traversal.json" : process.argv[outIndex + 1];
+	const output = outIndex < 0 ? join(tmpdir(), "delta-traversal.json") : process.argv[outIndex + 1];
 	const modeIndex = process.argv.indexOf("--modes");
 	const selected = new Set(
 		modeIndex < 0 ? ["raw", "proxy", "delta"] : process.argv[modeIndex + 1].split(","),

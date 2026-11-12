@@ -122,7 +122,20 @@ for (let trial = 0; trial < trials; trial++) {
 				failures.push(failure);
 				console.log(JSON.stringify(failure));
 			} else {
-				const result = JSON.parse(child.stdout) as Result;
+				let result: Result;
+				try {
+					result = JSON.parse(child.stdout) as Result;
+				} catch (error) {
+					const failure = {
+						mode,
+						scenario,
+						trial,
+						stderr: `${child.stderr}\n${(error as Error).message}\n${child.stdout}`,
+					} satisfies Failure;
+					failures.push(failure);
+					console.log(JSON.stringify(failure));
+					continue;
+				}
 				results.push(result);
 				console.log(JSON.stringify(result));
 			}

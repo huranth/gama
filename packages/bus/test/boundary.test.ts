@@ -5,7 +5,8 @@ import { describe, expect, test } from "vitest";
 
 const packageDirectory = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const sourceDirectory = resolve(packageDirectory, "src");
-const IMPORT_SPECIFIER = /(?:import|export)\s+(?:type\s+)?(?:[^;]*?\sfrom\s*)?["']([^"']+)["']/gu;
+const IMPORT_SPECIFIER =
+	/(?:import|export)\s+(?:type\s+)?(?:[^;]*?\sfrom\s*)?["']([^"']+)["']|(?:import|require)\s*\(\s*["']([^"']+)["']\s*\)/gu;
 
 function isOutside(target: string): boolean {
 	const path = relative(sourceDirectory, target);
@@ -33,7 +34,8 @@ describe("package boundary", () => {
 			const file = resolve(sourceDirectory, path);
 			const source = await readFile(file, "utf8");
 			for (const match of source.matchAll(IMPORT_SPECIFIER)) {
-				const specifier = match[1]!;
+				const specifier = match[1] ?? match[2];
+				if (specifier === undefined) continue;
 				if (specifier.startsWith("@huranth/gama-")) violations.push(`${path}: ${specifier}`);
 				if (specifier.startsWith(".") && isOutside(resolve(dirname(file), specifier))) {
 					violations.push(`${path.replaceAll("\\", "/")}: ${specifier}`);

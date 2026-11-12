@@ -147,6 +147,7 @@ let postAcquireRetainedMiB = 0;
 let postLagRetainedMiB = 0;
 let postDeliveryRetainedMiB = 0;
 let sampledAcquireMiB = 0;
+let queuedBatchReferences = 0;
 let watchers: WatchReplica[] = [];
 let borrowedListeners: Array<(value: Document, sequence: number) => number> = [];
 const queueOperations = Math.min(size, 1_000);
@@ -259,6 +260,7 @@ const drainWatchQueues = (measure: boolean): void => {
 		for (const frame of watcher.queue) {
 			applyFrame(watcher, frame);
 		}
+		queuedBatchReferences += watcher.queue.length;
 		watcher.queue.length = 0;
 		samplePeak();
 	}
@@ -271,6 +273,7 @@ const drainWatchQueuesCoalesced = (): void => {
 		const operations = watcher.queue.flatMap((frame) => frame.ops);
 		watcher.value = applyImmutable(watcher.value, operations);
 		watcher.sequence = watcher.queue.at(-1)?.sequence ?? watcher.sequence;
+		queuedBatchReferences += watcher.queue.length;
 		watcher.queue.length = 0;
 		samplePeak();
 	}
@@ -431,7 +434,6 @@ const retainedHeap = process.memoryUsage().heapUsed;
 const retainedMiB = (retainedHeap - baselineHeap) / MiB;
 const retainedOverReadyMiB = (retainedHeap - readyHeap) / MiB;
 const watcherRoots = watchers.length;
-const queuedBatchReferences = watchers.reduce((total, watcher) => total + watcher.queue.length, 0);
 const listenerCount = borrowedListeners.length;
 watchers = [];
 borrowedListeners = [];
