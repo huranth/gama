@@ -38,7 +38,7 @@ function assertDirectoryEntries(path: string, expectedEntries: readonly string[]
 
 function assertWorkspace(): void {
 	assertDirectoryEntries("/repo", ["node_modules", "package.json", "packages", "vitest.base.ts"]);
-	assertDirectoryEntries("/repo/packages", ["evals"]);
+	assertDirectoryEntries("/repo/packages", ["bench"]);
 	assertDirectoryEntries("/repo/packages/bench", [
 		"container",
 		"evals",

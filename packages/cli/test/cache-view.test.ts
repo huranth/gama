@@ -111,6 +111,12 @@ describe("cacheRows", () => {
 		expect(rows).toContainEqual(["model", "anthropic/m1"]);
 	});
 
+	it("prints the warm and cold turn counts once each", () => {
+		const rows = cacheRows(snapshot({ warmTurns: 3, coldTurns: 2, warmRatio: 0.6 }));
+
+		expect(rows).toContainEqual(["turns", "3 warm, 2 cold, 60.0% hit"]);
+	});
+
 	it("omits the forecast when the model has no prices", () => {
 		const labels = cacheRows(snapshot()).map(([label]) => label);
 

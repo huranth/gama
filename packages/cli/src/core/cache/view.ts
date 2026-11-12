@@ -99,7 +99,7 @@ function usageRows(snapshot: CacheSnapshot): Array<[string, string]> {
 		const warm = `${snapshot.warmTurns} warm`;
 		const cold = `${snapshot.coldTurns} cold`;
 		const ratio = formatPercent(snapshot.warmRatio);
-		rows.push(["turns", `${warm} warm, ${cold} cold, ${ratio} hit`]);
+		rows.push(["turns", `${warm}, ${cold}, ${ratio} hit`]);
 	}
 	if (snapshot.unreported > 0) {
 		rows.push(["no usage", `${snapshot.unreported} turns`]);
