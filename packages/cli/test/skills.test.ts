@@ -416,10 +416,7 @@ describe("skills", () => {
 			const { skills, diagnostics } = loadSkills({
 				agentDir: resolve(__dirname, "fixtures/empty-agent"),
 				cwd: resolve(__dirname, "fixtures/empty-cwd"),
-				skillPaths: [
-					join(collisionFixturesDir, "first"),
-					join(collisionFixturesDir, "second"),
-				],
+				skillPaths: [join(collisionFixturesDir, "first"), join(collisionFixturesDir, "second")],
 				includeDefaults: false,
 			});
 
