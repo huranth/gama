@@ -17,6 +17,17 @@
 - a `FAIL` line is found even when it is not the first line of the output
 - the ripgrep example runs without a shell, and the trigger watcher closes on shutdown
 - bench points its dependency ranges at the workspace versions
+- aliased state containers are rejected instead of silently diverging
+- a stranded bundle backup is ignored after the swap
+- service calls reject arguments that are not strict JSON
+- a service facade read no longer creates a member slot
+- entry sources stay out of the bundle output directory
+- bench validates traversal flags and worker output, and keeps fixtures out of the package
+- the examples block `find -delete`, `find -exec` and short `rm -r` flags
+- remote ssh paths are quoted, and IPv6 hosts parse correctly
+- the examples handle Windows paths, `cmd.exe`, and provider log directories
+- game and overlay examples stop their timers, find Doom outside the package, and restart cleanly
+- empty questionnaire options, failed issue loads, tiny terminals and aborted subagents no longer misbehave
 
 ## [1.0.2] - 2026-11-10
 
