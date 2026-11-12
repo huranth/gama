@@ -1,3 +1,4 @@
+import { isJsonValue } from "../json.ts";
 import { assertValidOp, assertValidWireOp, type WireOp } from "../patch/index.ts";
 import type {
 	ServiceCall,
@@ -153,6 +154,9 @@ export function parseServiceCall(value: unknown): ServiceCall {
 	assertKeys(call, ["serviceId", "member", "args"], ["instance"], "service call");
 	if (!isId(call.serviceId) || !isId(call.member) || !Array.isArray(call.args)) {
 		throw new TypeError("Invalid service call");
+	}
+	if (!call.args.every((argument) => isJsonValue(argument))) {
+		throw new TypeError("Invalid service call arguments");
 	}
 	if (call.instance !== undefined) assertAddress(call.instance);
 	return value as ServiceCall;

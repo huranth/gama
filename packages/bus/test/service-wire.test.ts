@@ -59,6 +59,16 @@ describe("service wire protocol", () => {
 		expect(() =>
 			parseServiceCall({ serviceId: "gama.models", member: "list", args: [], extra: true }),
 		).toThrow("Invalid service call");
+		expect(() =>
+			parseServiceCall({
+				serviceId: "gama.models",
+				member: "list",
+				args: [() => undefined],
+			}),
+		).toThrow("Invalid service call arguments");
+		expect(() =>
+			parseServiceCall({ serviceId: "gama.models", member: "list", args: [new Date()] }),
+		).toThrow("Invalid service call arguments");
 		expect(() => parseServiceCatalogue([{ serviceId: "gama.models", mode: "unknown" }])).toThrow(
 			"Invalid service catalogue",
 		);
