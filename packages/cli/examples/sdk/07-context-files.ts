@@ -35,5 +35,5 @@ const { session } = await createAgentSession({
 	resourceLoader: loader,
 	sessionManager: SessionStore.inMemory(),
 });
-console.log(`Session created with ${discovered.length + 1} context files`);
+console.log(`Session created with ${discovered.length} context files`);
 session.dispose();

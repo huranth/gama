@@ -46,11 +46,11 @@ export default function (gama: ExtensionAPI) {
 					expansions.push({ command, output: trimmed });
 				}
 
-				result = result.replace(full, trimmed);
+				result = result.replace(full, () => trimmed);
 			} catch (err) {
 				const errorMsg = err instanceof Error ? err.message : String(err);
 				expansions.push({ command, output: "", error: errorMsg });
-				result = result.replace(full, `[error: ${errorMsg}]`);
+				result = result.replace(full, () => `[error: ${errorMsg}]`);
 			}
 		}
 

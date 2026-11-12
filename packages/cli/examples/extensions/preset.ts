@@ -227,10 +227,11 @@ export default function presetExtension(gama: ExtensionAPI) {
 				}
 				gama.setThinkingLevel(originalState.thinkingLevel);
 				gama.setActiveTools(originalState.tools);
-			} else {
-				gama.setActiveTools(["read", "bash", "edit", "write"]);
 			}
-			ctx.ui.notify("Preset cleared, defaults restored", "info");
+			ctx.ui.notify(
+				originalState ? "Preset cleared, defaults restored" : "Preset cleared",
+				"info",
+			);
 			updateStatus(ctx);
 			return;
 		}
@@ -274,10 +275,11 @@ export default function presetExtension(gama: ExtensionAPI) {
 				}
 				gama.setThinkingLevel(originalState.thinkingLevel);
 				gama.setActiveTools(originalState.tools);
-			} else {
-				gama.setActiveTools(["read", "bash", "edit", "write"]);
 			}
-			ctx.ui.notify("Preset cleared, defaults restored", "info");
+			ctx.ui.notify(
+				originalState ? "Preset cleared, defaults restored" : "Preset cleared",
+				"info",
+			);
 			updateStatus(ctx);
 			return;
 		}

@@ -239,6 +239,7 @@ export default function questionnaire(gama: ExtensionAPI) {
 
 					if (matchesKey(data, Key.enter) && q) {
 						const opt = opts[optionIndex];
+						if (!opt) return;
 						if (opt.isOther) {
 							inputMode = true;
 							inputQuestionId = q.id;

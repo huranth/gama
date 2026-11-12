@@ -160,6 +160,7 @@ export default function (gama: ExtensionAPI): void {
 					{ cwd: ctx.cwd, timeout: 5_000 },
 				);
 				if (result.code !== 0) {
+					issuesPromise = undefined;
 					if (!loadErrorShown) {
 						loadErrorShown = true;
 						const details = result.stderr.trim() || `exit code ${result.code}`;
@@ -174,6 +175,7 @@ export default function (gama: ExtensionAPI): void {
 				try {
 					return JSON.parse(result.stdout) as GitHubIssue[];
 				} catch {
+					issuesPromise = undefined;
 					if (!loadErrorShown) {
 						loadErrorShown = true;
 						ctx.ui.notify(

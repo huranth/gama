@@ -193,7 +193,7 @@ class SnakeComponent {
 		const lines: string[] = [];
 
 		const cellWidth = 2;
-		const effectiveWidth = Math.min(GAME_WIDTH, Math.floor((width - 4) / cellWidth));
+		const effectiveWidth = Math.max(1, Math.min(GAME_WIDTH, Math.floor((width - 4) / cellWidth)));
 		const effectiveHeight = GAME_HEIGHT;
 
 		const dim = (s: string) => `\x1b[2m${s}\x1b[22m`;
