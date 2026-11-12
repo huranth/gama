@@ -1,5 +1,3 @@
-export * from "./proxy.ts";
-
 export * from "./run-loop.ts";
 export * from "./runner.ts";
 
