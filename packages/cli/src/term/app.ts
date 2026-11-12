@@ -3375,7 +3375,7 @@ export class TermApp {
 		handleCtrlZ(this);
 	}
 
-	private async handleFollowUp(): Promise<void> {
+	async handleFollowUp(): Promise<void> {
 		return handleFollowUp(this);
 	}
 

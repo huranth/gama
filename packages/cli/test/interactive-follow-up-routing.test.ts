@@ -10,7 +10,7 @@ function fakeMode(text: string) {
 			onSubmit: undefined,
 		},
 		session: { isCompacting: false, isStreaming: true, isBashRunning: false, prompt: vi.fn() },
-		routeBuiltinInput: Reflect.get(TermApp.prototype, "routeBuiltinInput"),
+		routeBuiltinInput: TermApp.prototype.routeBuiltinInput,
 		handleModelCommand: vi.fn(async () => {}),
 		handleBashCommand: vi.fn(async () => {}),
 		updateEditorBorderColor: vi.fn(),
@@ -21,7 +21,7 @@ function fakeMode(text: string) {
 }
 
 async function followUp(fake: ReturnType<typeof fakeMode>): Promise<void> {
-	const handleFollowUp = Reflect.get(TermApp.prototype, "handleFollowUp") as (
+	const handleFollowUp = TermApp.prototype.handleFollowUp as unknown as (
 		this: typeof fake,
 	) => Promise<void>;
 	await handleFollowUp.call(fake);
