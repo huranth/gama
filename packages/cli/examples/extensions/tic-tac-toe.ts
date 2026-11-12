@@ -314,6 +314,7 @@ class TicTacToeComponent implements Component {
 	private state: GameState;
 	private onClose: () => void;
 	private onUserPlay: (row: number, col: number) => void;
+	private onRestart: () => void;
 	private tui: { requestRender: () => void };
 	private cachedLines: string[] = [];
 	private cachedWidth = 0;
@@ -324,11 +325,13 @@ class TicTacToeComponent implements Component {
 		tui: { requestRender: () => void },
 		onClose: () => void,
 		onUserPlay: (row: number, col: number) => void,
+		onRestart: () => void,
 		state: GameState,
 	) {
 		this.tui = tui;
 		this.onClose = onClose;
 		this.onUserPlay = onUserPlay;
+		this.onRestart = onRestart;
 		this.state = state;
 	}
 
@@ -345,7 +348,7 @@ class TicTacToeComponent implements Component {
 		}
 		if (this.state.status !== "playing") {
 			if (data === "r" || data === "R") {
-				this.onClose();
+				this.onRestart();
 				return true;
 			}
 			return true;
@@ -571,19 +574,14 @@ function reconstructState(ctx: ExtensionContext): void {
 	gameActive = false;
 
 	for (const entry of ctx.sessionManager.getBranch()) {
-		if (entry.type !== "message") continue;
-		const msg = entry.message;
-		if (msg.role !== "toolResult") continue;
-		if (msg.toolName !== "tic_tac_toe" && msg.toolName !== "tic_tac_toe_see_board") continue;
-
-		const details = msg.details as BoardDetails | undefined;
-		if (details) {
-			gameState.board = details.board.map((row) => [...row]);
-			gameState.agentCursorRow = details.agentCursorRow;
-			gameState.agentCursorCol = details.agentCursorCol;
-			gameState.status = details.status;
-			gameState.currentTurn = details.currentTurn;
-		}
+		if (entry.type !== "custom" || entry.customType !== SAVE_TYPE) continue;
+		const details = entry.data as BoardDetails | undefined;
+		if (!details) continue;
+		gameState.board = details.board.map((row) => [...row]);
+		gameState.agentCursorRow = details.agentCursorRow;
+		gameState.agentCursorCol = details.agentCursorCol;
+		gameState.status = details.status;
+		gameState.currentTurn = details.currentTurn;
 	}
 }
 
@@ -764,6 +762,12 @@ calls, one response.
 							emitGameOverMessage();
 							gameActive = false;
 						}
+					},
+					() => {
+						gameState = createInitialState();
+						gameActive = true;
+						component?.updateState(gameState);
+						gama.appendEntry(SAVE_TYPE, getBoardDetails());
 					},
 					gameState,
 				);

@@ -254,6 +254,8 @@ class SpaceInvadersComponent {
 		const bulletsToRemove = new Set<Bullet>();
 
 		for (const bullet of this.state.bullets) {
+			if (bulletsToRemove.has(bullet)) continue;
+
 			if (bullet.direction === -1) {
 				for (const alien of this.state.aliens) {
 					if (alien.alive && Math.abs(bullet.x - alien.x) <= 1 && bullet.y === alien.y) {

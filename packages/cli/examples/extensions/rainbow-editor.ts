@@ -53,6 +53,10 @@ class RainbowEditor extends CustomEditor {
 		}
 	}
 
+	dispose(): void {
+		this.stopAnimation();
+	}
+
 	handleInput(data: string): void {
 		super.handleInput(data);
 		if (this.hasUltrathink()) {
@@ -72,7 +76,17 @@ class RainbowEditor extends CustomEditor {
 }
 
 export default function (gama: ExtensionAPI) {
+	let editor: RainbowEditor | undefined;
+
 	gama.on("session_start", (_event, ctx) => {
-		ctx.ui.setEditorComponent((tui, theme, kb) => new RainbowEditor(tui, theme, kb));
+		ctx.ui.setEditorComponent((tui, theme, kb) => {
+			editor = new RainbowEditor(tui, theme, kb);
+			return editor;
+		});
+	});
+
+	gama.on("session_shutdown", () => {
+		editor?.dispose();
+		editor = undefined;
 	});
 }

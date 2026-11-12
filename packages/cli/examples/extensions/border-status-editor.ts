@@ -1,3 +1,4 @@
+import { homedir } from "node:os";
 import {
 	CustomEditor,
 	type ExtensionAPI,
@@ -43,7 +44,7 @@ function fitBorder(
 }
 
 function formatCwd(cwd: string): string {
-	const home = process.env.HOME;
+	const home = homedir();
 	if (home && cwd.startsWith(home)) {
 		return `~${cwd.slice(home.length)}`;
 	}
