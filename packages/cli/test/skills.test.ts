@@ -413,39 +413,28 @@ describe("skills", () => {
 
 	describe("collision handling", () => {
 		it("detect name collisions and keep first skill", () => {
-			const first = loadSkillsFromDir({
-				dir: join(collisionFixturesDir, "first"),
-				source: "first",
+			const { skills, diagnostics } = loadSkills({
+				agentDir: resolve(__dirname, "fixtures/empty-agent"),
+				cwd: resolve(__dirname, "fixtures/empty-cwd"),
+				skillPaths: [
+					join(collisionFixturesDir, "first"),
+					join(collisionFixturesDir, "second"),
+				],
+				includeDefaults: false,
 			});
 
-			const second = loadSkillsFromDir({
-				dir: join(collisionFixturesDir, "second"),
-				source: "second",
+			expect(skills).toHaveLength(1);
+			expect(skills[0].name).toBe("calendar");
+			expect(skills[0].filePath).toContain("first");
+
+			const collisions = diagnostics.filter((d) => d.type === "collision");
+			expect(collisions).toHaveLength(1);
+			expect(collisions[0].collision).toMatchObject({
+				resourceType: "skill",
+				name: "calendar",
 			});
-
-			const skillMap = new Map<string, Skill>();
-			const collisionWarnings: Array<{ skillPath: string; message: string }> = [];
-
-			for (const skill of first.skills) {
-				skillMap.set(skill.name, skill);
-			}
-
-			for (const skill of second.skills) {
-				const existing = skillMap.get(skill.name);
-				if (existing) {
-					collisionWarnings.push({
-						skillPath: skill.filePath,
-						message: `name collision: "${skill.name}" already loaded from ${existing.filePath}`,
-					});
-				} else {
-					skillMap.set(skill.name, skill);
-				}
-			}
-
-			expect(skillMap.size).toBe(1);
-			expect(skillMap.get("calendar")?.sourceInfo.source).toBe("first");
-			expect(collisionWarnings).toHaveLength(1);
-			expect(collisionWarnings[0].message).toContain("name collision");
+			expect(collisions[0].collision?.winnerPath).toContain("first");
+			expect(collisions[0].collision?.loserPath).toContain("second");
 		});
 	});
 });
