@@ -2909,113 +2909,10 @@ export class TermApp {
 	}
 
 	async routeBuiltinInput(text: string): Promise<boolean> {
-		if (text === "/model" || text.startsWith("/model ")) {
-			const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
-			this.editor.setText("");
-			await this.handleModelCommand(searchTerm);
-			return true;
-		}
-		if (text === "/history" || text.startsWith("/history ")) {
-			this.editor.setText("");
-			this.showSessionSelector();
-			return true;
-		}
-		if (text === "/provider" || text.startsWith("/provider ")) {
-			const argument = text.startsWith("/provider ") ? text.slice(10).trim() : undefined;
-			this.editor.setText("");
-			await this.handleProviderCommand(argument || undefined);
-			return true;
-		}
-
-		if (text === "/context" || text.startsWith("/context ")) {
-			const argument = text.startsWith("/context ") ? text.slice(9).trim() : undefined;
-			this.editor.setText("");
-			await this.handleContextCommand(argument || undefined);
-			return true;
-		}
-
-		if (text === "/stats") {
-			this.editor.setText("");
-			this.showStatsPanel();
-			return true;
-		}
-
-		if (text === "/cache") {
-			this.editor.setText("");
-			this.showCachePanel();
-			return true;
-		}
-
-		if (text === "/changelog") {
-			this.editor.setText("");
-			await this.handleChangelogCommand();
-			return true;
-		}
-
-		if (text === "/update") {
-			this.editor.setText("");
-			this.handleUpdateCommand();
-			return true;
-		}
-
-		if (text === "/summaries" || text.startsWith("/summaries ")) {
-			const argument = text.startsWith("/summaries ") ? text.slice(11).trim().toLowerCase() : "";
-			this.editor.setText("");
-			if (argument !== "" && argument !== "on" && argument !== "off") {
-				this.showStatus("Usage summaries");
-				return true;
-			}
-			const enabled =
-				argument === "" ? !this.settingsManager.getPromptSummaries() : argument === "on";
-			this.settingsManager.setPromptSummaries(enabled);
-			this.showStatus(`Summaries ${enabled ? "on" : "off"}`);
-			return true;
-		}
-
-		if (text === "/bell" || text.startsWith("/bell ")) {
-			const argument = text.slice(5).trim().toLowerCase();
-			this.editor.setText("");
-			if (argument !== "" && argument !== "on" && argument !== "off") {
-				this.showStatus("Usage: /bell [on|off]");
-				return true;
-			}
-			const enabled =
-				argument === "" ? !this.settingsManager.getNotifyOnTurnEnd() : argument === "on";
-			this.settingsManager.setNotifyOnTurnEnd(enabled);
-			this.showStatus(`Turn bell ${enabled ? "on" : "off"}`);
-			return true;
-		}
-
-		if (text === "/compact" || text.startsWith("/compact ")) {
-			const instructions = text.slice(8).trim();
-			this.editor.setText("");
-			if (this.session.isStreaming || this.session.isPreparingPrompt) {
-				this.showWarning("Response in progress");
-				return true;
-			}
-			if (this.session.isCompacting) {
-				this.showWarning("Compaction in progress");
-				return true;
-			}
-			try {
-				await this.session.compact(instructions || undefined);
-			} catch {
-				// Rendered
-			}
-			return true;
-		}
-
-		if (text === "/reason" || text.startsWith("/reason ")) {
-			const argument = text.startsWith("/reason ") ? text.slice(8).trim() : undefined;
-			this.editor.setText("");
-			this.handleReasonCommand(argument || undefined);
-			return true;
-		}
-
 		if (text.startsWith("!")) {
 			const isExcluded = text.startsWith("!!");
-			const command = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
-			if (command) {
+			const bashCommand = isExcluded ? text.slice(2).trim() : text.slice(1).trim();
+			if (bashCommand) {
 				if (this.session.isBashRunning) {
 					this.showWarning("A bash command is already running. Press Esc to cancel it first");
 					this.editor.setText(text);
@@ -3023,12 +2920,104 @@ export class TermApp {
 				}
 				this.editor.setText("");
 				this.editor.addToHistory?.(text);
-				await this.handleBashCommand(command, isExcluded);
+				await this.handleBashCommand(bashCommand, isExcluded);
 				this.isBashMode = false;
 				this.updateEditorBorderColor();
 				return true;
 			}
 		}
+
+		const separator = text.indexOf(" ");
+		const name = separator === -1 ? text : text.slice(0, separator);
+		const argument = separator === -1 ? undefined : text.slice(separator + 1).trim();
+
+		switch (name) {
+			case "/model":
+				this.editor.setText("");
+				await this.handleModelCommand(argument);
+				return true;
+			case "/history":
+				this.editor.setText("");
+				this.showSessionSelector();
+				return true;
+			case "/provider":
+				this.editor.setText("");
+				await this.handleProviderCommand(argument || undefined);
+				return true;
+			case "/context":
+				this.editor.setText("");
+				await this.handleContextCommand(argument || undefined);
+				return true;
+			case "/stats":
+				if (argument !== undefined) return false;
+				this.editor.setText("");
+				this.showStatsPanel();
+				return true;
+			case "/cache":
+				if (argument !== undefined) return false;
+				this.editor.setText("");
+				this.showCachePanel();
+				return true;
+			case "/changelog":
+				if (argument !== undefined) return false;
+				this.editor.setText("");
+				await this.handleChangelogCommand();
+				return true;
+			case "/update":
+				if (argument !== undefined) return false;
+				this.editor.setText("");
+				this.handleUpdateCommand();
+				return true;
+			case "/summaries": {
+				const value = (argument ?? "").toLowerCase();
+				this.editor.setText("");
+				if (value !== "" && value !== "on" && value !== "off") {
+					this.showStatus("Usage summaries");
+					return true;
+				}
+				const enabled =
+					value === "" ? !this.settingsManager.getPromptSummaries() : value === "on";
+				this.settingsManager.setPromptSummaries(enabled);
+				this.showStatus(`Summaries ${enabled ? "on" : "off"}`);
+				return true;
+			}
+			case "/bell": {
+				const value = (argument ?? "").toLowerCase();
+				this.editor.setText("");
+				if (value !== "" && value !== "on" && value !== "off") {
+					this.showStatus("Usage: /bell [on|off]");
+					return true;
+				}
+				const enabled =
+					value === "" ? !this.settingsManager.getNotifyOnTurnEnd() : value === "on";
+				this.settingsManager.setNotifyOnTurnEnd(enabled);
+				this.showStatus(`Turn bell ${enabled ? "on" : "off"}`);
+				return true;
+			}
+			case "/compact": {
+				const instructions = (argument ?? "").trim();
+				this.editor.setText("");
+				if (this.session.isStreaming || this.session.isPreparingPrompt) {
+					this.showWarning("Response in progress");
+					return true;
+				}
+				if (this.session.isCompacting) {
+					this.showWarning("Compaction in progress");
+					return true;
+				}
+				try {
+					await this.session.compact(instructions || undefined);
+				} catch {
+					// Rendered
+				}
+				return true;
+			}
+			case "/reason":
+				this.editor.setText("");
+				this.handleReasonCommand(argument || undefined);
+				return true;
+		}
+
 		return false;
 	}
 
