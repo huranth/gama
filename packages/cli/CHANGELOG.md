@@ -4,13 +4,19 @@
 
 ### Changed
 
-- 1.0.2 notes missed `hands`, `/stats`, `/compact` and the bell, they're in the 1.0.2 section now
-- 1.0.1 now has its `/changelog` entry too
+- the 1.0.1 and 1.0.2 notes are complete, they missed `hands`, `/stats`, `/compact`, the bell and `/changelog`
 - `version:patch`, `version:minor` and `version:major` bump only the CLI now
 - other packages keep their versions, and dependency ranges follow them
 
 ### Fixed
 
+- the native targets compile again, the clipboard constants and the export macros were missing
+- Anthropic keeps the effort you picked when thinking starts mid-conversation
+- CJK punctuation keeps the curly quotes
+- the bench container checks for `packages/bench`, so it stops rejecting every start
+- `/cache` prints the turn counts once each
+- a `FAIL` line is found even when it is not the first line of the output
+- the ripgrep example runs without a shell, and the trigger watcher closes on shutdown
 - bench points its dependency ranges at the workspace versions
 
 ## [1.0.2] - 2026-11-10
