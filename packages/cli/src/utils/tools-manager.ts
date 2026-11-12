@@ -502,7 +502,12 @@ async function downloadTool(tool: ToolName): Promise<string> {
 			throw new Error(`Missing binary: ${binaryFileName}`);
 		}
 
-		renameSync(extractedBinary, binaryPath);
+		try {
+			renameSync(extractedBinary, binaryPath);
+		} catch (error) {
+			// Then another gama process may have installed the same binary first
+			if (!existsSync(binaryPath)) throw error;
+		}
 
 		if (plat !== "win32") {
 			chmodSync(binaryPath, 0o755);
