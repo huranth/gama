@@ -127,9 +127,14 @@ describe("TUI overlay options", () => {
 
 			const viewport = terminal.getViewport();
 			const wideRow = viewport.find((line) => line?.includes("中")) ?? "";
-			const wideChars = [...wideRow].filter((char) => /[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(char)).length;
+			const wideChars = [...wideRow].filter((char) =>
+				/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/.test(char),
+			).length;
 			assert.ok(wideChars > 0, "Wide characters should render in the overlay");
-			assert.ok(wideChars <= 7, `Expected at most 7 double-width chars in 15 cells, got ${wideChars}`);
+			assert.ok(
+				wideChars <= 7,
+				`Expected at most 7 double-width chars in 15 cells, got ${wideChars}`,
+			);
 			tui.stop();
 		});
 
