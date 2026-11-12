@@ -36,7 +36,7 @@ export default function (gama: ExtensionAPI) {
 		}
 	});
 
-	gama.on("agent_settled", async () => {
+	gama.on("session_shutdown", async () => {
 		checkpoints.clear();
 	});
 }
