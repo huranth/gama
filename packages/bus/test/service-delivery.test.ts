@@ -316,6 +316,42 @@ test("an overflow reset can make a singleton unavailable before a later replacem
 	provider.dispose();
 });
 
+test("a property read on a service facade does not create a member slot", async () => {
+	const provider = new RemoteServiceProvider([Counter]);
+	provider.provide(Counter, { state: replicatedState({ value: 7 }) });
+	const errors: Error[] = [];
+	const namespace = createRemoteServiceBinding({
+		services: [Counter],
+		transport: wireTransport(provider, () => {}, []),
+		onError: (error) => errors.push(error),
+	});
+	const counter = namespace.use(Counter);
+	// Reading an unrelated property must not look like an unknown member
+	expect((counter as unknown as { maybeOptional: unknown }).maybeOptional).toBeDefined();
+	await namespace.ready(BACKGROUND_CONTEXT);
+	expect(counter.state.value).toEqual({ value: 7 });
+	expect(errors).toEqual([]);
+	await namespace.dispose(BACKGROUND_CONTEXT);
+	provider.dispose();
+});
+
+test("awaiting a service facade does not throw", async () => {
+	const provider = new RemoteServiceProvider([Counter]);
+	provider.provide(Counter, { state: replicatedState({ value: 7 }) });
+	const errors: Error[] = [];
+	const namespace = createRemoteServiceBinding({
+		services: [Counter],
+		transport: wireTransport(provider, () => {}, []),
+		onError: (error) => errors.push(error),
+	});
+	const counter = namespace.use(Counter);
+	await expect(Promise.resolve(counter)).resolves.toBe(counter);
+	await namespace.ready(BACKGROUND_CONTEXT);
+	expect(errors).toEqual([]);
+	await namespace.dispose(BACKGROUND_CONTEXT);
+	provider.dispose();
+});
+
 test("closes a keyed subscription when its snapshot is wrong", async () => {
 	let closed = false;
 	const binding = createRemoteServiceBinding({

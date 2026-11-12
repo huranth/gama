@@ -168,6 +168,10 @@ class MemberSlot {
 		this.#state.clear();
 	}
 
+	get used(): boolean {
+		return this.#kind !== undefined || this.#expectedKind !== undefined;
+	}
+
 	#subscribe(listener: Parameters<ReplicatedState<JsonValue>["subscribe"]>[0]): () => void {
 		this.#assertAccess();
 		if (typeof listener !== "function") {
@@ -246,6 +250,7 @@ class ServiceFacade {
 		this.proxy = new Proxy(Object.create(null) as object, {
 			get: (_target, property) => {
 				if (typeof property !== "string") return undefined;
+				if (property === "then") return undefined;
 				return this.#slot(property).value;
 			},
 		});
@@ -256,8 +261,8 @@ class ServiceFacade {
 			throw new Error("Wrong address");
 		}
 		const members = validateMembers(snapshot.members);
-		for (const name of this.#slots.keys()) {
-			if (!members.has(name)) {
+		for (const [name, slot] of this.#slots) {
+			if (!members.has(name) && slot.used) {
 				throw new RemoteServiceError(
 					"service_member_not_found",
 					`Unknown remote service member ${this.#serviceId}.${name}`,
