@@ -11,6 +11,10 @@ import {
 	type WriteOperations,
 } from "@huranth/gama-harness";
 
+function shellQuote(value: string): string {
+	return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function sshExec(remote: string, command: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {
 		const child = spawn("ssh", [remote, command], { stdio: ["ignore", "pipe", "pipe"] });
@@ -32,11 +36,11 @@ function sshExec(remote: string, command: string): Promise<Buffer> {
 function createRemoteReadOps(remote: string, remoteCwd: string, localCwd: string): ReadOperations {
 	const toRemote = (p: string) => p.replace(localCwd, remoteCwd);
 	return {
-		readFile: (p) => sshExec(remote, `cat ${JSON.stringify(toRemote(p))}`),
-		access: (p) => sshExec(remote, `test -r ${JSON.stringify(toRemote(p))}`).then(() => {}),
+		readFile: (p) => sshExec(remote, `cat ${shellQuote(toRemote(p))}`),
+		access: (p) => sshExec(remote, `test -r ${shellQuote(toRemote(p))}`).then(() => {}),
 		detectImageMimeType: async (p) => {
 			try {
-				const r = await sshExec(remote, `file --mime-type -b ${JSON.stringify(toRemote(p))}`);
+				const r = await sshExec(remote, `file --mime-type -b ${shellQuote(toRemote(p))}`);
 				const m = r.toString().trim();
 				return ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(m) ? m : null;
 			} catch {
@@ -57,10 +61,10 @@ function createRemoteWriteOps(
 			const b64 = Buffer.from(content).toString("base64");
 			await sshExec(
 				remote,
-				`echo ${JSON.stringify(b64)} | base64 -d > ${JSON.stringify(toRemote(p))}`,
+				`echo ${JSON.stringify(b64)} | base64 -d > ${shellQuote(toRemote(p))}`,
 			);
 		},
-		mkdir: (dir) => sshExec(remote, `mkdir -p ${JSON.stringify(toRemote(dir))}`).then(() => {}),
+		mkdir: (dir) => sshExec(remote, `mkdir -p ${shellQuote(toRemote(dir))}`).then(() => {}),
 	};
 }
 
@@ -75,7 +79,7 @@ function createRemoteBashOps(remote: string, remoteCwd: string, localCwd: string
 	return {
 		exec: (command, cwd, { onData, signal, timeout }) =>
 			new Promise((resolve, reject) => {
-				const cmd = `cd ${JSON.stringify(toRemote(cwd))} && ${command}`;
+				const cmd = `cd ${shellQuote(toRemote(cwd))} && ${command}`;
 				const child = spawn("ssh", [remote, cmd], { stdio: ["ignore", "pipe", "pipe"] });
 				let timedOut = false;
 				const timer = timeout
@@ -178,13 +182,14 @@ export default function (gama: ExtensionAPI) {
 	gama.on("session_start", async (_event, ctx) => {
 		const arg = gama.getFlag("ssh") as string | undefined;
 		if (arg) {
-			if (arg.includes(":")) {
-				const [remote, path] = arg.split(":");
-				resolvedSsh = { remote, remoteCwd: path };
+			const hostStart = arg.indexOf("@") + 1;
+			const bracketEnd = arg.lastIndexOf("]");
+			const separator = arg.indexOf(":", bracketEnd < hostStart ? hostStart : bracketEnd);
+			if (separator < 0) {
+				const pwd = (await sshExec(arg, "pwd")).toString().trim();
+				resolvedSsh = { remote: arg, remoteCwd: pwd };
 			} else {
-				const remote = arg;
-				const pwd = (await sshExec(remote, "pwd")).toString().trim();
-				resolvedSsh = { remote, remoteCwd: pwd };
+				resolvedSsh = { remote: arg.slice(0, separator), remoteCwd: arg.slice(separator + 1) };
 			}
 			ctx.ui.setStatus(
 				"ssh",
