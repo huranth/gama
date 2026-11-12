@@ -1,6 +1,11 @@
 #define GAMA_CLIPBOARD_WRITE
 #include "../../clipboard.h"
 
+#define KEY_PRESSED_MASK 0x8000
+#define OPEN_CLIPBOARD_ATTEMPTS 10
+#define OPEN_CLIPBOARD_RETRY_MS 10
+#define BITMAP_FILE_HEADER_SIZE ((size_t)sizeof(BITMAPFILEHEADER))
+
 static int string_equals(const char* left, const char* right) {
     while (*left && *right && *left == *right) {
         left++;
