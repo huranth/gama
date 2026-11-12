@@ -159,7 +159,8 @@ async function runWorker(
 				throw new Error(`Invalid benchmark result: ${scenario.name}`);
 			checksum += result;
 		}
-		for (let round = 1; round < 10; round++) {
+		const READ_ROUNDS = 10;
+		for (let round = 1; round < READ_ROUNDS; round++) {
 			for (const scenario of STORAGE_READ_BENCHMARKS)
 				checksum += await scenario.run(storage, dataset);
 		}

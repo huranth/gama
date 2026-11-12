@@ -4,7 +4,6 @@
 
 ### Changed
 
-- the 1.0.1 and 1.0.2 notes are complete, they missed `hands`, `/stats`, `/compact`, the bell and `/changelog`
 - `version:patch`, `version:minor` and `version:major` bump only the CLI now
 - other packages keep their versions, and dependency ranges follow them
 
