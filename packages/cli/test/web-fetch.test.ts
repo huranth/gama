@@ -1,13 +1,7 @@
-import http from "node:http";
 import zlib from "node:zlib";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import { fetchPage } from "../src/core/tools/web/get.ts";
-import {
-	FETCH_KINDS,
-	FetchError,
-	type FetchLike,
-	readUrl,
-} from "../src/core/tools/web/read-url.ts";
+import { FETCH_KINDS, FetchError, type FetchLike } from "../src/core/tools/web/read-url.ts";
 import { SsrfError } from "../src/core/tools/web/security/ssrf.ts";
 
 const html = `<!doctype html>
@@ -201,19 +195,14 @@ describe("fetchPage", () => {
 			return new Response("ok", { headers: { "content-type": "text/plain" } });
 		};
 
-		const urlPage = await readUrl({
-			url: "  https://example.com/pad  ",
-			fetch: fetchImpl,
-		});
 		const page = await fetchPage({
 			url: "  https://example.com/pad  ",
 			fetchImpl,
 		});
 
-		expect(urlPage.url).toBe("https://example.com/pad");
 		expect(page.url).toBe("https://example.com/pad");
-		expect(requested).toEqual(["https://example.com/pad", "https://example.com/pad"]);
-		expect(encodings).toEqual(["gzip, deflate, br", "gzip, deflate, br"]);
+		expect(requested).toEqual(["https://example.com/pad"]);
+		expect(encodings).toEqual(["gzip, deflate, br"]);
 	});
 
 	it("rejects a response without a content type", async () => {
@@ -223,26 +212,17 @@ describe("fetchPage", () => {
 			url: "https://example.com/no-type",
 			fetchImpl,
 		}).catch((error) => error);
-		const urlError = await readUrl({
-			url: "https://example.com/no-type",
-			fetch: fetchImpl,
-		}).catch((error) => error);
-
 		expect(pageError).toBeInstanceOf(FetchError);
-		expect(urlError).toBeInstanceOf(FetchError);
 		expect((pageError as FetchError).kind).toBe(FETCH_KINDS.contentType);
-		expect((urlError as FetchError).kind).toBe(FETCH_KINDS.contentType);
 	});
 
-	it("extracts XML and RSS bodies as text in both paths", async () => {
+	it("extracts XML and RSS bodies as text", async () => {
 		const body = "<rss><channel><title>Feed</title><item>hello</item></channel></rss>";
 		const fetchImpl = respond(body, "application/rss+xml");
 
 		const page = await fetchPage({ url: "https://example.com/feed.xml", fetchImpl });
-		const urlPage = await readUrl({ url: "https://example.com/feed.xml", fetch: fetchImpl });
 
 		expect(page.text).toContain("hello");
-		expect(urlPage.text).toContain("hello");
 	});
 
 	it("resolves redirect chains and records the final URL", async () => {
@@ -943,7 +923,7 @@ describe("fetchPage regressions", () => {
 		expect(page.text).toBe("Body");
 	});
 
-	it("readUrl discards the body of a failed response", async () => {
+	it("discards the body of a failed response", async () => {
 		let cancelled = false;
 		const fetchImpl: FetchLike = async () =>
 			new Response(
@@ -955,13 +935,13 @@ describe("fetchPage regressions", () => {
 				{ status: 500, headers: { "content-type": "text/plain" } },
 			);
 
-		await expect(readUrl({ url: "https://example.com/fail", fetch: fetchImpl })).rejects.toThrow(
+		await expect(fetchPage({ url: "https://example.com/fail", fetchImpl })).rejects.toThrow(
 			/500/,
 		);
 		expect(cancelled).toBe(true);
 	});
 
-	it("readUrl discards the body when the content type is unsupported", async () => {
+	it("discards the body when the content type is unsupported", async () => {
 		let cancelled = false;
 		const fetchImpl: FetchLike = async () =>
 			new Response(
@@ -973,86 +953,16 @@ describe("fetchPage regressions", () => {
 				{ status: 200, headers: { "content-type": "image/png" } },
 			);
 
-		await expect(readUrl({ url: "https://example.com/img", fetch: fetchImpl })).rejects.toThrow(
+		await expect(fetchPage({ url: "https://example.com/img", fetchImpl })).rejects.toThrow(
 			/Unsupported content type/,
 		);
 		expect(cancelled).toBe(true);
 	});
 });
 
-describe("readUrl against real sockets", () => {
-	// No reply
-	function hangingServer(): Promise<{ server: http.Server; port: number }> {
-		return new Promise((resolve) => {
-			const server = http.createServer(() => {});
-			server.listen(0, "127.0.0.1", () => {
-				const port = (server.address() as { port: number }).port;
-				resolve({ server, port });
-			});
-		});
-	}
-
-	const local = (port: number) => `http://127.0.0.1:${port}/`;
-
-	afterEach(() => {
-		vi.useRealTimers();
-	});
-
-	it("aborts a hung connection at the 30s timeout", async () => {
-		const { server, port } = await hangingServer();
-		try {
-			vi.useFakeTimers();
-			const pending = readUrl({ url: local(port), isBlocked: () => false });
-			const outcome = pending.then(
-				() => null,
-				(error) => error,
-			);
-			await vi.advanceTimersByTimeAsync(30_000);
-			const error = await outcome;
-			expect((error as Error).message).toBe("Timed out after 30000 ms");
-		} finally {
-			server.close();
-		}
-	});
-
-	it("aborts mid-flight when the caller signal fires", async () => {
-		const { server, port } = await hangingServer();
-		try {
-			const controller = new AbortController();
-			const pending = readUrl({
-				url: local(port),
-				isBlocked: () => false,
-				signal: controller.signal,
-			});
-			const outcome = pending.then(
-				() => null,
-				(error) => error,
-			);
-			setTimeout(() => controller.abort(), 25);
-			const error = await outcome;
-			expect((error as Error).message).toBe("Cancelled");
-		} finally {
-			server.close();
-		}
-	});
-});
-
 // Shared failures
-describe("error taxonomy parity", () => {
-	// Both paths
-	async function bothErrors(url: string, transport: FetchLike): Promise<[unknown, unknown]> {
-		const pageError = await fetchPage({ url, fetchImpl: transport }).then(
-			() => null,
-			(error) => error,
-		);
-		const urlError = await readUrl({ url, fetch: transport }).then(
-			() => null,
-			(error) => error,
-		);
-		return [pageError, urlError];
-	}
-
-	interface ParityCase {
+describe("error taxonomy", () => {
+	interface ErrorCase {
 		// Failure label
 		name: string;
 		url: string;
@@ -1062,7 +972,7 @@ describe("error taxonomy parity", () => {
 		message?: string;
 	}
 
-	const cases: ParityCase[] = [
+	const cases: ErrorCase[] = [
 		{
 			name: "invalid url",
 			url: "not a url",
@@ -1125,67 +1035,59 @@ describe("error taxonomy parity", () => {
 		},
 	];
 
-	for (const parityCase of cases) {
-		it(`classifies ${parityCase.name} identically in both paths`, async () => {
-			const [pageError, urlError] = await bothErrors(parityCase.url, parityCase.fetch);
+	for (const errorCase of cases) {
+		it(`classifies ${errorCase.name}`, async () => {
+			const error = await fetchPage({ url: errorCase.url, fetchImpl: errorCase.fetch }).then(
+				() => null,
+				(caught) => caught,
+			);
 
-			expect(pageError).toBeInstanceOf(FetchError);
-			expect(urlError).toBeInstanceOf(FetchError);
-			expect((pageError as FetchError).kind).toBe(parityCase.kind);
-			expect((urlError as FetchError).kind).toBe(parityCase.kind);
-			expect((urlError as Error).message).toBe((pageError as Error).message);
-			if (parityCase.message) {
-				expect((pageError as Error).message).toBe(parityCase.message);
+			expect(error).toBeInstanceOf(FetchError);
+			expect((error as FetchError).kind).toBe(errorCase.kind);
+			if (errorCase.message) {
+				expect((error as Error).message).toBe(errorCase.message);
 			}
 		});
 	}
 
-	it("classifies timeout identically in both paths", async () => {
+	it("classifies timeout", async () => {
 		const aborts: FetchLike = () => Promise.reject(new DOMException("aborted", "AbortError"));
 
-		const [pageError, urlError] = await bothErrors("https://example.com/slow", aborts);
+		const error = await fetchPage({ url: "https://example.com/slow", fetchImpl: aborts }).then(
+			() => null,
+			(caught) => caught,
+		);
 
-		expect((pageError as FetchError).kind).toBe(FETCH_KINDS.timeout);
-		expect((urlError as FetchError).kind).toBe(FETCH_KINDS.timeout);
-		expect((urlError as Error).message).toBe((pageError as Error).message);
-		expect((pageError as Error).message).toMatch(/^Timed out after \d+ ms$/);
+		expect((error as FetchError).kind).toBe(FETCH_KINDS.timeout);
+		expect((error as Error).message).toMatch(/^Timed out after \d+ ms$/);
 	});
 
-	it("classifies caller cancel identically in both paths", async () => {
+	it("classifies caller cancel", async () => {
 		const controller = new AbortController();
 		controller.abort();
 
-		const pageError = await fetchPage({
+		const error = await fetchPage({
 			url: "https://example.com/x",
 			signal: controller.signal,
 			fetchImpl: respond("x", "text/plain"),
 		}).then(
 			() => null,
-			(error) => error,
-		);
-		const urlError = await readUrl({
-			url: "https://example.com/x",
-			signal: controller.signal,
-			fetch: respond("x", "text/plain"),
-		}).then(
-			() => null,
-			(error) => error,
+			(caught) => caught,
 		);
 
-		expect((pageError as FetchError).kind).toBe(FETCH_KINDS.cancelled);
-		expect((urlError as FetchError).kind).toBe(FETCH_KINDS.cancelled);
-		expect((urlError as Error).message).toBe((pageError as Error).message);
-		expect((pageError as Error).message).toBe("Cancelled");
+		expect((error as FetchError).kind).toBe(FETCH_KINDS.cancelled);
+		expect((error as Error).message).toBe("Cancelled");
 	});
 
-	it("classifies ssrf refusal identically in both paths", async () => {
-		const [pageError, urlError] = await bothErrors(
-			"http://127.0.0.1/secret",
-			respond("x", "text/plain"),
+	it("classifies ssrf refusal", async () => {
+		const error = await fetchPage({
+			url: "http://127.0.0.1/secret",
+			fetchImpl: respond("x", "text/plain"),
+		}).then(
+			() => null,
+			(caught) => caught,
 		);
 
-		expect(pageError).toBeInstanceOf(SsrfError);
-		expect(urlError).toBeInstanceOf(SsrfError);
-		expect((urlError as Error).message).toBe((pageError as Error).message);
+		expect(error).toBeInstanceOf(SsrfError);
 	});
 });

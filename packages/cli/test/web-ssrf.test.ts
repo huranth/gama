@@ -4,8 +4,9 @@ import type { AddressInfo } from "node:net";
 import net from "node:net";
 import zlib, { gzipSync } from "node:zlib";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { fetchPage } from "../src/core/tools/web/get.ts";
 import { pinnedFetch } from "../src/core/tools/web/pinned-fetch.ts";
-import { type FetchLike, readUrl } from "../src/core/tools/web/read-url.ts";
+import type { FetchLike } from "../src/core/tools/web/read-url.ts";
 import type { AddressPolicy, HostLookup, HostPolicy } from "../src/core/tools/web/security/ssrf.ts";
 import {
 	assertUrlAllowed,
@@ -749,7 +750,7 @@ describe("read-url/pinned-fetch regression sweep", () => {
 
 		it("rejects IPv6 literal URLs when the policy blocks them", async () => {
 			await expect(
-				readUrl({ url: "http://[::1]:8080/secret", isBlocked: (ip) => ip === "::1" }),
+				fetchPage({ url: "http://[::1]:8080/secret", isBlocked: (ip) => ip === "::1" }),
 			).rejects.toThrow(/Blocked address/);
 		});
 	});
@@ -777,7 +778,7 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				});
 
 			await expect(
-				readUrl({ url: "https://example.com/bad-redirect", fetch: fetchImpl }),
+				fetchPage({ url: "https://example.com/bad-redirect", fetchImpl }),
 			).rejects.toThrow(/Failed to fetch URL/);
 			expect(cancelled()).toBe(true);
 		});
@@ -796,7 +797,7 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				return new Response("done", { status: 200, headers: { "content-type": "text/plain" } });
 			};
 
-			const result = await readUrl({ url: "https://example.com/start", fetch: fetchImpl });
+			const result = await fetchPage({ url: "https://example.com/start", fetchImpl });
 			expect(result.finalUrl).toBe("https://example.com/next");
 			expect(cancelled.length).toBeGreaterThanOrEqual(1);
 		});
@@ -812,9 +813,9 @@ describe("read-url/pinned-fetch regression sweep", () => {
 					);
 				});
 
-			const pending = readUrl({
+			const pending = fetchPage({
 				url: "https://example.com/slow",
-				fetch: fetchImpl,
+				fetchImpl,
 				signal: controller.signal,
 			});
 			setTimeout(() => controller.abort(), 10);
@@ -827,10 +828,10 @@ describe("read-url/pinned-fetch regression sweep", () => {
 			};
 
 			await expect(
-				readUrl({
+				fetchPage({
 					url: "http://evil.example/secret",
-					fetch: fetchImpl,
-					resolveDns: true,
+					fetchImpl,
+					dnsResolve: true,
 					lookupHost: async () => ["not an ip at all"],
 				}),
 			).rejects.toThrow(/Blocked address|Unknown host/);
@@ -853,9 +854,9 @@ describe("read-url/pinned-fetch regression sweep", () => {
 				});
 			};
 
-			await expect(
-				readUrl({ url: "https://example.com/loop-a", fetch: fetchImpl }),
-			).rejects.toThrow(/Too many redirects/);
+			await expect(fetchPage({ url: "https://example.com/loop-a", fetchImpl })).rejects.toThrow(
+				/Too many redirects/,
+			);
 			expect(calls).toBeLessThanOrEqual(7);
 		});
 	});
