@@ -202,9 +202,7 @@ describe("TermApp compaction events", () => {
 		const fakeThis = {
 			isInitialized: true,
 			footer: { invalidate: vi.fn() },
-			activeStatusIndicator: undefined,
 			workingVisible: true,
-			showWorkingStatusIndicator: vi.fn(),
 			clearStatusIndicator: vi.fn(),
 			settingsManager: { getShowTerminalProgress: () => true },
 			ui: { requestRender: vi.fn(), terminal: { setProgress: vi.fn() } },
@@ -222,14 +220,12 @@ describe("TermApp compaction events", () => {
 		await handleEvent.call(fakeThis, { type: "turn_start" });
 
 		expect(fakeThis.ui.terminal.setProgress).toHaveBeenCalledWith(true);
-		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.clearStatusIndicator).not.toHaveBeenCalled();
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(1);
 
 		fakeThis.workingVisible = false;
 		await handleEvent.call(fakeThis, { type: "turn_start" });
 
-		expect(fakeThis.showWorkingStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.clearStatusIndicator).toHaveBeenCalledTimes(1);
 		expect(fakeThis.ui.requestRender).toHaveBeenCalledTimes(2);
 	});
