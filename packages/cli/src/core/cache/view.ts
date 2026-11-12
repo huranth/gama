@@ -2,7 +2,7 @@ import type { CacheColdReason, CacheSnapshot } from "./session.ts";
 
 export type HitTone = "success" | "warning" | "error";
 
-// Lookback warn
+// Warn when the lookback passes 18
 const LOOKBACK_WARN = 18;
 
 const MINUTE_MS = 60_000;

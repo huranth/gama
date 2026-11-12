@@ -296,6 +296,7 @@ interface WorkingStatusEditor extends EditorComponent {
 }
 
 const TMUX_LOOKUP_TIMEOUT_MS = 2000;
+const CATALOG_TIMEOUT_MS = 15_000;
 
 const INSTALL_PING_TIMEOUT_MS = 5000;
 
@@ -358,6 +359,8 @@ function chip(content: string): string {
 }
 
 export class TermApp {
+	private static readonly MAX_WIDGET_LINES = 10;
+
 	runtimeHost: SessionRuntime;
 	renderer: MainScreen | AltScreen;
 	ui: TUI;
@@ -598,7 +601,9 @@ export class TermApp {
 		}
 
 		const scopePrefix =
-			sourceInfo.scope === "user" ? "u" : sourceInfo.scope === "project" ? "p" : "t";
+			({ user: "u", project: "p", temporary: "t" } as Record<string, string>)[
+				sourceInfo.scope ?? ""
+			] ?? "t";
 		const source = sourceInfo.source.trim();
 
 		if (source === "auto" || source === "local" || source === "cli") {
@@ -629,7 +634,7 @@ export class TermApp {
 		return description ? `[${sourceTag}] ${description}` : `[${sourceTag}]`;
 	}
 
-	// One-line
+	// Keep skill menu rows short
 	private shortenSkillDescription(description: string | undefined): string | undefined {
 		if (!description) return undefined;
 		const firstSentence = description.split(/(?<=[.!?])\s|\n|;/)[0]?.trim() || description;
@@ -1007,7 +1012,7 @@ export class TermApp {
 
 		if (!process.env.GAMA_OFFLINE) {
 			const controller = new AbortController();
-			const timeout = setTimeout(() => controller.abort(), 15_000);
+			const timeout = setTimeout(() => controller.abort(), CATALOG_TIMEOUT_MS);
 			void refreshModelCatalogs(this.session.modelRuntime, controller.signal)
 				.then(() => this.updateAvailableProviderCount())
 				.catch(() => {})
@@ -1479,14 +1484,9 @@ export class TermApp {
 			};
 		}
 
-		const scopeLabel =
-			scope === "user"
-				? "user"
-				: scope === "project"
-					? "project"
-					: scope === "temporary"
-						? "temp"
-						: undefined;
+		const scopeLabel = (
+			{ user: "user", project: "project", temporary: "temp" } as Record<string, string>
+		)[scope ?? ""];
 		return { label: source, scopeLabel, color: "accent" };
 	}
 
@@ -2280,8 +2280,6 @@ export class TermApp {
 		}
 		this.setHiddenThinkingLabel();
 	}
-
-	private static readonly MAX_WIDGET_LINES = 10;
 
 	private renderWidgets(): void {
 		if (!this.widgetContainerAbove || !this.widgetContainerBelow) return;
@@ -3713,7 +3711,7 @@ export class TermApp {
 	// Docked prompts
 	updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		// Hand view.
+		// Skip docked prompts while a hand view is open
 		if (this.handViewId !== undefined) return;
 		for (const component of this.pendingBashComponents) {
 			this.pendingMessagesContainer.addChild(component);
@@ -3952,7 +3950,7 @@ export class TermApp {
 		const timeout = setTimeout(() => {
 			timedOut = true;
 			controller.abort();
-		}, 15_000);
+		}, CATALOG_TIMEOUT_MS);
 		this.editorContainer.clear();
 		this.editorContainer.addChild(loader);
 		this.ui.requestRender();
@@ -4296,9 +4294,7 @@ export class TermApp {
 		this.showSelector((done) => {
 			const selectModel = async (model: Model<any>) => {
 				try {
-					// Save default
 					await this.session.setModel(model, { persist: true });
-					// Remember model
 					try {
 						await rememberCustomProviderModel(getModelsPath(), model);
 					} catch (_error) {
