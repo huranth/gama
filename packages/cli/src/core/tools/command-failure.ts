@@ -937,7 +937,7 @@ const FAILURE_RULES: Rule[] = [
 		hint: "Fix failing test",
 	},
 	{
-		pattern: /^\s*FAIL\s|^\s*FAILED\s/i,
+		pattern: /^\s*FAIL\s|^\s*FAILED\s/im,
 		error: "Test failed",
 		hint: "Fix failing test",
 	},

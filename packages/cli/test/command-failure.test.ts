@@ -106,6 +106,15 @@ describe("command failures", () => {
 		expect(describeCommandFailure(output, 1)).toEqual(expected);
 	});
 
+	it("spots a jest FAIL line after earlier noise", () => {
+		const output = ["Running tests", "warmup ok", "FAIL src/app.test.ts"].join("\n");
+
+		expect(describeCommandFailure(output, 1)).toEqual({
+			error: "Test failed",
+			hint: "Fix failing test",
+		});
+	});
+
 	it("explains a killed process without output", () => {
 		expect(describeCommandFailure("", 137)).toEqual({
 			error: "Killed",
