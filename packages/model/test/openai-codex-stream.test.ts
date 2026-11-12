@@ -640,6 +640,8 @@ describe("openai-codex streaming", () => {
 		});
 
 		const sessionId = "test-session-123";
+		let capturedHeaders: Headers | undefined;
+		let capturedBody: Record<string, unknown> | null | undefined;
 		const fetchMock = vi.fn(async (input: string | URL, init?: RequestInit) => {
 			const url = typeof input === "string" ? input : input.toString();
 			if (url === "https://api.github.com/repos/openai/codex/releases/latest") {
@@ -649,13 +651,8 @@ describe("openai-codex streaming", () => {
 				return new Response("PROMPT", { status: 200, headers: { etag: '"etag"' } });
 			}
 			if (url === "https://chatgpt.com/backend-api/codex/responses") {
-				const headers = init?.headers instanceof Headers ? init.headers : undefined;
-				expect(headers?.get("session-id")).toBe(sessionId);
-				expect(headers?.has("session_id")).toBe(false);
-				expect(headers?.get("x-client-request-id")).toBe(sessionId);
-
-				const body = decodeCodexRequestBody(init?.body);
-				expect(body?.prompt_cache_key).toBe(sessionId);
+				capturedHeaders = init?.headers instanceof Headers ? init.headers : undefined;
+				capturedBody = decodeCodexRequestBody(init?.body);
 
 				return new Response(stream, {
 					status: 200,
@@ -690,7 +687,13 @@ describe("openai-codex streaming", () => {
 			sessionId,
 			transport: "sse",
 		});
-		await streamResult.result();
+		const result = await streamResult.result();
+
+		expect(result.errorMessage).toBeUndefined();
+		expect(capturedHeaders?.get("session-id")).toBe(sessionId);
+		expect(capturedHeaders?.has("session_id")).toBe(false);
+		expect(capturedHeaders?.get("x-client-request-id")).toBe(sessionId);
+		expect(capturedBody?.prompt_cache_key).toBe(sessionId);
 	});
 
 	it("omits SSE cache affinity when cacheRetention is none", async () => {
@@ -1257,6 +1260,7 @@ describe("openai-codex streaming", () => {
 	it("does not set session-id headers when sessionId is not provided", async () => {
 		const tempDir = mkdtempSync(join(tmpdir(), "gama-codex-stream-"));
 		process.env.GAMA_CODING_AGENT_DIR = tempDir;
+		let capturedHeaders: Headers | undefined;
 
 		const payload = Buffer.from(
 			JSON.stringify({ "https://api.openai.com/auth": { chatgpt_account_id: "acc_test" } }),
@@ -1318,10 +1322,7 @@ describe("openai-codex streaming", () => {
 				return new Response("PROMPT", { status: 200, headers: { etag: '"etag"' } });
 			}
 			if (url === "https://chatgpt.com/backend-api/codex/responses") {
-				const headers = init?.headers instanceof Headers ? init.headers : undefined;
-				expect(headers?.has("session-id")).toBe(false);
-				expect(headers?.has("session_id")).toBe(false);
-				expect(headers?.has("x-client-request-id")).toBe(false);
+				capturedHeaders = init?.headers instanceof Headers ? init.headers : undefined;
 
 				return new Response(stream, {
 					status: 200,
@@ -1355,7 +1356,12 @@ describe("openai-codex streaming", () => {
 			apiKey: token,
 			transport: "sse",
 		});
-		await streamResult.result();
+		const result = await streamResult.result();
+
+		expect(result.errorMessage).toBeUndefined();
+		expect(capturedHeaders?.has("session-id")).toBe(false);
+		expect(capturedHeaders?.has("session_id")).toBe(false);
+		expect(capturedHeaders?.has("x-client-request-id")).toBe(false);
 	});
 	it("forwards auto transport and raw provider events from streamSimple", async () => {
 		const token = mockToken();
