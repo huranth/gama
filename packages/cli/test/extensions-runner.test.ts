@@ -46,6 +46,13 @@ describe("PluginHost", () => {
 		fs.rmSync(tempDir, { recursive: true, force: true });
 	});
 
+	function createRunner(
+		extensions: ConstructorParameters<typeof PluginHost>[0],
+		runtime: ConstructorParameters<typeof PluginHost>[1],
+	): PluginHost {
+		return new PluginHost(extensions, runtime, tempDir, sessionManager, modelRegistry);
+	}
+
 	const providerModelConfig: ProviderConfig = {
 		baseUrl: "https://provider.test/v1",
 		apiKey: "provider-test-key",
@@ -112,13 +119,7 @@ describe("PluginHost", () => {
 	describe("scopedModels", () => {
 		it("reflects the getScopedModels context action on ctx.scopedModels", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			expect(runner.createContext().scopedModels).toEqual([]);
 
@@ -187,13 +188,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -216,13 +211,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const keybindings = {
 				...defaultKeybindings,
 				"app.model.cycleForward": "ctrl+n" as KeyId,
@@ -254,13 +243,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(
@@ -285,13 +268,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const keybindings = { ...defaultKeybindings, "app.interrupt": "ctrl+x" as KeyId };
 			const shortcuts = runner.getShortcuts(keybindings);
 
@@ -315,13 +292,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("conflicts with built-in"));
@@ -344,13 +315,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const keybindings = {
 				...defaultKeybindings,
 				"app.clear": ["ctrl+x", "ctrl+y"] as KeyId[],
@@ -377,13 +342,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const keybindings = {
 				...defaultKeybindings,
 				"app.clipboard.pasteImage": ["ctrl+x", "ctrl+y"] as KeyId[],
@@ -421,13 +380,7 @@ describe("PluginHost", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const shortcuts = runner.getShortcuts(defaultKeybindings);
 
 			expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("shortcut conflict"));
@@ -455,13 +408,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-b.ts"), toolCode("tool_b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools.length).toBe(2);
@@ -494,13 +441,7 @@ describe("PluginHost", () => {
 				eventBus,
 				runtime,
 			);
-			const runner = new PluginHost(
-				[zExtension, aExtension],
-				runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner([zExtension, aExtension], runtime);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools.map((t) => t.definition.name)).toEqual(["tool_a", "tool_z"]);
@@ -560,13 +501,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const tools = runner.getAllRegisteredTools();
 
 			expect(tools).toHaveLength(1);
@@ -588,13 +523,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("cmd-b"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const commands = runner.getRegisteredCommands();
 
 			expect(commands.length).toBe(2);
@@ -614,13 +543,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd.ts"), cmdCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			const cmd = runner.getCommand("my-cmd");
 			expect(cmd).toBeDefined();
@@ -645,13 +568,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "cmd-b.ts"), cmdCode("Second command"));
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const commands = runner.getRegisteredCommands();
 			const diagnostics = runner.getCommandDiagnostics();
 
@@ -674,13 +591,7 @@ describe("PluginHost", () => {
 	describe("context creation", () => {
 		it("exposes the current abort signal on ExtensionContext", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const controller = new AbortController();
 
 			runner.bindCore(extensionActions, {
@@ -698,13 +609,7 @@ describe("PluginHost", () => {
 
 		it("exposes print mode and hasUI false by default", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			runner.bindCore(extensionActions, extensionContextActions);
 
 			const ctx = runner.createContext();
@@ -714,13 +619,7 @@ describe("PluginHost", () => {
 
 		it("exposes project trust state on ExtensionContext", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			runner.bindCore(extensionActions, {
 				...extensionContextActions,
 				isProjectTrusted: () => false,
@@ -732,13 +631,7 @@ describe("PluginHost", () => {
 
 		it("exposes rpc mode with hasUI true when an RPC UI context is provided", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			runner.bindCore(extensionActions, extensionContextActions);
 			runner.setUIContext({} as ExtensionUIContext, "rpc");
 
@@ -749,13 +642,7 @@ describe("PluginHost", () => {
 
 		it("exposes tui mode with hasUI true when a TUI UI context is provided", async () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			runner.bindCore(extensionActions, extensionContextActions);
 			runner.setUIContext({} as ExtensionUIContext, "tui");
 
@@ -777,13 +664,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			const errors: Array<{ extensionPath: string; event: string; error: string }> = [];
 			runner.onError((err) => {
@@ -808,13 +689,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "throws.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((error) => errors.push(error));
 
@@ -851,13 +726,7 @@ describe("PluginHost", () => {
 				fs.writeFileSync(path.join(extensionsDir, "invalid-result.ts"), extCode);
 
 				const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-				const runner = new PluginHost(
-					result.extensions,
-					result.runtime,
-					tempDir,
-					sessionManager,
-					modelRegistry,
-				);
+				const runner = createRunner(result.extensions, result.runtime);
 				const errors: Array<{ event: string; error: string }> = [];
 				runner.onError((error) => errors.push(error));
 
@@ -892,13 +761,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "valid-results.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const event = { type: "user_bash" as const, excludeFromContext: false, cwd: tempDir };
 
 			const operations = await runner.emitUserBash({ ...event, command: "operations" });
@@ -920,13 +783,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "markdown-renderer-b.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			expect(runner.getMarkdownTransformers()).toHaveLength(2);
 		});
@@ -940,13 +797,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "renderer.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			const renderer = runner.getMessageRenderer("my-type");
 			expect(renderer).toBeDefined();
@@ -964,13 +815,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "entry-renderer.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			expect(runner.getEntryRenderer("my-entry")).toBeDefined();
 			expect(runner.getEntryRenderer("not-exists")).toBeUndefined();
@@ -990,13 +835,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "with-flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const flags = runner.getFlags();
 
 			expect(flags.has("my-flag")).toBe(true);
@@ -1025,13 +864,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "b-second.ts"), second);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const flags = runner.getFlags();
 
 			expect(flags.get("shared-flag")?.description).toBe("first");
@@ -1068,13 +901,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "flag.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			runner.setFlagValue("--test-flag", true);
 
@@ -1108,13 +935,7 @@ describe("PluginHost", () => {
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
 			expect(result.errors).toEqual([]);
 			expect(result.extensions).toHaveLength(2);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(error.error));
 			runner.bindCore(extensionActions, extensionContextActions);
@@ -1152,13 +973,7 @@ describe("PluginHost", () => {
 			eventBus,
 			runtime,
 		);
-		const runner = new PluginHost(
-			[first, second],
-			runtime,
-			tempDir,
-			sessionManager,
-			modelRegistry,
-		);
+		const runner = createRunner([first, second], runtime);
 
 		expect(runner.resolveToolRenderers("a", () => undefined)).toEqual({ renderCall });
 		expect(runner.resolveToolRenderers("b", () => undefined)).toEqual({ renderShell: "self" });
@@ -1204,13 +1019,7 @@ describe("PluginHost", () => {
 				runtime,
 				"<inline:second>",
 			);
-			const runner = new PluginHost(
-				[first, second],
-				runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner([first, second], runtime);
 
 			const result = await runner.emitBoundary(
 				{ type: "agent_before_settle", outcome: "completed" },
@@ -1267,13 +1076,7 @@ describe("PluginHost", () => {
 				runtime,
 				"<inline:repair>",
 			);
-			const runner = new PluginHost(
-				[first, second],
-				runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner([first, second], runtime);
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(error.error));
 
@@ -1311,13 +1114,7 @@ describe("PluginHost", () => {
 				createEventBus(),
 				runtime,
 			);
-			const runner = new PluginHost(
-				[extension],
-				runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner([extension], runtime);
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(error.error));
 
@@ -1361,13 +1158,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-result-2.ts"), extCode2);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			const chained = await runner.emitToolResult({
 				type: "tool_result",
@@ -1415,13 +1206,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "tool-result-partial-2.ts"), extCode2);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			const chained = await runner.emitToolResult({
 				type: "tool_result",
@@ -1454,7 +1239,7 @@ describe("PluginHost", () => {
 				"/tmp/broken-extension.ts",
 			);
 
-			const runner = new PluginHost([], runtime, tempDir, sessionManager, modelRegistry);
+			const runner = createRunner([], runtime);
 			const errors: string[] = [];
 			runner.onError((error) => errors.push(`${error.extensionPath}: ${error.error}`));
 
@@ -1489,7 +1274,7 @@ describe("PluginHost", () => {
 
 		it("post-bind register and unregister take effect immediately", () => {
 			const runtime = createExtensionRuntime();
-			const runner = new PluginHost([], runtime, tempDir, sessionManager, modelRegistry);
+			const runner = createRunner([], runtime);
 
 			runner.bindCore(extensionActions, extensionContextActions);
 			expect(runtime.pendingProviderRegistrations).toHaveLength(0);
@@ -1514,7 +1299,7 @@ describe("PluginHost", () => {
 	describe("command context", () => {
 		it("passes fork options through to the bound handler", async () => {
 			const runtime = createExtensionRuntime();
-			const runner = new PluginHost([], runtime, tempDir, sessionManager, modelRegistry);
+			const runner = createRunner([], runtime);
 			const fork = vi.fn(async () => ({ cancelled: false }));
 
 			runner.bindCommandContext({
@@ -1544,13 +1329,7 @@ describe("PluginHost", () => {
 				createEventBus(),
 				runtime,
 			);
-			const runner = new PluginHost(
-				[extension],
-				runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner([extension], runtime);
 			return { extension, runner };
 		}
 
@@ -1677,13 +1456,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "handler.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			expect(runner.hasHandlers("tool_call")).toBe(true);
 			expect(runner.hasHandlers("agent_end")).toBe(false);
@@ -1702,13 +1475,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "headers.ts"), extCode);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 
 			expect(runner.hasHandlers("before_provider_headers")).toBe(true);
 
@@ -1736,13 +1503,7 @@ describe("PluginHost", () => {
 			fs.writeFileSync(path.join(extensionsDir, "b-good.ts"), good);
 
 			const result = await discoverAndLoadExtensions([], tempDir, tempDir);
-			const runner = new PluginHost(
-				result.extensions,
-				result.runtime,
-				tempDir,
-				sessionManager,
-				modelRegistry,
-			);
+			const runner = createRunner(result.extensions, result.runtime);
 			const errors: Array<{ event: string; error: string }> = [];
 			runner.onError((err) => errors.push(err));
 
