@@ -1365,6 +1365,11 @@ export function createHandsTool(host: HandsHost): HandsTool {
 		name: HANDS_TOOL_NAME,
 		label: "Hands",
 		description: [
+			"Hands are the default workers for real work in this session. Start them " +
+				"for anything that needs more than a single quick lookup: scouting, " +
+				"digging, running a command, reviewing a diff, or building a change. " +
+				"Work directly only for a trivial one-step request, or when the user " +
+				"explicitly says not to use hands.",
 			"Hands are role-bound workers, not general chats. Each takes a typed " +
 				"input and returns an artifact.",
 			`Roles: ${HAND_KIND_HELP}`,
@@ -1381,8 +1386,13 @@ export function createHandsTool(host: HandsHost): HandsTool {
 			`You can run up to ${MAX_HANDS} hands at once. ` +
 				"Finished hands stay readable until action finish.",
 		].join(" "),
-		promptSnippet: "hands: typed role workers (scout, digger, runner, critic, builder).",
+		promptSnippet:
+			"hands: typed role workers (scout, digger, runner, critic, builder). Prefer them beyond a quick lookup.",
 		promptGuidelines: [
+			"Prefer hands for any task that needs more than a single quick lookup: " +
+				"start the roles that fit, then work from their artifacts. Work directly " +
+				"only for a trivial one-step request, or when the user explicitly says " +
+				"not to use hands.",
 			"Route by role: map -> scout; deep evidence -> digger; run command/tests " +
 				"-> runner; verify a specific claim or review a diff -> critic; edit -> " +
 				"builder.",

@@ -61,6 +61,7 @@ describe("hands session wiring", () => {
 		const session = await createSession();
 		expect(session.getActiveToolNames()).not.toContain("hands");
 		expect(session.systemPrompt).not.toContain("- hands:");
+		expect(session.systemPrompt).not.toContain("<delegation>");
 		session.dispose();
 	});
 
@@ -77,9 +78,16 @@ describe("hands session wiring", () => {
 		const session = await createSession(true);
 		expect(session.getActiveToolNames()).toContain("hands");
 		expect(session.systemPrompt).toContain("- hands:");
+		expect(session.systemPrompt).toContain("<delegation>");
+		expect(session.systemPrompt).toContain("Hands are your default workers");
+		expect(session.systemPrompt).toContain("Prefer hands for any task");
+		expect(session.systemPrompt).toContain("explicitly says");
 		expect(session.systemPrompt).toContain("Route by role");
 		expect(session.systemPrompt).toContain("start critics on the highest-impact");
 		expect(session.systemPrompt).toContain("one subsystem or one question");
+		expect(session.getToolDefinition("hands")?.description).toContain(
+			"default workers for real work",
+		);
 		expect(session.getToolDefinition("hands")?.description).toContain("role-bound workers");
 		expect(session.getToolDefinition("hands")?.description).toContain("after a scout or digger");
 		expect(session.getToolDefinition("hands")?.description).toContain("Action talk");

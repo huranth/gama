@@ -274,12 +274,6 @@ function handNames(info: HandsInfo): string {
 	return names.join(", ");
 }
 
-function handProgress(done: number, total: number): string {
-	const slots = Math.min(Math.max(total, 1), 10);
-	const filled = Math.min(Math.max(done, 0), slots);
-	return `${theme.fg("success", String(filled))}${theme.fg("dim", `/${slots}`)}`;
-}
-
 function lineCount(text: string): number {
 	const trimmed = text.replace(/\s+$/, "");
 	return trimmed ? trimmed.split("\n").length : 0;
@@ -876,10 +870,9 @@ export class ActivityLineComponent implements Component {
 				rows.push(`${INDENT}${theme.fg("text", theme.bold("Waiting"))}`);
 				if (total > 0) {
 					rows.push(
-						`${INDENT}${handProgress(info.collected, total)}  ${theme.fg(
-							"muted",
-							`${info.collected} of ${total}`,
-						)}${names ? `  ${theme.fg("muted", names)}` : ""}`,
+						`${INDENT}${theme.fg("muted", `${info.collected} of ${total}`)}${
+							names ? `  ${theme.fg("muted", names)}` : ""
+						}`,
 					);
 				}
 			} else {
@@ -889,11 +882,7 @@ export class ActivityLineComponent implements Component {
 						theme.bold(total > 0 ? `${info.collected} of ${total} collected` : "Collected"),
 					)}`,
 				);
-				rows.push(
-					`${INDENT}${handProgress(info.collected, total)}${
-						names ? `  ${theme.fg("muted", names)}` : ""
-					}`,
-				);
+				if (names) rows.push(`${INDENT}${theme.fg("muted", names)}`);
 			}
 		} else {
 			const hand = info.deliveredHands[0];

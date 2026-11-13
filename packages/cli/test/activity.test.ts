@@ -311,7 +311,7 @@ describe("ActivityLineComponent", () => {
 		const cardRows = card.render(80);
 		const cardText = plain(cardRows);
 		expect(cardText).toContain("1 of 2 collected");
-		expect(cardText).toContain("1/2");
+		expect(cardText).not.toContain("1/2");
 		expect(cardText).toContain("Hand 1");
 		expect(cardText).not.toContain("HANDS");
 		expect(cardText).not.toContain("Waiting");
@@ -341,7 +341,7 @@ describe("ActivityLineComponent", () => {
 		});
 		const secondText = plain(secondCard.render(80));
 		expect(secondText).toContain("2 of 3 collected");
-		expect(secondText).toContain("2/3");
+		expect(secondText).not.toContain("2/3");
 		expect(secondText).toContain("Hand 1, Hand 2");
 		expect(secondText).not.toContain("1 of 3");
 
@@ -365,7 +365,7 @@ describe("ActivityLineComponent", () => {
 		const waitingText = plain(waitingCard.render(80));
 		expect(waitingText).toContain("Waiting");
 		expect(waitingText).toContain("0 of 2");
-		expect(waitingText).toContain("0/2");
+		expect(waitingText).not.toContain("0/2");
 		expect(waitingText).not.toContain("hands live");
 
 		const unknownTotal = new ActivityLineComponent({

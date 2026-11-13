@@ -18,6 +18,13 @@ const DEFAULT_PREAMBLE = [
 	"Speak plainly, in first person, as yourself.",
 ].join(" ");
 
+const DELEGATION_SECTION =
+	"Hands are your default workers. For any task that needs more than one " +
+	"step or one file, start the hands that fit: scout to map, digger to trace, " +
+	"runner to execute, critic to verify, builder to edit. Work from their " +
+	"artifacts. Work directly only for a trivial one-step request, or when the " +
+	"user explicitly says not to use hands.";
+
 const WORKING_SECTION =
 	`Working in this conversation:
 
@@ -267,6 +274,7 @@ function buildCoreSections(options: NormalizedBuildSystemPromptOptions): Record<
 	return {
 		preamble: DEFAULT_PREAMBLE,
 		tools: `${renderTools(options.selectedTools, options.toolSnippets)}\n\n${TOOLS_NOTE}`,
+		...(options.selectedTools.includes("hands") ? { delegation: DELEGATION_SECTION } : {}),
 		working: WORKING_SECTION,
 		rules: buildRules(options.selectedTools, options.toolGuidelines, options.promptGuidelines),
 		docs: buildDocsSection(),
