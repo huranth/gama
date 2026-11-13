@@ -1,6 +1,6 @@
 {
 	"name": "@huranth/gama-harness",
-	"version": "1.0.2",
+	"version": "1.0.3",
 	"description": "Gama command line agent",
 	"type": "module",
 	"gamaConfig": {
