@@ -1,33 +1,42 @@
 # Changelog
 
-## [Unreleased]
+## [1.0.3] - 2026-11-13
+
+### Added
+
+- `hands`, the default workers: the model starts scout, digger, runner, critic or builder on its own for anything past a quick lookup, each hand gets a card you can open, and it works alone only for a one-step job or when you say no hands
+- `hands` shipped in `1.0.2` and that changelog skipped it, so this is its intro
 
 ### Changed
 
+- hand cards show `3 of 4 collected` instead of dots
 - `version:patch`, `version:minor` and `version:major` bump only the CLI now
-- other packages keep their versions, and dependency ranges follow them
+- other packages keep their versions, and their dependency ranges follow
 
 ### Fixed
 
-- the native targets compile again, the clipboard constants and the export macros were missing
+- the native builds compile again, the clipboard constants and the export macros were missing
 - Anthropic keeps the effort you picked when thinking starts mid-conversation
-- CJK punctuation keeps the curly quotes
-- the bench container checks for `packages/bench`, so it stops rejecting every start
-- `/cache` prints the turn counts once each
+- CJK punctuation keeps its curly quotes
+- the bench container looks in `packages/bench` now, so it stops rejecting every start
+- `/cache` prints each turn count once
 - a `FAIL` line is found even when it is not the first line of the output
-- the ripgrep example runs without a shell, and the trigger watcher closes on shutdown
-- bench points its dependency ranges at the workspace versions
-- aliased state containers are rejected instead of silently diverging
-- a stranded bundle backup is ignored after the swap
+- the ripgrep example runs without a shell, and the trigger watcher closes when gama shuts down
+- bench uses the workspace versions for its dependencies
+- a state container that is aliased is rejected instead of quietly diverging
+- a leftover bundle backup is ignored after the swap
 - service calls reject arguments that are not strict JSON
-- a service facade read no longer creates a member slot
-- entry sources stay out of the bundle output directory
-- bench validates traversal flags and worker output, and keeps fixtures out of the package
+- a property read on a service no longer creates a member slot
+- the entry sources stay out of the bundle output directory
+- bench checks traversal flags and worker output, and keeps its fixtures out of the package
 - the examples block `find -delete`, `find -exec` and short `rm -r` flags
 - remote ssh paths are quoted, and IPv6 hosts parse correctly
-- the examples handle Windows paths, `cmd.exe`, and provider log directories
-- game and overlay examples stop their timers, find Doom outside the package, and restart cleanly
-- empty questionnaire options, failed issue loads, tiny terminals and aborted subagents no longer misbehave
+- the examples handle Windows paths, `cmd.exe` and provider log directories
+- the game and overlay examples stop their timers, find Doom outside the package, and restart cleanly
+- an empty questionnaire, a failed issue load, a tiny terminal and an aborted subagent no longer misbehave
+- a failed subagent says it failed instead of showing a blank status
+- a folder next to your home no longer shows as `~2` in the session list
+- two gama processes can install the same tool without one of them failing
 
 ## [1.0.2] - 2026-11-10
 
