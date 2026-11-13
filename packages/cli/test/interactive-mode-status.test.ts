@@ -544,7 +544,6 @@ describe("TermApp.showLoadedResources", () => {
 		extensions?: ExtensionFixture[];
 		skills?: Array<{ filePath: string; name: string }>;
 		skillDiagnostics?: Array<{ type: "warning" | "error" | "collision"; message: string }>;
-		useRealScopeGroups?: boolean;
 	}) {
 		const fakeThis: any = {
 			options: { verbose: options.verbose ?? false },
@@ -561,6 +560,7 @@ describe("TermApp.showLoadedResources", () => {
 				promptTemplates: [],
 				extensionRunner: {
 					getCommandDiagnostics: () => [],
+					getRegisteredCommands: () => [],
 					getShortcutDiagnostics: () => [],
 				},
 				resourceLoader: {
@@ -581,55 +581,11 @@ describe("TermApp.showLoadedResources", () => {
 					getThemes: () => ({ themes: [], diagnostics: [] }),
 				},
 			},
-			formatDisplayPath: (p: string) =>
-				(TermApp as any).prototype.formatDisplayPath.call(fakeThis, p),
-			formatExtensionDisplayPath: (p: string) =>
-				(TermApp as any).prototype.formatExtensionDisplayPath.call(fakeThis, p),
-			formatContextPath: (p: string) =>
-				(TermApp as any).prototype.formatContextPath.call(fakeThis, p),
 			getStartupExpansionState: () =>
 				(TermApp as any).prototype.getStartupExpansionState.call(fakeThis),
 			shouldShowStartupDetails: () =>
 				(TermApp as any).prototype.shouldShowStartupDetails.call(fakeThis),
-			buildScopeGroups: () => [],
-			formatScopeGroups: () => "resource-list",
-			isPackageSource: (sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.isPackageSource.call(fakeThis, sourceInfo),
-			getShortPath: (p: string, sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getShortPath.call(fakeThis, p, sourceInfo),
-			getCompactPathLabel: (p: string, sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getCompactPathLabel.call(fakeThis, p, sourceInfo),
-			getCompactPackageSourceLabel: (sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getCompactPackageSourceLabel.call(fakeThis, sourceInfo),
-			getCompactExtensionLabel: (p: string, sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getCompactExtensionLabel.call(fakeThis, p, sourceInfo),
-			getCompactDisplayPathSegments: (p: string) =>
-				(TermApp as any).prototype.getCompactDisplayPathSegments.call(fakeThis, p),
-			getCompactNonPackageExtensionLabel: (
-				p: string,
-				index: number,
-				allPaths: Array<{ path: string; segments: string[] }>,
-			) =>
-				(TermApp as any).prototype.getCompactNonPackageExtensionLabel.call(
-					fakeThis,
-					p,
-					index,
-					allPaths,
-				),
-			getCompactExtensionLabels: (extensions: ExtensionFixture[]) =>
-				(TermApp as any).prototype.getCompactExtensionLabels.call(fakeThis, extensions),
-			formatDiagnostics: () => "diagnostics",
-			getBuiltInCommandConflictDiagnostics: () => [],
 		};
-
-		if (options.useRealScopeGroups) {
-			fakeThis.getScopeGroup = (sourceInfo?: SourceInfo) =>
-				(TermApp as any).prototype.getScopeGroup.call(fakeThis, sourceInfo);
-			fakeThis.buildScopeGroups = (items: Array<{ path: string; sourceInfo?: SourceInfo }>) =>
-				(TermApp as any).prototype.buildScopeGroups.call(fakeThis, items);
-			fakeThis.formatScopeGroups = (groups: unknown, formatOptions: unknown) =>
-				(TermApp as any).prototype.formatScopeGroups.call(fakeThis, groups, formatOptions);
-		}
 
 		return fakeThis;
 	}
@@ -757,7 +713,7 @@ describe("TermApp.showLoadedResources", () => {
 		const output = renderAll(fakeThis.loadedResourcesContainer);
 		expect(output).toContain("[Skills]");
 		expect(output).toContain("commit");
-		expect(output).not.toContain("resource-list");
+		expect(output).not.toContain("/tmp/skill/SKILL.md");
 	});
 
 	test("shows full resource listing when expanded", () => {
@@ -773,7 +729,7 @@ describe("TermApp.showLoadedResources", () => {
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
 		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
+		expect(output).toContain("/tmp/skill/SKILL.md");
 		expect(output).not.toContain("commit");
 	});
 
@@ -791,7 +747,7 @@ describe("TermApp.showLoadedResources", () => {
 
 		const output = renderAll(fakeThis.loadedResourcesContainer);
 		expect(output).toContain("[Skills]");
-		expect(output).toContain("resource-list");
+		expect(output).toContain("/tmp/skill/SKILL.md");
 		expect(output).not.toContain("commit");
 	});
 
@@ -815,7 +771,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions: createExtensionFixtures(),
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -863,7 +818,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -891,7 +845,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -919,7 +872,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -956,7 +908,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -993,7 +944,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1030,7 +980,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1058,7 +1007,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1089,7 +1037,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1132,7 +1079,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1174,7 +1120,6 @@ describe("TermApp.showLoadedResources", () => {
 		const fakeThis = createShowLoadedResourcesThis({
 			quietStartup: false,
 			extensions,
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {
@@ -1191,7 +1136,6 @@ describe("TermApp.showLoadedResources", () => {
 			quietStartup: false,
 			toolOutputExpanded: true,
 			extensions: createExtensionFixtures(),
-			useRealScopeGroups: true,
 		});
 
 		(TermApp as any).prototype.showLoadedResources.call(fakeThis, {

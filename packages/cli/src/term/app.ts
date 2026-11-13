@@ -1,6 +1,6 @@
 import * as crypto from "node:crypto";
 import * as fs from "node:fs";
-import * as os from "node:os";
+import { tmpdir } from "node:os";
 import * as path from "node:path";
 import type { AgentMessage, ThinkingLevel } from "@huranth/gama-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model } from "@huranth/gama-ai/compat";
@@ -93,7 +93,6 @@ import type { SourceInfo } from "../core/origin.ts";
 import { DefaultPackageManager } from "../core/package-manager.ts";
 import { findExactModelReferenceMatch } from "../core/pick.ts";
 import { isInstallTelemetryEnabled } from "../core/ping.ts";
-import type { ResourceDiagnostic } from "../core/resource-loader.ts";
 import type { SessionRuntime } from "../core/session/runtime.ts";
 import type { AgentSessionRuntimeDiagnostic } from "../core/session/services.ts";
 import type { RunSession, SessionEvent } from "../core/session/session.ts";
@@ -119,7 +118,6 @@ import { extensionForImageMimeType, readClipboardImage } from "../utils/clipboar
 import { getGamaUserAgent } from "../utils/gama-user-agent.ts";
 import { parseGitUrl } from "../utils/git.ts";
 import { ensurePngTranscoder } from "../utils/image-convert.ts";
-import { getCwdRelativePath } from "../utils/paths.ts";
 import { loadAllHighlightLanguages } from "../utils/syntax-highlight.ts";
 import { pruneTempFiles } from "../utils/temp-cleanup.ts";
 import { ensureTool } from "../utils/tools-manager.ts";
@@ -141,7 +139,6 @@ import {
 	type CompactionCostNotice,
 	configurePromptSummary,
 	dropChatChild,
-	ExpandableText,
 	ensureCurrentActivity,
 	getMarkdownThemeWithSettings,
 	getMarkdownTransformers,
@@ -215,6 +212,7 @@ import {
 	handleHandsUpdated,
 	openHand,
 } from "./hands.ts";
+import { type LoadedResourcesOptions, renderLoadedResources } from "./loaded-resources.ts";
 import { getModelSearchText } from "./model-search.ts";
 import type {
 	ActivityLineComponent,
@@ -276,7 +274,6 @@ import {
 	setRegisteredThemes,
 	stopThemeWatcher,
 	Theme,
-	type ThemeColor,
 	theme,
 } from "./theme/theme.ts";
 import { InteractiveThemeController } from "./theme/theme-controller.ts";
@@ -634,7 +631,7 @@ export class TermApp {
 		return description ? `[${sourceTag}] ${description}` : `[${sourceTag}]`;
 	}
 
-	// Keep skill menu rows short
+	// Short menu
 	private shortenSkillDescription(description: string | undefined): string | undefined {
 		if (!description) return undefined;
 		const firstSentence = description.split(/(?<=[.!?])\s|\n|;/)[0]?.trim() || description;
@@ -649,26 +646,6 @@ export class TermApp {
 			lastSpace > 0 ? cut.slice(0, lastSpace) : cut.slice(0, maxSkillDescriptionLength)
 		).trimEnd();
 		return `${capped}...`;
-	}
-
-	private getBuiltInCommandConflictDiagnostics(extensionRunner: PluginHost): ResourceDiagnostic[] {
-		const builtinNames = new Set(BUILTIN_SLASH_COMMANDS.map((command) => command.name));
-		return extensionRunner
-			.getRegisteredCommands()
-			.filter((command) => builtinNames.has(command.name))
-			.map((command) => {
-				const clash = "conflicts with built-in interactive command.";
-				const conflict = `Extension command '/${command.name}' ${clash}`;
-				const message =
-					command.invocationName === command.name
-						? `${conflict} Skipping in autocomplete.`
-						: `${conflict} Available as '/${command.invocationName}'.`;
-				return {
-					type: "warning" as const,
-					message,
-					path: command.sourceInfo.path,
-				};
-			});
 	}
 
 	private createBaseAutocompleteProvider(): AutocompleteProvider {
@@ -1243,37 +1220,6 @@ export class TermApp {
 		configurePromptSummary(this, component, text);
 	}
 
-	private formatDisplayPath(p: string): string {
-		const home = os.homedir();
-		let result = p;
-
-		// Then a sibling like /home/smart2 doesn't collapse into ~2
-		if (result === home || result.startsWith(`${home}/`) || result.startsWith(`${home}\\`)) {
-			result = `~${result.slice(home.length)}`;
-		}
-
-		return result;
-	}
-
-	private formatExtensionDisplayPath(path: string): string {
-		let result = this.formatDisplayPath(path);
-		result = result.replace(/\/index\.ts$/, "").replace(/\/index\.js$/, "");
-		return result;
-	}
-
-	private formatContextPath(target: string): string {
-		const cwd = path.resolve(this.sessionManager.getCwd());
-		const absolutePath = path.isAbsolute(target)
-			? path.resolve(target)
-			: path.resolve(cwd, target);
-		const relativePath = getCwdRelativePath(absolutePath, cwd);
-		if (relativePath !== undefined) {
-			return relativePath;
-		}
-
-		return this.formatDisplayPath(absolutePath);
-	}
-
 	private getStartupExpansionState(): boolean {
 		return this.options.verbose || this.toolOutputExpanded;
 	}
@@ -1295,590 +1241,17 @@ export class TermApp {
 		return this.options.verbose === true || this.settingsManager.getQuietStartup() === false;
 	}
 
-	private getShortPath(fullPath: string, sourceInfo?: SourceInfo): string {
-		const normalizedFullPath = fullPath.replace(/\\/g, "/");
-		const baseDir = sourceInfo?.baseDir;
-		if (baseDir && this.isPackageSource(sourceInfo)) {
-			const normalizedBaseDir = baseDir.replace(/\\/g, "/");
-			const npmRootMatch = normalizedBaseDir.match(
-				/^(.*\/node_modules)\/(@?[^/]+(?:\/[^/]+)?)$/,
-			);
-			if (npmRootMatch?.[1] && normalizedFullPath.startsWith(`${npmRootMatch[1]}/`)) {
-				return path.posix.relative(normalizedBaseDir, normalizedFullPath);
-			}
-
-			const relativePath = path.relative(path.resolve(baseDir), path.resolve(fullPath));
-			if (
-				relativePath &&
-				relativePath !== "." &&
-				!relativePath.startsWith("..") &&
-				!relativePath.startsWith(`..${path.sep}`) &&
-				!path.isAbsolute(relativePath)
-			) {
-				return relativePath.replace(/\\/g, "/");
-			}
-		}
-
-		const source = sourceInfo?.source ?? "";
-		const npmMatch = normalizedFullPath.match(/node_modules\/(@?[^/]+(?:\/[^/]+)?)\/(.*)/);
-		if (npmMatch && source.startsWith("npm:")) {
-			return npmMatch[2];
-		}
-
-		const gitMatch = normalizedFullPath.match(/git\/[^/]+\/[^/]+\/(.*)/);
-		if (gitMatch && source.startsWith("git:")) {
-			return gitMatch[1];
-		}
-
-		return this.formatDisplayPath(fullPath);
-	}
-
-	private getCompactPathLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
-		const shortPath = this.getShortPath(resourcePath, sourceInfo);
-		const normalizedPath = shortPath.replace(/\\/g, "/");
-		const segments = normalizedPath
-			.split("/")
-			.filter((segment) => segment.length > 0 && segment !== "~");
-		if (segments.length > 0) {
-			return segments[segments.length - 1]!;
-		}
-		return shortPath;
-	}
-
-	private getCompactPackageSourceLabel(sourceInfo?: SourceInfo): string {
-		const source = sourceInfo?.source ?? "";
-		if (source.startsWith("npm:")) {
-			return source.slice("npm:".length) || source;
-		}
-
-		const gitSource = parseGitUrl(source);
-		if (gitSource) {
-			return gitSource.path || source;
-		}
-
-		return source;
-	}
-
-	private getCompactExtensionLabel(resourcePath: string, sourceInfo?: SourceInfo): string {
-		if (!this.isPackageSource(sourceInfo)) {
-			return this.getCompactPathLabel(resourcePath, sourceInfo);
-		}
-
-		const sourceLabel = this.getCompactPackageSourceLabel(sourceInfo);
-		if (!sourceLabel) {
-			return this.getCompactPathLabel(resourcePath, sourceInfo);
-		}
-
-		const shortPath = this.getShortPath(resourcePath, sourceInfo).replace(/\\/g, "/");
-		const packagePath = shortPath.startsWith("extensions/")
-			? shortPath.slice("extensions/".length)
-			: shortPath;
-		const parsedPath = path.posix.parse(packagePath);
-
-		if (parsedPath.name === "index") {
-			return !parsedPath.dir || parsedPath.dir === "."
-				? sourceLabel
-				: `${sourceLabel}:${parsedPath.dir}`;
-		}
-
-		return `${sourceLabel}:${packagePath}`;
-	}
-
-	private getCompactDisplayPathSegments(resourcePath: string): string[] {
-		return this.formatDisplayPath(resourcePath)
-			.replace(/\\/g, "/")
-			.split("/")
-			.filter((segment) => segment.length > 0 && segment !== "~");
-	}
-
-	private getCompactNonPackageExtensionLabel(
-		resourcePath: string,
-		index: number,
-		allPaths: Array<{ path: string; segments: string[] }>,
-	): string {
-		const segments = allPaths[index]?.segments;
-		if (!segments || segments.length === 0) {
-			return this.getCompactPathLabel(resourcePath);
-		}
-
-		for (let segmentCount = 1; segmentCount <= segments.length; segmentCount += 1) {
-			const candidate = segments.slice(-segmentCount).join("/");
-			const isUnique = allPaths.every((item, itemIndex) => {
-				if (itemIndex === index) {
-					return true;
-				}
-				return item.segments.slice(-segmentCount).join("/") !== candidate;
-			});
-
-			if (isUnique) {
-				return candidate;
-			}
-		}
-
-		return segments.join("/");
-	}
-
-	private getCompactExtensionLabels(
-		extensions: Array<{ path: string; sourceInfo?: SourceInfo }>,
-	): string[] {
-		const nonPackageExtensions = extensions
-			.map((extension) => {
-				const segments = this.getCompactDisplayPathSegments(extension.path);
-				const lastSegment = segments[segments.length - 1];
-				if (segments.length > 1 && (lastSegment === "index.ts" || lastSegment === "index.js")) {
-					segments.pop();
-				}
-				return {
-					path: extension.path,
-					sourceInfo: extension.sourceInfo,
-					segments,
-				};
-			})
-			.filter((extension) => !this.isPackageSource(extension.sourceInfo));
-
-		return extensions.map((extension) => {
-			if (this.isPackageSource(extension.sourceInfo)) {
-				return this.getCompactExtensionLabel(extension.path, extension.sourceInfo);
-			}
-
-			const nonPackageIndex = nonPackageExtensions.findIndex(
-				(item) => item.path === extension.path,
-			);
-			if (nonPackageIndex === -1) {
-				return this.getCompactPathLabel(extension.path, extension.sourceInfo);
-			}
-
-			return this.getCompactNonPackageExtensionLabel(
-				extension.path,
-				nonPackageIndex,
-				nonPackageExtensions,
-			);
-		});
-	}
-
-	private getDisplaySourceInfo(sourceInfo?: SourceInfo): {
-		label: string;
-		scopeLabel?: string;
-		color: "accent" | "muted";
-	} {
-		const source = sourceInfo?.source ?? "local";
-		const scope = sourceInfo?.scope ?? "project";
-		if (source === "local") {
-			if (scope === "user") {
-				return { label: "user", color: "muted" };
-			}
-			if (scope === "project") {
-				return { label: "project", color: "muted" };
-			}
-			if (scope === "temporary") {
-				return { label: "path", scopeLabel: "temp", color: "muted" };
-			}
-			return { label: "path", color: "muted" };
-		}
-
-		if (source === "cli") {
-			return {
-				label: "path",
-				scopeLabel: scope === "temporary" ? "temp" : undefined,
-				color: "muted",
-			};
-		}
-
-		const scopeLabel = (
-			{ user: "user", project: "project", temporary: "temp" } as Record<string, string>
-		)[scope ?? ""];
-		return { label: source, scopeLabel, color: "accent" };
-	}
-
-	private getScopeGroup(sourceInfo?: SourceInfo): "user" | "project" | "path" {
-		const source = sourceInfo?.source ?? "local";
-		const scope = sourceInfo?.scope ?? "project";
-		if (source === "cli" || scope === "temporary") return "path";
-		if (scope === "user") return "user";
-		if (scope === "project") return "project";
-		return "path";
-	}
-
-	private isPackageSource(sourceInfo?: SourceInfo): boolean {
-		const source = sourceInfo?.source ?? "";
-		return source.startsWith("npm:") || source.startsWith("git:");
-	}
-
-	private buildScopeGroups(items: Array<{ path: string; sourceInfo?: SourceInfo }>): Array<{
-		scope: "user" | "project" | "path";
-		paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-		packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
-	}> {
-		const groups: Record<
-			"user" | "project" | "path",
+	private showLoadedResources(options?: LoadedResourcesOptions): void {
+		renderLoadedResources(
 			{
-				scope: "user" | "project" | "path";
-				paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-				packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
-			}
-		> = {
-			user: { scope: "user", paths: [], packages: new Map() },
-			project: { scope: "project", paths: [], packages: new Map() },
-			path: { scope: "path", paths: [], packages: new Map() },
-		};
-
-		for (const item of items) {
-			const groupKey = this.getScopeGroup(item.sourceInfo);
-			const group = groups[groupKey];
-			const source = item.sourceInfo?.source ?? "local";
-
-			if (this.isPackageSource(item.sourceInfo)) {
-				const list = group.packages.get(source) ?? [];
-				list.push(item);
-				group.packages.set(source, list);
-			} else {
-				group.paths.push(item);
-			}
-		}
-
-		return [groups.project, groups.user, groups.path].filter(
-			(group) => group.paths.length > 0 || group.packages.size > 0,
+				container: this.loadedResourcesContainer,
+				session: this.session,
+				cwd: this.sessionManager.getCwd(),
+				showDetails: this.shouldShowStartupDetails(),
+				expanded: this.getStartupExpansionState(),
+			},
+			options,
 		);
-	}
-
-	private formatScopeGroups(
-		groups: Array<{
-			scope: "user" | "project" | "path";
-			paths: Array<{ path: string; sourceInfo?: SourceInfo }>;
-			packages: Map<string, Array<{ path: string; sourceInfo?: SourceInfo }>>;
-		}>,
-		options: {
-			formatPath: (item: { path: string; sourceInfo?: SourceInfo }) => string;
-			formatPackagePath: (
-				item: { path: string; sourceInfo?: SourceInfo },
-				source: string,
-			) => string;
-		},
-	): string {
-		const lines: string[] = [];
-
-		for (const group of groups) {
-			lines.push(`  ${theme.fg("accent", group.scope)}`);
-
-			const sortedPaths = [...group.paths].sort((a, b) => a.path.localeCompare(b.path));
-			for (const item of sortedPaths) {
-				lines.push(theme.fg("dim", `    ${options.formatPath(item)}`));
-			}
-
-			const sortedPackages = Array.from(group.packages.entries()).sort(([a], [b]) =>
-				a.localeCompare(b),
-			);
-			for (const [source, items] of sortedPackages) {
-				lines.push(`    ${theme.fg("mdLink", source)}`);
-				const sortedPackagePaths = [...items].sort((a, b) => a.path.localeCompare(b.path));
-				for (const item of sortedPackagePaths) {
-					lines.push(theme.fg("dim", `      ${options.formatPackagePath(item, source)}`));
-				}
-			}
-		}
-
-		return lines.join("\n");
-	}
-
-	private findSourceInfoForPath(
-		target: string,
-		sourceInfos: Map<string, SourceInfo>,
-	): SourceInfo | undefined {
-		const exact = sourceInfos.get(target);
-		if (exact) return exact;
-
-		let current = target;
-		while (current.includes("/")) {
-			current = current.substring(0, current.lastIndexOf("/"));
-			const parent = sourceInfos.get(current);
-			if (parent) return parent;
-		}
-
-		return undefined;
-	}
-
-	private formatPathWithSource(target: string, sourceInfo?: SourceInfo): string {
-		if (sourceInfo) {
-			const shortPath = this.getShortPath(target, sourceInfo);
-			const { label, scopeLabel } = this.getDisplaySourceInfo(sourceInfo);
-			const labelText = scopeLabel ? `${label} (${scopeLabel})` : label;
-			return `${labelText} ${shortPath}`;
-		}
-		return this.formatDisplayPath(target);
-	}
-
-	private formatDiagnostics(
-		diagnostics: readonly ResourceDiagnostic[],
-		sourceInfos: Map<string, SourceInfo>,
-	): string {
-		const lines: string[] = [];
-
-		const collisions = new Map<string, ResourceDiagnostic[]>();
-		const otherDiagnostics: ResourceDiagnostic[] = [];
-
-		for (const d of diagnostics) {
-			if (d.type === "collision" && d.collision) {
-				const list = collisions.get(d.collision.name) ?? [];
-				list.push(d);
-				collisions.set(d.collision.name, list);
-			} else {
-				otherDiagnostics.push(d);
-			}
-		}
-
-		for (const [name, collisionList] of collisions) {
-			const first = collisionList[0]?.collision;
-			if (!first) continue;
-			lines.push(theme.fg("warning", `  "${name}" collision:`));
-			const winnerSource = this.findSourceInfoForPath(first.winnerPath, sourceInfos);
-			const winner = this.formatPathWithSource(first.winnerPath, winnerSource);
-			lines.push(theme.fg("dim", `    ${winner} (kept)`));
-			for (const d of collisionList) {
-				if (!d.collision) continue;
-				const loserPath = d.collision.loserPath;
-				const loserSource = this.findSourceInfoForPath(loserPath, sourceInfos);
-				const loser = this.formatPathWithSource(loserPath, loserSource);
-				lines.push(theme.fg("dim", `    ${loser} (skipped)`));
-			}
-		}
-
-		for (const d of otherDiagnostics) {
-			if (d.path) {
-				const formattedPath = this.formatPathWithSource(
-					d.path,
-					this.findSourceInfoForPath(d.path, sourceInfos),
-				);
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${formattedPath}`));
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `    ${d.message}`));
-			} else {
-				lines.push(theme.fg(d.type === "error" ? "error" : "warning", `  ${d.message}`));
-			}
-		}
-
-		return lines.join("\n");
-	}
-
-	private showLoadedResources(options?: {
-		extensions?: Array<{ path: string; sourceInfo?: SourceInfo }>;
-		force?: boolean;
-		showDiagnosticsWhenQuiet?: boolean;
-	}): void {
-		this.loadedResourcesContainer.clear();
-
-		const showListing = options?.force || this.shouldShowStartupDetails();
-		const showDiagnostics = showListing || options?.showDiagnosticsWhenQuiet === true;
-		if (!showListing && !showDiagnostics) {
-			return;
-		}
-
-		const sectionHeader = (name: string, color: ThemeColor = "mdHeading") =>
-			theme.fg(color, `[${name}]`);
-		const formatCompactList = (items: string[], options?: { sort?: boolean }): string => {
-			const labels = items.map((item) => item.trim()).filter((item) => item.length > 0);
-			if (options?.sort !== false) {
-				labels.sort((a, b) => a.localeCompare(b));
-			}
-			return theme.fg("dim", `  ${labels.join(", ")}`);
-		};
-		const addLoadedSection = (
-			name: string,
-			collapsedBody: () => string,
-			expandedBody = collapsedBody,
-			color: ThemeColor = "mdHeading",
-		): void => {
-			const section = new ExpandableText(
-				() => `${sectionHeader(name, color)}\n${collapsedBody()}`,
-				() => `${sectionHeader(name, color)}\n${expandedBody()}`,
-				this.getStartupExpansionState(),
-				0,
-				0,
-			);
-			this.loadedResourcesContainer.addChild(section);
-			this.loadedResourcesContainer.addChild(new Spacer(1));
-		};
-
-		const skillsResult = this.session.resourceLoader.getSkills();
-		const promptsResult = this.session.resourceLoader.getPrompts();
-		const themesResult = this.session.resourceLoader.getThemes();
-		const extensions =
-			options?.extensions ??
-			this.session.resourceLoader
-				.getExtensions()
-				.extensions.filter((extension) => !extension.hidden)
-				.map((extension) => ({
-					path: extension.path,
-					sourceInfo: extension.sourceInfo,
-				}));
-		const sourceInfos = new Map<string, SourceInfo>();
-		for (const extension of extensions) {
-			if (extension.sourceInfo) {
-				sourceInfos.set(extension.path, extension.sourceInfo);
-			}
-		}
-		for (const skill of skillsResult.skills) {
-			if (skill.sourceInfo) {
-				sourceInfos.set(skill.filePath, skill.sourceInfo);
-			}
-		}
-		for (const prompt of promptsResult.prompts) {
-			if (prompt.sourceInfo) {
-				sourceInfos.set(prompt.filePath, prompt.sourceInfo);
-			}
-		}
-		for (const loadedTheme of themesResult.themes) {
-			if (loadedTheme.sourcePath && loadedTheme.sourceInfo) {
-				sourceInfos.set(loadedTheme.sourcePath, loadedTheme.sourceInfo);
-			}
-		}
-
-		if (showListing) {
-			const systemPromptSource = this.session.resourceLoader.getSystemPromptSource();
-			const contextFiles = [
-				...(systemPromptSource ? [systemPromptSource] : []),
-				...this.session.resourceLoader.getAppendSystemPromptSources(),
-				...this.session.resourceLoader.getAgentsFiles().agentsFiles,
-			];
-			if (contextFiles.length > 0) {
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-				const contextList = () =>
-					contextFiles
-						.map((f) => theme.fg("dim", `  ${this.formatDisplayPath(f.path)}`))
-						.join("\n");
-				const contextCompactList = () =>
-					formatCompactList(
-						contextFiles.map((contextFile) => this.formatContextPath(contextFile.path)),
-						{ sort: false },
-					);
-				addLoadedSection("Context", contextCompactList, contextList);
-			}
-
-			const skills = skillsResult.skills;
-			if (skills.length > 0) {
-				const groups = this.buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
-				);
-				const skillList = () =>
-					this.formatScopeGroups(groups, {
-						formatPath: (item) => this.formatDisplayPath(item.path),
-						formatPackagePath: (item) => this.getShortPath(item.path, item.sourceInfo),
-					});
-				const skillCompactList = () => formatCompactList(skills.map((skill) => skill.name));
-				addLoadedSection("Skills", skillCompactList, skillList);
-			}
-
-			const templates = this.session.promptTemplates;
-			if (templates.length > 0) {
-				const groups = this.buildScopeGroups(
-					templates.map((template) => ({
-						path: template.filePath,
-						sourceInfo: template.sourceInfo,
-					})),
-				);
-				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
-				const templateList = () =>
-					this.formatScopeGroups(groups, {
-						formatPath: (item) => {
-							const template = templateByPath.get(item.path);
-							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-						},
-						formatPackagePath: (item) => {
-							const template = templateByPath.get(item.path);
-							return template ? `/${template.name}` : this.formatDisplayPath(item.path);
-						},
-					});
-				const promptCompactList = () =>
-					formatCompactList(templates.map((template) => `/${template.name}`));
-				addLoadedSection("Prompts", promptCompactList, templateList);
-			}
-
-			if (extensions.length > 0) {
-				const groups = this.buildScopeGroups(extensions);
-				const extList = () =>
-					this.formatScopeGroups(groups, {
-						formatPath: (item) => this.formatExtensionDisplayPath(item.path),
-						formatPackagePath: (item) =>
-							this.formatExtensionDisplayPath(this.getShortPath(item.path, item.sourceInfo)),
-					});
-				const extensionLabels = this.getCompactExtensionLabels(extensions);
-				const extensionCompactList = () => formatCompactList(extensionLabels);
-				addLoadedSection("Extensions", extensionCompactList, extList, "mdHeading");
-			}
-		}
-
-		if (showDiagnostics) {
-			const skillDiagnostics = skillsResult.diagnostics;
-			if (skillDiagnostics.length > 0) {
-				const warningLines = () => this.formatDiagnostics(skillDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new ThemedText(
-						() => `${theme.fg("warning", "[Skill conflicts]")}\n${warningLines()}`,
-						0,
-						0,
-					),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-
-			const promptDiagnostics = promptsResult.diagnostics;
-			if (promptDiagnostics.length > 0) {
-				const warningLines = () => this.formatDiagnostics(promptDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new ThemedText(
-						() => `${theme.fg("warning", "[Prompt conflicts]")}\n${warningLines()}`,
-						0,
-						0,
-					),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-
-			const extensionDiagnostics: ResourceDiagnostic[] = [];
-			const extensionsResult = this.session.resourceLoader.getExtensions();
-			for (const error of extensionsResult.errors) {
-				extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
-			}
-			for (const warning of extensionsResult.warnings ?? []) {
-				extensionDiagnostics.push({
-					type: "warning",
-					message: warning.warning,
-					path: warning.path,
-				});
-			}
-
-			const commandDiagnostics = this.session.extensionRunner.getCommandDiagnostics();
-			extensionDiagnostics.push(...commandDiagnostics);
-			extensionDiagnostics.push(
-				...this.getBuiltInCommandConflictDiagnostics(this.session.extensionRunner),
-			);
-
-			const shortcutDiagnostics = this.session.extensionRunner.getShortcutDiagnostics();
-			extensionDiagnostics.push(...shortcutDiagnostics);
-
-			if (extensionDiagnostics.length > 0) {
-				const warningLines = () => this.formatDiagnostics(extensionDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new ThemedText(
-						() => `${theme.fg("warning", "[Extension issues]")}\n${warningLines()}`,
-						0,
-						0,
-					),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-
-			const themeDiagnostics = themesResult.diagnostics;
-			if (themeDiagnostics.length > 0) {
-				const warningLines = () => this.formatDiagnostics(themeDiagnostics, sourceInfos);
-				this.loadedResourcesContainer.addChild(
-					new ThemedText(
-						() => `${theme.fg("warning", "[Theme conflicts]")}\n${warningLines()}`,
-						0,
-						0,
-					),
-				);
-				this.loadedResourcesContainer.addChild(new Spacer(1));
-			}
-		}
 	}
 
 	async bindCurrentSessionExtensions(): Promise<void> {
@@ -2882,7 +2255,7 @@ export class TermApp {
 					maxAgeMs: 24 * 60 * 60 * 1000,
 					isTarget: (name) => /\.(png|jpe?g|webp|gif)$/i.test(name),
 				});
-				const tmpDir = os.tmpdir();
+				const tmpDir = tmpdir();
 				const ext = extensionForImageMimeType(image.mimeType) ?? "png";
 				const fileName = `gama-clipboard-${crypto.randomUUID()}.${ext}`;
 				const filePath = path.join(tmpDir, fileName);
@@ -3692,7 +3065,7 @@ export class TermApp {
 	// Docked prompts
 	updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
-		// Skip docked prompts while a hand view is open
+		// Hand view
 		if (this.handViewId !== undefined) return;
 		for (const component of this.pendingBashComponents) {
 			this.pendingMessagesContainer.addChild(component);
