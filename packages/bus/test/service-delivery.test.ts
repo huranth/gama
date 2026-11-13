@@ -326,7 +326,7 @@ test("a property read on a service facade does not create a member slot", async 
 		onError: (error) => errors.push(error),
 	});
 	const counter = namespace.use(Counter);
-	// Reading an unrelated property must not look like an unknown member
+	// Unrelated property
 	expect((counter as unknown as { maybeOptional: unknown }).maybeOptional).toBeDefined();
 	await namespace.ready(BACKGROUND_CONTEXT);
 	expect(counter.state.value).toEqual({ value: 7 });

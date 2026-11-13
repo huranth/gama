@@ -501,7 +501,7 @@ function createNode(
 ): OverlayNode {
 	const existing = context.rawNodes!.get(base);
 	if (existing !== undefined) {
-		// Alias-free state keeps every operation on one path
+		// Alias-free state
 		if (
 			existing.parentIndex === (parent?.baseIndex ?? -1) &&
 			existing.parentKind === parentKind &&

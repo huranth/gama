@@ -505,7 +505,7 @@ async function downloadTool(tool: ToolName): Promise<string> {
 		try {
 			renameSync(extractedBinary, binaryPath);
 		} catch (error) {
-			// Then another gama process may have installed the same binary first
+			// Install race
 			if (!existsSync(binaryPath)) throw error;
 		}
 

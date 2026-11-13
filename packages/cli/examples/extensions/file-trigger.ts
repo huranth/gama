@@ -9,7 +9,7 @@ export default function (gama: ExtensionAPI) {
 	gama.on("session_start", async (_event, ctx) => {
 		const triggerFile = join(tmpdir(), "agent-trigger.txt");
 
-		// Create the file first so the watch always has something to attach to
+		// Watch target
 		if (!fs.existsSync(triggerFile)) fs.writeFileSync(triggerFile, "");
 
 		watcher?.close();

@@ -288,7 +288,7 @@ function collectFilesFromManifestEntries(
 
 			return expandPackageGlob(entry, root);
 		})
-		// Reject paths outside root
+		// Outside root
 		.filter((file) => {
 			const rel = relative(root, file);
 			return rel !== ".." && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);

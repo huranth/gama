@@ -157,11 +157,11 @@ async function replaceDirectory(
 		throw error;
 	}
 	if (movedExisting) {
-		// Windows keeps the old bundle locked for a moment after the swap
+		// Windows lock
 		try {
 			await rm(backupDirectory, { force: true, recursive: true, maxRetries: 5, retryDelay: 50 });
 		} catch {
-			// Then a leftover backup is noise, not a failed build
+			// Backup noise
 		}
 	}
 }

@@ -53,7 +53,7 @@ type SessionsLoader = (
 function shortenPath(path: string): string {
 	const home = os.homedir();
 	if (!path) return path;
-	// Then a sibling like /home/smart2 doesn't collapse into ~2
+	// Home sibling
 	if (path === home || path.startsWith(`${home}/`) || path.startsWith(`${home}\\`)) {
 		return `~${path.slice(home.length)}`;
 	}
